@@ -1,0 +1,454 @@
+.sites-page {
+  max-width: 920px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.sites-header {
+  margin-bottom: 1.5rem;
+}
+
+.sites-header h1 {
+  font-size: 1.5rem;
+  margin: 0;
+  color: #f2f3f5;
+}
+
+.sites-header p {
+  color: #b5bac1;
+  margin: 0.5rem 0 0;
+  font-size: 0.9rem;
+}
+
+.sites-search-wrap {
+  margin-bottom: 1.25rem;
+}
+
+.sites-search-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 1rem;
+}
+
+.sites-search {
+  width: 100%;
+  max-width: 420px;
+  padding: 0.65rem 1rem;
+  font-size: 0.95rem;
+  color: #dcddde;
+  background: #2b2d31;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.sites-filters {
+  display: flex;
+  align-items: center;
+  gap: 1.25rem;
+}
+
+.sites-filter-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  cursor: pointer;
+  font-size: 0.9rem;
+  color: #b5bac1;
+  user-select: none;
+}
+
+.sites-filter-check:hover {
+  color: #dcddde;
+}
+
+.sites-filter-check input {
+  width: 1.1rem;
+  height: 1.1rem;
+  accent-color: #00a8fc;
+  cursor: pointer;
+}
+
+.sites-filter-check__badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.2rem;
+  height: 1.2rem;
+  border-radius: 50%;
+  font-size: 0.65rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.sites-filter-check__badge--scan {
+  background: #c77700;
+}
+
+.sites-filter-check__badge--toner {
+  background: #ed4245;
+}
+
+.sites-expand-all-btn {
+  margin-left: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  font-size: 0.85rem;
+  color: #00a8fc;
+  background: transparent;
+  border: 1px solid #3f4147;
+  border-radius: 6px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sites-expand-all-btn:hover:not(:disabled) {
+  background: #2b2d31;
+  border-color: #00a8fc;
+  color: #dcddde;
+}
+
+.sites-expand-all-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.sites-search::placeholder {
+  color: #6d6f78;
+}
+
+.sites-search:hover {
+  border-color: #4e5058;
+}
+
+.sites-search:focus {
+  border-color: #00a8fc;
+  box-shadow: 0 0 0 2px rgba(0, 168, 252, 0.25);
+}
+
+.sites-error {
+  padding: 0.75rem 1rem;
+  background: rgba(237, 66, 69, 0.15);
+  color: #ed4245;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(237, 66, 69, 0.3);
+}
+
+.sites-loading,
+.sites-empty {
+  color: #b5bac1;
+}
+
+.sites-grid {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.site-card {
+  border-radius: 12px;
+  overflow: hidden;
+  background: #2b2d31;
+  border: 1px solid #1e1f22;
+}
+
+.site-card--open {
+  border-color: #3f4147;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.site-card__header {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1.25rem;
+  background: none;
+  border: none;
+  font-size: 1rem;
+  text-align: left;
+  cursor: pointer;
+  color: #f2f3f5;
+  transition: background 0.15s;
+}
+
+.site-card__header:hover {
+  background: #36373d;
+}
+
+.site-card__title-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+  min-width: 0;
+}
+
+.site-card__nom {
+  font-weight: 600;
+}
+
+.site-card__alerts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex-shrink: 0;
+}
+
+/* Pastilles S (scan) et T (toner) en cercle */
+.site-card__alert-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.35rem;
+  height: 1.35rem;
+  border-radius: 50%;
+  font-size: 0.7rem;
+  font-weight: 700;
+  line-height: 1;
+  color: #fff;
+  flex-shrink: 0;
+}
+
+.site-card__alert-badge--scan {
+  background: #c77700;
+  border: 1px solid #e08900;
+}
+
+.site-card__alert-badge--toner {
+  background: #ed4245;
+  border: 1px solid #f04749;
+}
+
+.site-card__chevron {
+  color: #b5bac1;
+  font-size: 0.8rem;
+  flex-shrink: 0;
+  margin-left: 0.5rem;
+}
+
+.site-card__body {
+  padding: 0 1.25rem 1.25rem;
+  border-top: 1px solid #1e1f22;
+}
+
+.site-card__body-header {
+  padding: 0.75rem 0 0.5rem;
+}
+
+.site-card__detail-link {
+  font-size: 0.9rem;
+  color: #00a8fc;
+  text-decoration: none;
+}
+
+.site-card__detail-link:hover {
+  color: #58b4f0;
+  text-decoration: underline;
+}
+
+.site-card__loading,
+.site-card__empty {
+  padding: 1rem 0;
+  color: #80848e;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.imprimantes-list {
+  list-style: none;
+  padding: 0.5rem 0 0;
+  margin: 0;
+}
+
+.imprimante-item {
+  margin: 0 0 0.75rem;
+}
+
+.imprimante-item:last-child {
+  margin-bottom: 0;
+}
+
+.imprimante-item__btn {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: 1rem 1.1rem;
+  background: #313338;
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  font-size: 0.95rem;
+  text-align: left;
+  cursor: pointer;
+  color: #dcddde;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.imprimante-item__btn:hover {
+  background: #383a40;
+  border-color: #4e5058;
+}
+
+/* Carte en alerte : bordure / fond orange */
+.imprimante-item__btn--alert {
+  border-color: #c77700;
+  background: rgba(199, 119, 0, 0.12);
+}
+
+.imprimante-item__btn--alert:hover {
+  background: rgba(199, 119, 0, 0.18);
+  border-color: #e08900;
+}
+
+/* Icône alerte rouge à côté du scan / toners */
+.alert-icon {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 0.35rem;
+  vertical-align: middle;
+  color: #ed4245;
+}
+
+.ink-levels__alert {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.8rem;
+  color: #ed4245;
+  margin-bottom: 0.25rem;
+}
+
+.ink-levels__alert .alert-icon {
+  margin-right: 0;
+}
+
+.imprimante-item__top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.imprimante-item__serie {
+  font-weight: 600;
+  color: #f2f3f5;
+}
+
+.imprimante-item__alerts {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-left: 0.4rem;
+}
+
+.imprimante-item__alerts .site-card__alert-badge {
+  width: 1.15rem;
+  height: 1.15rem;
+  font-size: 0.6rem;
+}
+
+.imprimante-item__badge {
+  font-size: 0.7rem;
+  font-weight: 600;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
+.imprimante-item__badge--color {
+  background: rgba(88, 101, 242, 0.25);
+  color: #949cf7;
+}
+
+.imprimante-item__badge--mono {
+  background: rgba(185, 187, 190, 0.25);
+  color: #b9bbbe;
+}
+
+.imprimante-item__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1.25rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.85rem;
+  color: #b5bac1;
+}
+
+.imprimante-item__ip {
+  font-family: ui-monospace, monospace;
+  color: #00a8fc;
+}
+
+.imprimante-item__modele {
+  color: #80848e;
+}
+
+.imprimante-item__last {
+  font-size: 0.8rem;
+  color: #6d6f78;
+  margin-bottom: 0.75rem;
+}
+
+/* Barres de niveau d'encre */
+.ink-levels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.ink-level {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.8rem;
+}
+
+.ink-level__label {
+  width: 3.5rem;
+  color: #b5bac1;
+  flex-shrink: 0;
+}
+
+.ink-level__track {
+  flex: 1;
+  height: 8px;
+  background: #1e1f22;
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.ink-level__fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.25s ease;
+}
+
+.ink-level__fill--black {
+  background: linear-gradient(90deg, #3d3d3d, #5a5a5a);
+}
+
+.ink-level__fill--cyan {
+  background: linear-gradient(90deg, #0097a7, #00bcd4);
+}
+
+.ink-level__fill--magenta {
+  background: linear-gradient(90deg, #ad1457, #e91e63);
+}
+
+.ink-level__fill--yellow {
+  background: linear-gradient(90deg, #f9a825, #ffeb3b);
+}
+
+.ink-level__value {
+  width: 2.2rem;
+  text-align: right;
+  color: #80848e;
+  flex-shrink: 0;
+}

@@ -1,0 +1,253 @@
+.stocks-page {
+  padding: 1.5rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.stocks-page__nav {
+  margin-bottom: 1rem;
+}
+
+.stocks-page__nav .stocks-page__back {
+  color: #00a8fc;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.stocks-page__nav .stocks-page__back:hover {
+  text-decoration: underline;
+}
+
+.stocks-page__header {
+  margin-bottom: 1.5rem;
+}
+
+.stocks-page h1 {
+  font-size: 1.5rem;
+  color: #f2f3f5;
+  margin: 0 0 0.5rem;
+}
+
+.stocks-page__desc {
+  color: #80848e;
+  font-size: 0.9rem;
+  margin: 0;
+}
+
+.stocks-page__loading,
+.stocks-page__error {
+  color: #b5bac1;
+  margin: 2rem 0;
+}
+
+.stocks-page__error {
+  color: #f23f42;
+}
+
+.stocks-page__back {
+  color: #00a8fc;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.stocks-page__back:hover {
+  text-decoration: underline;
+}
+
+
+.stocks-page__search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin-bottom: 1.25rem;
+  align-items: center;
+}
+
+.stocks-page__search-input {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  color: #dcddde;
+  background: #2b2d31;
+  border: 1px solid #3f4147;
+  border-radius: 6px;
+  min-width: 10rem;
+}
+
+.stocks-page__search-input::placeholder {
+  color: #80848e;
+}
+
+.stocks-page__search-input:focus {
+  outline: none;
+  border-color: #00a8fc;
+}
+
+.stocks-page__search-select {
+  padding: 0.4rem 0.6rem;
+  font-size: 0.9rem;
+  color: #dcddde;
+  background: #2b2d31;
+  border: 1px solid #3f4147;
+  border-radius: 6px;
+  min-width: 10rem;
+}
+
+.stocks-page__search-select:focus {
+  outline: none;
+  border-color: #00a8fc;
+}
+
+.stocks-page__search-btn {
+  padding: 0.4rem 0.9rem;
+  font-size: 0.9rem;
+  color: #f2f3f5;
+  background: #00a8fc;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.stocks-page__search-btn:hover {
+  background: #0095e0;
+}
+
+.stocks-table__ref-bis {
+  font-family: ui-monospace, monospace;
+  color: #a1887f;
+}
+
+.stocks-page__empty {
+  color: #80848e;
+  padding: 2rem;
+  text-align: center;
+  background: #2b2d31;
+  border-radius: 10px;
+  border: 1px dashed #3f4147;
+}
+
+/* Table */
+.stocks-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid #3f4147;
+  background: #2b2d31;
+  margin-bottom: 2rem;
+}
+
+.stocks-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.stocks-table th,
+.stocks-table td {
+  padding: 0.65rem 0.85rem;
+  text-align: left;
+  border-bottom: 1px solid #3f4147;
+  color: #dcddde;
+}
+
+.stocks-table th {
+  background: #313338;
+  font-weight: 600;
+  color: #b5bac1;
+}
+
+.stocks-table__th--num {
+  text-align: right;
+  width: 8rem;
+}
+
+.stocks-table__ref {
+  font-family: ui-monospace, monospace;
+  color: #00a8fc;
+}
+
+.stocks-table__num {
+  text-align: right;
+}
+
+/* Badges type (réutilisés depuis SiteDetailPage) */
+.piece-type-badge {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+}
+
+.piece-type-badge--toner {
+  background: rgba(0, 168, 252, 0.2);
+  color: #58b4f0;
+}
+
+.piece-type-badge--bac_recup {
+  background: rgba(158, 158, 158, 0.2);
+  color: #b5bac1;
+}
+
+.piece-type-badge--tambour,
+.piece-type-badge--pcdu {
+  background: rgba(156, 39, 176, 0.2);
+  color: #ce93d8;
+}
+
+.piece-type-badge--kit_entretien,
+.piece-type-badge--kit_maintenance {
+  background: rgba(76, 175, 80, 0.2);
+  color: #81c784;
+}
+
+.piece-type-badge--fuser {
+  background: rgba(255, 152, 0, 0.2);
+  color: #ffb74d;
+}
+
+.piece-type-badge--courroie,
+.piece-type-badge--rouleau {
+  background: rgba(121, 85, 72, 0.2);
+  color: #a1887f;
+}
+
+.piece-type-badge--autre,
+.piece-type-badge--fournitures_consommables,
+.piece-type-badge--npu,
+.piece-type-badge--ventes_copieurs {
+  background: rgba(96, 125, 139, 0.2);
+  color: #90a4ae;
+}
+
+/* Liens vers les sites */
+.stocks-page__sites h2 {
+  font-size: 1.1rem;
+  color: #dcddde;
+  margin: 0 0 0.75rem;
+}
+
+.stocks-page__sites-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.stocks-page__sites-list li {
+  margin: 0;
+}
+
+.stocks-page__site-link {
+  display: inline-block;
+  padding: 0.4rem 0.75rem;
+  background: #2b2d31;
+  border: 1px solid #3f4147;
+  border-radius: 6px;
+  color: #00a8fc;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.stocks-page__site-link:hover {
+  background: #313338;
+  border-color: #00a8fc;
+}

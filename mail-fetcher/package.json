@@ -1,0 +1,25 @@
+{
+  "name": "mail-fetcher",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "reception:principale": "node fetch.js",
+    "reception:secondaire": "node controleur-reception-secondaire.js",
+    "alertes:20": "node traiter-alertes-20.js",
+    "csv:import": "node importer-csv-local.js"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "description": "",
+  "dependencies": {
+    "axios": "^1.13.5",
+    "dotenv": "^17.3.1",
+    "form-data": "^4.0.5",
+    "html-to-text": "^9.0.5",
+    "imapflow": "^1.2.9",
+    "mailparser": "^3.9.3"
+  }
+}

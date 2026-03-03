@@ -1,0 +1,219 @@
+.imprimante-page {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 1.5rem;
+}
+
+.imprimante-loading,
+.imprimante-empty {
+  color: #b5bac1;
+}
+
+.imprimante-alertes-error {
+  padding: 0.75rem 1rem;
+  background: rgba(237, 66, 69, 0.15);
+  color: #ed4245;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+}
+
+.imprimante-error {
+  padding: 0.75rem 1rem;
+  background: rgba(237, 66, 69, 0.15);
+  color: #ed4245;
+  border-radius: 8px;
+  margin-bottom: 1rem;
+  border: 1px solid rgba(237, 66, 69, 0.3);
+}
+
+.imprimante-nav {
+  margin-bottom: 1.25rem;
+}
+
+.imprimante-back {
+  color: #00a8fc;
+  text-decoration: none;
+  font-size: 0.95rem;
+}
+
+.imprimante-back:hover {
+  color: #58b4f0;
+  text-decoration: underline;
+}
+
+.imprimante-header {
+  margin-bottom: 2rem;
+  padding-bottom: 1.5rem;
+  border-bottom: 1px solid #1e1f22;
+}
+
+.imprimante-header h1 {
+  font-size: 1.5rem;
+  margin: 0 0 0.5rem;
+  color: #f2f3f5;
+}
+
+.imprimante-header__meta,
+.imprimante-header__emplacement,
+.imprimante-header__last {
+  margin: 0.35rem 0;
+  color: #b5bac1;
+  font-size: 0.95rem;
+}
+
+.imprimante-section {
+  margin-bottom: 2rem;
+}
+
+.imprimante-section h2 {
+  font-size: 1.2rem;
+  margin: 0 0 1rem;
+  color: #f2f3f5;
+}
+
+.imprimante-rapports-info {
+  margin: 0 0 0.75rem;
+  color: #80848e;
+  font-size: 0.9rem;
+}
+
+.rapports-pagination {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding-top: 1rem;
+  border-top: 1px solid #3f4147;
+}
+
+.rapports-pagination__btn {
+  padding: 0.4rem 0.75rem;
+  font-size: 0.9rem;
+  color: #00a8fc;
+  background: transparent;
+  border: 1px solid #3f4147;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.rapports-pagination__btn:hover:not(:disabled) {
+  background: rgba(0, 168, 252, 0.1);
+  border-color: #00a8fc;
+}
+
+.rapports-pagination__btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.rapports-pagination__info {
+  color: #b5bac1;
+  font-size: 0.9rem;
+}
+
+.rapports-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid #3f4147;
+  background: #2b2d31;
+}
+
+.rapports-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.9rem;
+}
+
+.rapports-table th,
+.rapports-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid #3f4147;
+  color: #dcddde;
+}
+
+.rapports-table th {
+  background: #313338;
+  font-weight: 600;
+  color: #b5bac1;
+}
+
+.rapports-table tbody tr:hover {
+  background: #36373d;
+}
+
+/* Niveaux d'encre : fond de la couleur correspondante */
+.rapports-table__th--black,
+.rapports-table__td--black {
+  background: #3d3d3d;
+  color: #fff;
+}
+
+.rapports-table__th--cyan,
+.rapports-table__td--cyan {
+  background: #0097a7;
+  color: #fff;
+}
+
+.rapports-table__th--magenta,
+.rapports-table__td--magenta {
+  background: #ad1457;
+  color: #fff;
+}
+
+.rapports-table__th--yellow,
+.rapports-table__td--yellow {
+  background: #f9a825;
+  color: #1a1a1a;
+}
+
+.rapports-table__th--waste {
+  background: #4a4a5a;
+  color: #e0e0e0;
+}
+
+/* Bac récup à 80% ou 100% : fond pourpre (alerte) */
+.rapports-table__td--waste-alert {
+  background: #6a1b9a !important;
+  color: #fff;
+}
+
+.alertes-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.alerte-item {
+  display: grid;
+  grid-template-columns: auto 1fr auto auto;
+  gap: 1rem;
+  align-items: center;
+  padding: 0.75rem 1rem;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  background: #2b2d31;
+  color: #dcddde;
+}
+
+.alerte-item__date {
+  color: #80848e;
+  white-space: nowrap;
+}
+
+.alerte-item__motif {
+  font-weight: 500;
+  color: #f2f3f5;
+}
+
+.alerte-item__piece {
+  color: #b5bac1;
+}
+
+.alerte-item__niveau {
+  color: #00a8fc;
+  font-weight: 500;
+}
