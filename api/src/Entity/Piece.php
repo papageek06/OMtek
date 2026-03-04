@@ -22,7 +22,7 @@ class Piece
 {
     public const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'];
     public const VARIANTS = ['BLACK', 'CYAN', 'MAGENTA', 'YELLOW', 'UNIT', 'KIT', 'NONE'];
-    public const NATURES = ['CONSUMABLE', 'SPARE_PART'];
+    public const NATURES = ['CONSUMABLE', 'SPARE_PART', 'VENTE', 'LOCATION', 'MOBILIER'];
 
     #[ORM\Id]
     #[ORM\GeneratedValue]
@@ -49,15 +49,12 @@ class Piece
     private ?string $type = null;
 
     #[ORM\Column(type: Types::STRING, length: 30, enumType: CategoriePiece::class)]
-    #[Assert\Choice(choices: self::CATEGORIES)]
     private CategoriePiece $categorie = CategoriePiece::AUTRE;
 
     #[ORM\Column(type: Types::STRING, length: 15, nullable: true, enumType: VariantPiece::class)]
-    #[Assert\Choice(choices: self::VARIANTS)]
     private ?VariantPiece $variant = null;
 
     #[ORM\Column(type: Types::STRING, length: 15, nullable: true, enumType: NaturePiece::class)]
-    #[Assert\Choice(choices: self::NATURES)]
     private ?NaturePiece $nature = null;
 
     /** @var Collection<int, Modele> */

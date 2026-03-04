@@ -3,6 +3,7 @@ import { AuthProvider, useAuth } from './context/AuthContext'
 import SitesPage from './pages/SitesPage'
 import SiteDetailPage from './pages/SiteDetailPage'
 import StocksPage from './pages/StocksPage'
+import ModelesPage from './pages/ModelesPage'
 import ImprimantePage from './pages/ImprimantePage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
@@ -52,6 +53,7 @@ function App() {
             <Routes>
               <Route path="/" element={<SitesPage />} />
               <Route path="/stocks" element={<StocksPage />} />
+              <Route path="/modeles" element={<ModelesPage />} />
               <Route path="/sites/:id" element={<SiteDetailPage />} />
               <Route path="/imprimantes/:id" element={<ImprimantePage />} />
               <Route path="/login" element={<LoginPage />} />

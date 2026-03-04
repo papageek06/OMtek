@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { fetchProfile, updateProfile } from '../api/client'
+import { fetchProfile, updateProfile, UnauthorizedError } from '../api/client'
 import './ProfilePage.css'
 
 export default function ProfilePage() {
@@ -29,7 +29,13 @@ export default function ProfilePage() {
         }
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur chargement')
+        if (!cancelled) {
+          if (e instanceof UnauthorizedError) {
+            setError('Veuillez vous connecter pour accéder à cette page')
+          } else {
+            setError(e instanceof Error ? e.message : 'Erreur chargement')
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)

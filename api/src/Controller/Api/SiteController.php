@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Entity\Enum\NaturePiece;
 use App\Entity\Imprimante;
 use App\Entity\Piece;
 use App\Entity\RapportImprimante;
@@ -111,16 +112,34 @@ class SiteController extends AbstractController
             ];
         }
 
-        // Pièces des modèles des imprimantes du site (toutes pièces, sans restriction de type)
-        // Stock général (site=null, agent) et stock du site
+        // Filtre par imprimante si demandé
+        $imprimanteId = $request->query->get('imprimanteId');
+        $imprimanteId = is_numeric($imprimanteId) ? (int) $imprimanteId : null;
+        $imprimanteFilter = null;
+        if ($imprimanteId !== null) {
+            foreach ($imprimantes as $imp) {
+                if ($imp->getId() === $imprimanteId) {
+                    $imprimanteFilter = $imp;
+                    break;
+                }
+            }
+        }
+
+        // Pièces des modèles des imprimantes du site
+        // Filtrer uniquement les pièces de nature CONSUMABLE
+        // Si imprimanteId est spécifié, ne prendre que les pièces de cette imprimante
         $piecesById = [];
-        foreach ($imprimantes as $imp) {
+        $imprimantesToProcess = $imprimanteFilter ? [$imprimanteFilter] : $imprimantes;
+        foreach ($imprimantesToProcess as $imp) {
             $modele = $imp->getModele();
             if (!$modele) {
                 continue;
             }
             foreach ($modele->getPieces() as $p) {
-                $piecesById[$p->getId()] = $p;
+                // Filtrer uniquement les pièces de nature CONSUMABLE
+                if ($p->getNature() === NaturePiece::CONSUMABLE) {
+                    $piecesById[$p->getId()] = $p;
+                }
             }
         }
 
@@ -153,6 +172,14 @@ class SiteController extends AbstractController
             if (!$this->pieceMatchesSearch($p, $ref, $refBis, $categorie, $modeleId)) {
                 continue;
             }
+            $modeles = [];
+            foreach ($p->getModeles() as $m) {
+                $modeles[] = [
+                    'id' => $m->getId(),
+                    'nom' => $m->getNom(),
+                    'constructeur' => $m->getConstructeur(),
+                ];
+            }
             $piecesAvecStocks[] = [
                 'pieceId' => $pieceId,
                 'reference' => $p->getReference(),
@@ -162,6 +189,7 @@ class SiteController extends AbstractController
                 'categorie' => $p->getCategorie()->value,
                 'variant' => $p->getVariant()?->value,
                 'nature' => $p->getNature()?->value,
+                'modeles' => $modeles,
                 'quantiteStockGeneral' => $stockGeneralByPiece[$pieceId] ?? 0,
                 'quantiteStockSite' => $stockSiteByPiece[$pieceId] ?? 0,
             ];

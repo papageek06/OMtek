@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { fetchSites, fetchImprimantes, type Site as SiteType, type Imprimante } from '../api/client'
+import { fetchSites, fetchImprimantes, UnauthorizedError, type Site as SiteType, type Imprimante } from '../api/client'
 import './SitesPage.css'
 
 function formatDate(iso: string | null): string {
@@ -136,7 +136,13 @@ export default function SitesPage() {
         setImprimantesBySite(buildImprimantesBySite(imprimantesData))
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur chargement')
+        if (!cancelled) {
+          if (e instanceof UnauthorizedError) {
+            setError('Veuillez vous connecter pour accéder à cette page')
+          } else {
+            setError(e instanceof Error ? e.message : 'Erreur chargement')
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -285,7 +291,18 @@ export default function SitesPage() {
         </div>
       )}
 
-      {error && <div className="sites-error">{error}</div>}
+      {error && (
+        <div className="sites-error">
+          {error}
+          {error.includes('connecter') && (
+            <div style={{ marginTop: '1rem' }}>
+              <Link to="/login" className="sites-error__login-link">
+                Se connecter →
+              </Link>
+            </div>
+          )}
+        </div>
+      )}
 
       {loading ? (
         <p className="sites-loading">Chargement des sites et imprimantes…</p>

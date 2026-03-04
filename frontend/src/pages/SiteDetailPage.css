@@ -202,6 +202,31 @@
   width: 7rem;
 }
 
+.pieces-table th:last-child,
+.pieces-table td:last-child {
+  position: sticky;
+  right: 0;
+  background-color: #2b2d31;
+  z-index: 10;
+  min-width: 150px;
+  white-space: nowrap;
+  padding-left: 1rem;
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.pieces-table td:nth-last-child(2) {
+  padding-right: 1rem;
+}
+
+.pieces-table th:last-child {
+  background-color: #1e1f22;
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.pieces-table tbody tr:hover td:last-child {
+  background-color: #35373c;
+}
+
 .pieces-table__ref {
   font-family: ui-monospace, monospace;
   color: #00a8fc;

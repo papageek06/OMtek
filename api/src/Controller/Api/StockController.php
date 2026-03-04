@@ -25,6 +25,7 @@ class StockController extends AbstractController
     /**
      * GET /api/stocks : vue globale des stocks (toutes pièces avec stock).
      * Query: ref, refBis, categorie, modeleImprimante (recherche case-insensitive).
+     * Query: page (défaut: 1), limit (défaut: 30) pour la pagination.
      */
     #[Route('/stocks', name: 'stocks_list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
@@ -61,6 +62,14 @@ class StockController extends AbstractController
             if (!$this->pieceMatchesSearch($p, $ref, $refBis, $categorie, $modeleId)) {
                 continue;
             }
+            $modeles = [];
+            foreach ($p->getModeles() as $m) {
+                $modeles[] = [
+                    'id' => $m->getId(),
+                    'nom' => $m->getNom(),
+                    'constructeur' => $m->getConstructeur(),
+                ];
+            }
             $result[] = [
                 'pieceId' => $pieceId,
                 'reference' => $p->getReference(),
@@ -70,12 +79,30 @@ class StockController extends AbstractController
                 'categorie' => $p->getCategorie()->value,
                 'variant' => $p->getVariant()?->value,
                 'nature' => $p->getNature()?->value,
+                'modeles' => $modeles,
                 'quantiteStockGeneral' => $data['quantiteStockGeneral'],
                 'totalSitesClient' => $data['totalSitesClient'],
             ];
         }
         usort($result, static fn ($a, $b) => strcmp($a['reference'], $b['reference']));
-        return new JsonResponse($result, Response::HTTP_OK);
+        
+        // Pagination
+        $page = max(1, (int) $request->query->get('page', 1));
+        $limit = max(1, min(100, (int) $request->query->get('limit', 30)));
+        $total = count($result);
+        $totalPages = (int) ceil($total / $limit);
+        $offset = ($page - 1) * $limit;
+        $paginatedResult = array_slice($result, $offset, $limit);
+        
+        return new JsonResponse([
+            'data' => $paginatedResult,
+            'pagination' => [
+                'page' => $page,
+                'limit' => $limit,
+                'total' => $total,
+                'totalPages' => $totalPages,
+            ],
+        ], Response::HTTP_OK);
     }
 
     private function pieceMatchesSearch(
@@ -147,6 +174,85 @@ class StockController extends AbstractController
         $this->em->flush();
 
         return new JsonResponse($this->stockToArray($stock), Response::HTTP_OK);
+    }
+
+    /**
+     * PUT /api/stocks/general : upsert stock général (site=null).
+     * Body: { "pieceId": 1, "quantite": 5 }
+     */
+    #[Route('/stocks/general', name: 'stocks_upsert_general', methods: ['PUT'])]
+    public function upsertGeneral(Request $request): JsonResponse|Response
+    {
+        $body = json_decode($request->getContent(), true);
+        if (!\is_array($body) || !isset($body['pieceId']) || !array_key_exists('quantite', $body)) {
+            return new JsonResponse(['error' => 'Body attendu: { "pieceId": number, "quantite": number }'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $piece = $this->em->getRepository(Piece::class)->find((int) $body['pieceId']);
+        if (!$piece) {
+            return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+
+        $quantite = max(0, (int) $body['quantite']);
+
+        $stock = $this->em->getRepository(Stock::class)->findOneBy(['piece' => $piece, 'site' => null]);
+        if (!$stock) {
+            $stock = new Stock();
+            $stock->setPiece($piece);
+            $stock->setSite(null);
+            $this->em->persist($stock);
+        }
+        $stock->setQuantite($quantite);
+        $stock->setUpdatedAt(new \DateTimeImmutable());
+
+        $this->em->flush();
+
+        return new JsonResponse($this->stockToArray($stock), Response::HTTP_OK);
+    }
+
+    /**
+     * DELETE /api/stocks/general/{pieceId} : supprimer le stock général (site=null) pour une pièce.
+     */
+    #[Route('/stocks/general/{pieceId}', name: 'stocks_delete_general', requirements: ['pieceId' => '\d+'], methods: ['DELETE'])]
+    public function deleteGeneral(int $pieceId): JsonResponse|Response
+    {
+        $piece = $this->em->getRepository(Piece::class)->find($pieceId);
+        if (!$piece) {
+            return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+
+        $stock = $this->em->getRepository(Stock::class)->findOneBy(['piece' => $piece, 'site' => null]);
+        if ($stock) {
+            $this->em->remove($stock);
+            $this->em->flush();
+        }
+
+        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+    }
+
+    /**
+     * DELETE /api/sites/{siteId}/stocks/{pieceId} : supprimer le stock d'un site pour une pièce.
+     */
+    #[Route('/sites/{siteId}/stocks/{pieceId}', name: 'stocks_delete', requirements: ['siteId' => '\d+', 'pieceId' => '\d+'], methods: ['DELETE'])]
+    public function delete(int $siteId, int $pieceId): JsonResponse|Response
+    {
+        $site = $this->em->getRepository(Site::class)->find($siteId);
+        if (!$site) {
+            return new JsonResponse(['error' => 'Site non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        $piece = $this->em->getRepository(Piece::class)->find($pieceId);
+        if (!$piece) {
+            return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+
+        $stock = $this->em->getRepository(Stock::class)->findOneBy(['piece' => $piece, 'site' => $site]);
+        if ($stock) {
+            $this->em->remove($stock);
+            $this->em->flush();
+        }
+
+        return new JsonResponse(null, Response::HTTP_NO_CONTENT);
     }
 
     private function stockToArray(Stock $stock): array

@@ -7,7 +7,9 @@ namespace App\Controller\Api;
 use App\Entity\Enum\CategoriePiece;
 use App\Entity\Enum\NaturePiece;
 use App\Entity\Enum\VariantPiece;
+use App\Entity\Modele;
 use App\Entity\Piece;
+use App\Entity\Stock;
 use App\Service\TypeToCategorieMapper;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -87,10 +89,48 @@ class PieceController extends AbstractController
             return new JsonResponse(['errors' => $errors], Response::HTTP_BAD_REQUEST);
         }
 
-        $violations = $this->validator->validate($piece);
-        if ($violations->count() > 0) {
-            $errs = [];
+        // Valider uniquement les champs qui ont été modifiés
+        $allViolations = [];
+        if (array_key_exists('reference', $data)) {
+            $violations = $this->validator->validateProperty($piece, 'reference');
             foreach ($violations as $v) {
+                $allViolations[] = $v;
+            }
+        }
+        if (array_key_exists('libelle', $data)) {
+            $violations = $this->validator->validateProperty($piece, 'libelle');
+            foreach ($violations as $v) {
+                $allViolations[] = $v;
+            }
+        }
+        if (array_key_exists('refBis', $data)) {
+            $violations = $this->validator->validateProperty($piece, 'refBis');
+            foreach ($violations as $v) {
+                $allViolations[] = $v;
+            }
+        }
+        if (isset($data['categorie'])) {
+            $violations = $this->validator->validateProperty($piece, 'categorie');
+            foreach ($violations as $v) {
+                $allViolations[] = $v;
+            }
+        }
+        if (array_key_exists('variant', $data)) {
+            $violations = $this->validator->validateProperty($piece, 'variant');
+            foreach ($violations as $v) {
+                $allViolations[] = $v;
+            }
+        }
+        if (array_key_exists('nature', $data)) {
+            $violations = $this->validator->validateProperty($piece, 'nature');
+            foreach ($violations as $v) {
+                $allViolations[] = $v;
+            }
+        }
+
+        if (count($allViolations) > 0) {
+            $errs = [];
+            foreach ($allViolations as $v) {
                 $errs[$v->getPropertyPath()] = $v->getMessage();
             }
             return new JsonResponse(['errors' => $errs], Response::HTTP_BAD_REQUEST);
@@ -112,6 +152,41 @@ class PieceController extends AbstractController
             return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
         }
         return new JsonResponse($this->pieceToArray($piece), Response::HTTP_OK);
+    }
+
+    /**
+     * DELETE /api/pieces/{id} : supprimer une pièce et tous ses stocks associés.
+     * Les modèles et sites ne sont pas affectés.
+     */
+    #[Route('/{id}', name: 'delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
+    public function delete(int $id): JsonResponse|Response
+    {
+        try {
+            $piece = $this->em->getRepository(Piece::class)->find($id);
+            if (!$piece) {
+                return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
+            }
+
+            // Retirer la pièce de tous les modèles (pour maintenir la cohérence bidirectionnelle)
+            $modeles = $piece->getModeles()->toArray();
+            foreach ($modeles as $modele) {
+                $piece->removeModele($modele);
+            }
+
+            // Supprimer tous les stocks associés à cette pièce
+            $stocks = $this->em->getRepository(Stock::class)->findBy(['piece' => $piece]);
+            foreach ($stocks as $stock) {
+                $this->em->remove($stock);
+            }
+
+            // Supprimer la pièce
+            $this->em->remove($piece);
+            $this->em->flush();
+
+            return new JsonResponse(null, Response::HTTP_NO_CONTENT);
+        } catch (\Exception $e) {
+            return new JsonResponse(['error' => 'Erreur lors de la suppression: ' . $e->getMessage()], Response::HTTP_INTERNAL_SERVER_ERROR);
+        }
     }
 
     /**
@@ -188,8 +263,66 @@ class PieceController extends AbstractController
         return $errors;
     }
 
+    /**
+     * POST /api/pieces/{id}/modeles : ajouter un modèle à une pièce.
+     * Body: { "modeleId": 1 }
+     */
+    #[Route('/{id}/modeles', name: 'add_modele', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function addModele(int $id, Request $request): JsonResponse|Response
+    {
+        $piece = $this->em->getRepository(Piece::class)->find($id);
+        if (!$piece) {
+            return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!\is_array($data) || !isset($data['modeleId'])) {
+            return new JsonResponse(['error' => 'Body attendu: { "modeleId": number }'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $modele = $this->em->getRepository(Modele::class)->find((int) $data['modeleId']);
+        if (!$modele) {
+            return new JsonResponse(['error' => 'Modèle non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        $piece->addModele($modele);
+        $this->em->flush();
+
+        return new JsonResponse($this->pieceToArray($piece), Response::HTTP_OK);
+    }
+
+    /**
+     * DELETE /api/pieces/{id}/modeles/{modeleId} : retirer un modèle d'une pièce.
+     */
+    #[Route('/{id}/modeles/{modeleId}', name: 'remove_modele', requirements: ['id' => '\d+', 'modeleId' => '\d+'], methods: ['DELETE'])]
+    public function removeModele(int $id, int $modeleId): JsonResponse|Response
+    {
+        $piece = $this->em->getRepository(Piece::class)->find($id);
+        if (!$piece) {
+            return new JsonResponse(['error' => 'Pièce non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+
+        $modele = $this->em->getRepository(Modele::class)->find($modeleId);
+        if (!$modele) {
+            return new JsonResponse(['error' => 'Modèle non trouvé'], Response::HTTP_NOT_FOUND);
+        }
+
+        $piece->removeModele($modele);
+        $this->em->flush();
+
+        return new JsonResponse($this->pieceToArray($piece), Response::HTTP_OK);
+    }
+
     private function pieceToArray(Piece $piece): array
     {
+        $modeles = [];
+        foreach ($piece->getModeles() as $modele) {
+            $modeles[] = [
+                'id' => $modele->getId(),
+                'nom' => $modele->getNom(),
+                'constructeur' => $modele->getConstructeur(),
+            ];
+        }
         return [
             'id' => $piece->getId(),
             'reference' => $piece->getReference(),
@@ -199,6 +332,7 @@ class PieceController extends AbstractController
             'categorie' => $piece->getCategorie()->value,
             'variant' => $piece->getVariant()?->value,
             'nature' => $piece->getNature()?->value,
+            'modeles' => $modeles,
             'createdAt' => $piece->getCreatedAt()->format(\DateTimeInterface::ATOM),
         ];
     }

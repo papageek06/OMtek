@@ -2,6 +2,14 @@ const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
 const AUTH_STORAGE_KEY = 'omtek_auth'
 
+/** Erreur spécifique pour les erreurs d'authentification (401) */
+export class UnauthorizedError extends Error {
+  constructor(message: string = 'Authentification requise') {
+    super(message)
+    this.name = 'UnauthorizedError'
+  }
+}
+
 export interface User {
   id: number
   email: string
@@ -56,7 +64,12 @@ export async function apiFetch(
   if (!headers.has('Content-Type') && options.body && typeof options.body === 'string') {
     headers.set('Content-Type', 'application/json')
   }
-  return fetch(url, { ...options, headers })
+  const response = await fetch(url, { ...options, headers })
+  if (response.status === 401) {
+    clearStoredAuth()
+    throw new UnauthorizedError('Veuillez vous connecter pour accéder à cette page')
+  }
+  return response
 }
 
 // --- Auth API ---
@@ -232,6 +245,7 @@ export interface PieceAvecStocks {
   categorie?: string
   variant?: string | null
   nature?: string | null
+  modeles?: ModeleItemSimple[]
   quantiteStockGeneral: number
   quantiteStockSite: number
 }
@@ -270,6 +284,7 @@ export interface StockGlobalItem {
   categorie?: string
   variant?: string | null
   nature?: string | null
+  modeles?: ModeleItemSimple[]
   quantiteStockGeneral: number
   totalSitesClient: number
 }
@@ -285,6 +300,18 @@ export interface StockSearchParams {
   refBis?: string
   categorie?: string
   modeleId?: number
+  page?: number
+  limit?: number
+}
+
+export interface PaginatedResponse<T> {
+  data: T[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
 }
 
 export async function fetchModeles(): Promise<ModeleItem[]> {
@@ -293,12 +320,69 @@ export async function fetchModeles(): Promise<ModeleItem[]> {
   return res.json()
 }
 
-export async function fetchStocksGlobal(params?: StockSearchParams): Promise<StockGlobalItem[]> {
+export interface ModeleDetail {
+  id: number
+  nom: string
+  constructeur: string
+  reference?: string | null
+  pieces: Array<{ id: number; reference: string; libelle: string }>
+  createdAt: string
+}
+
+export async function fetchModele(id: number): Promise<ModeleDetail> {
+  const res = await apiFetch(`${API_BASE}/modeles/${id}`)
+  if (!res.ok) throw new Error('Erreur chargement du modèle')
+  return res.json()
+}
+
+export interface ModeleCreate {
+  nom: string
+  constructeur: string
+  reference?: string | null
+}
+
+export interface ModeleUpdate {
+  nom?: string
+  constructeur?: string
+  reference?: string | null
+}
+
+export async function createModele(data: ModeleCreate): Promise<ModeleDetail> {
+  const res = await apiFetch(`${API_BASE}/modeles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const resData = await res.json().catch(() => ({}))
+    const err = (resData?.error as string) || (resData?.errors ? JSON.stringify(resData.errors) : 'Erreur création modèle')
+    throw new Error(err)
+  }
+  return res.json()
+}
+
+export async function updateModele(id: number, data: ModeleUpdate): Promise<ModeleDetail> {
+  const res = await apiFetch(`${API_BASE}/modeles/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  if (!res.ok) {
+    const resData = await res.json().catch(() => ({}))
+    const err = (resData?.error as string) || (resData?.errors ? JSON.stringify(resData.errors) : 'Erreur modification modèle')
+    throw new Error(err)
+  }
+  return res.json()
+}
+
+export async function fetchStocksGlobal(params?: StockSearchParams): Promise<PaginatedResponse<StockGlobalItem>> {
   const sp = new URLSearchParams()
   if (params?.ref) sp.set('ref', params.ref)
   if (params?.refBis) sp.set('refBis', params.refBis)
   if (params?.categorie) sp.set('categorie', params.categorie)
   if (params?.modeleId != null) sp.set('modeleId', String(params.modeleId))
+  if (params?.page != null) sp.set('page', String(params.page))
+  if (params?.limit != null) sp.set('limit', String(params.limit))
   const qs = sp.toString()
   const url = `${API_BASE}/stocks` + (qs ? `?${qs}` : '')
   const res = await apiFetch(url)
@@ -333,6 +417,57 @@ export async function updatePieceRefBis(pieceId: number, refBis: string | null):
   return res.json()
 }
 
+export interface PieceUpdate {
+  libelle?: string
+  refBis?: string | null
+  variant?: string | null
+  nature?: string | null
+  categorie?: string
+}
+
+export async function updatePiece(pieceId: number, update: PieceUpdate): Promise<PieceItem> {
+  const res = await apiFetch(`${API_BASE}/pieces/${pieceId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    const err = (data?.error as string) || (data?.errors ? JSON.stringify(data.errors) : 'Erreur mise à jour pièce')
+    throw new Error(err)
+  }
+  return res.json()
+}
+
+export async function deletePiece(pieceId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/pieces/${pieceId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    const err = (data?.error as string) || 'Erreur suppression pièce'
+    throw new Error(err)
+  }
+}
+
+export async function addModeleToPiece(pieceId: number, modeleId: number): Promise<PieceItem> {
+  const res = await apiFetch(`${API_BASE}/pieces/${pieceId}/modeles`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ modeleId }),
+  })
+  if (!res.ok) throw new Error('Erreur ajout modèle')
+  return res.json()
+}
+
+export async function removeModeleFromPiece(pieceId: number, modeleId: number): Promise<PieceItem> {
+  const res = await apiFetch(`${API_BASE}/pieces/${pieceId}/modeles/${modeleId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) throw new Error('Erreur suppression modèle')
+  return res.json()
+}
+
 export async function upsertStock(siteId: number, pieceId: number, quantite: number): Promise<StockItem> {
   const res = await apiFetch(`${API_BASE}/sites/${siteId}/stocks`, {
     method: 'PUT',
@@ -340,6 +475,61 @@ export async function upsertStock(siteId: number, pieceId: number, quantite: num
     body: JSON.stringify({ pieceId, quantite }),
   })
   if (!res.ok) throw new Error('Erreur mise à jour du stock')
+  return res.json()
+}
+
+export async function upsertStockGeneral(pieceId: number, quantite: number): Promise<StockItem> {
+  const res = await apiFetch(`${API_BASE}/stocks/general`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ pieceId, quantite }),
+  })
+  if (!res.ok) throw new Error('Erreur mise à jour du stock général')
+  return res.json()
+}
+
+export async function deleteStockGeneral(pieceId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/stocks/general/${pieceId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    const err = (data?.error as string) || 'Erreur suppression stock général'
+    throw new Error(err)
+  }
+}
+
+export async function deleteStock(siteId: number, pieceId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/stocks/${pieceId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    const err = (data?.error as string) || 'Erreur suppression stock'
+    throw new Error(err)
+  }
+}
+
+export interface ModeleItemSimple {
+  id: number
+  nom: string
+  constructeur: string
+}
+
+export interface PieceItem {
+  id: number
+  reference: string
+  refBis?: string | null
+  libelle: string
+  categorie: string
+  variant?: string | null
+  nature?: string | null
+  modeles?: ModeleItemSimple[]
+}
+
+export async function fetchPiecesByModele(modeleId: number): Promise<PieceItem[]> {
+  const res = await apiFetch(`${API_BASE}/modeles/${modeleId}/pieces`)
+  if (!res.ok) throw new Error('Erreur chargement des pièces')
   return res.json()
 }
 

@@ -1,6 +1,6 @@
 .stocks-page {
   padding: 1.5rem;
-  max-width: 1200px;
+  max-width: 1400px;
   margin: 0 auto;
 }
 
@@ -157,6 +157,31 @@
 .stocks-table__th--num {
   text-align: right;
   width: 8rem;
+}
+
+.stocks-table th:last-child,
+.stocks-table td:last-child {
+  position: sticky;
+  right: 0;
+  background-color: #2b2d31;
+  z-index: 10;
+  min-width: 150px;
+  white-space: nowrap;
+  padding-left: 1rem;
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.stocks-table td:nth-last-child(2) {
+  padding-right: 1rem;
+}
+
+.stocks-table th:last-child {
+  background-color: #313338;
+  box-shadow: -2px 0 4px rgba(0, 0, 0, 0.3);
+}
+
+.stocks-table tbody tr:hover td:last-child {
+  background-color: #35373c;
 }
 
 .stocks-table__ref {

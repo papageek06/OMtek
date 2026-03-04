@@ -4,6 +4,7 @@ import {
   fetchImprimante,
   fetchRapports,
   fetchAlertes,
+  UnauthorizedError,
   type Imprimante,
   type RapportImprimante,
   type Alerte,
@@ -83,7 +84,13 @@ export default function ImprimantePage() {
         setAlertes(Array.isArray(alts) ? alts : [])
       })
       .catch((e) => {
-        if (!cancelled) setError(e instanceof Error ? e.message : 'Erreur chargement')
+        if (!cancelled) {
+          if (e instanceof UnauthorizedError) {
+            setError('Veuillez vous connecter pour accéder à cette page')
+          } else {
+            setError(e instanceof Error ? e.message : 'Erreur chargement')
+          }
+        }
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
@@ -130,7 +137,11 @@ export default function ImprimantePage() {
     return (
       <div className="imprimante-page">
         <div className="imprimante-error">{error || 'Imprimante non trouvée'}</div>
-        <Link to="/" className="imprimante-back">Retour aux sites</Link>
+        {error && error.includes('connecter') ? (
+          <Link to="/login" className="imprimante-back">Se connecter →</Link>
+        ) : (
+          <Link to="/" className="imprimante-back">Retour aux sites</Link>
+        )}
       </div>
     )
   }
