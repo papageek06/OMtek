@@ -1,6 +1,7 @@
 const API_BASE = import.meta.env.VITE_API_URL ?? '/api'
 
 const AUTH_STORAGE_KEY = 'omtek_auth'
+const AUTH_CLEARED_EVENT = 'omtek:auth-cleared'
 
 /** Erreur spécifique pour les erreurs d'authentification (401) */
 export class UnauthorizedError extends Error {
@@ -25,6 +26,12 @@ export interface AuthData {
   user: User
 }
 
+function emitAuthCleared(): void {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_CLEARED_EVENT))
+  }
+}
+
 /** Récupère le token stocké (sans valider la session). */
 export function getStoredToken(): string | null {
   try {
@@ -34,7 +41,7 @@ export function getStoredToken(): string | null {
     if (!data.token) return null
     const exp = data.expiresAt ? new Date(data.expiresAt).getTime() : 0
     if (exp && exp < Date.now()) {
-      localStorage.removeItem(AUTH_STORAGE_KEY)
+      clearStoredAuth()
       return null
     }
     return data.token
@@ -51,6 +58,17 @@ export function setStoredAuth(data: AuthData): void {
 /** Supprime les données d'authentification. */
 export function clearStoredAuth(): void {
   localStorage.removeItem(AUTH_STORAGE_KEY)
+  emitAuthCleared()
+}
+
+export function onAuthCleared(listener: () => void): () => void {
+  if (typeof window === 'undefined') {
+    return () => {}
+  }
+  window.addEventListener(AUTH_CLEARED_EVENT, listener)
+  return () => {
+    window.removeEventListener(AUTH_CLEARED_EVENT, listener)
+  }
 }
 
 /** Fetch avec en-tête Authorization si token disponible. */
@@ -230,10 +248,208 @@ export interface Alerte {
   createdAt: string
 }
 
+export interface DashboardTechnicienSiteAlerte {
+  siteId: number
+  siteName: string
+  printerCount: number
+  alertCount: number
+  lastAlertAt: string | null
+}
+
+export interface DashboardTechnicienSiteSansRemontee {
+  siteId: number
+  siteName: string
+  printerCount: number
+  lastScanAt: string | null
+  daysWithoutData: number | null
+  neverReported: boolean
+}
+
+export interface DashboardTechnicienIntervention {
+  id: number
+  title: string
+  type: string
+  statut: string
+  priorite: string
+  billingStatus: string
+  site: {
+    id: number
+    nom: string
+  }
+  assignedTo: {
+    id: number
+    firstName: string
+    lastName: string
+  } | null
+  createdAt: string | null
+  startedAt: string | null
+}
+
+export interface DashboardTechnicienStockCritique {
+  stockId: number
+  quantite: number
+  updatedAt: string | null
+  site: {
+    id: number
+    nom: string
+  }
+  piece: {
+    id: number
+    reference: string
+    refBis: string | null
+    libelle: string
+    categorie: string
+  }
+}
+
+export interface DashboardTechnicienAlerteMail {
+  id: number
+  site: {
+    id: number | null
+    nom: string
+  } | null
+  numeroSerie: string
+  motifAlerte: string
+  piece: string
+  niveauPourcent: number | null
+  recuLe: string | null
+}
+
+export interface DashboardTechnicien {
+  generatedAt: string
+  thresholdDaysWithoutData: number
+  criticalStockThreshold: number
+  summary: {
+    sitesWithAlerts: number
+    sitesWithoutData: number
+    openInterventions: number
+    criticalStocks: number
+  }
+  sitesWithAlerts: DashboardTechnicienSiteAlerte[]
+  sitesWithoutData: DashboardTechnicienSiteSansRemontee[]
+  openInterventions: DashboardTechnicienIntervention[]
+  criticalStocks: DashboardTechnicienStockCritique[]
+  latestAlertes: DashboardTechnicienAlerteMail[]
+}
+
+export interface InterventionItem {
+  id: number
+  type: string
+  source: string
+  priorite: string
+  statut: string
+  billingStatus: string
+  archived: boolean
+  title: string
+  description: string | null
+  notesTech: string | null
+  site: {
+    id: number
+    nom: string
+  }
+  imprimante: {
+    id: number
+    numeroSerie: string
+    modele: string
+  } | null
+  createdBy: {
+    id: number
+    email: string
+    firstName: string
+    lastName: string
+  }
+  assignedTo: {
+    id: number
+    email: string
+    firstName: string
+    lastName: string
+  } | null
+  sourceAlerteId: number | null
+  startedAt: string | null
+  closedAt: string | null
+  archivedAt: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface InterventionFilters {
+  statut?: string
+  billingStatus?: string
+  archived?: 'all' | 'true' | 'false'
+  siteId?: number
+}
+
+export interface InterventionCreatePayload {
+  siteId: number
+  type: string
+  title?: string
+  description?: string | null
+  notesTech?: string | null
+  source?: string
+  priorite?: string
+  billingStatus?: string
+}
+
+export interface InterventionUpdatePayload {
+  title?: string
+  description?: string | null
+  notesTech?: string | null
+  source?: string
+  priorite?: string
+  billingStatus?: string
+  statut?: string
+  archived?: boolean
+}
+
 export async function fetchSites(): Promise<Site[]> {
   const res = await apiFetch(`${API_BASE}/sites`)
   if (!res.ok) throw new Error('Erreur chargement des sites')
   return res.json()
+}
+
+export async function fetchDashboardTechnicien(): Promise<DashboardTechnicien> {
+  const res = await apiFetch(`${API_BASE}/dashboard/technicien`)
+  if (!res.ok) throw new Error('Erreur chargement du tableau de bord')
+  return res.json()
+}
+
+export async function fetchInterventions(filters?: InterventionFilters): Promise<InterventionItem[]> {
+  const sp = new URLSearchParams()
+  if (filters?.statut) sp.set('statut', filters.statut)
+  if (filters?.billingStatus) sp.set('billingStatus', filters.billingStatus)
+  if (filters?.archived) sp.set('archived', filters.archived)
+  if (filters?.siteId != null) sp.set('siteId', String(filters.siteId))
+  const qs = sp.toString()
+  const url = `${API_BASE}/interventions` + (qs ? `?${qs}` : '')
+  const res = await apiFetch(url)
+  if (!res.ok) throw new Error('Erreur chargement des interventions')
+  return res.json()
+}
+
+export async function createIntervention(data: InterventionCreatePayload): Promise<InterventionItem> {
+  const res = await apiFetch(`${API_BASE}/interventions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur creation intervention')
+  }
+  return body
+}
+
+export async function updateIntervention(id: number, data: InterventionUpdatePayload): Promise<InterventionItem> {
+  const res = await apiFetch(`${API_BASE}/interventions/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour intervention')
+  }
+  return body
 }
 
 export interface PieceAvecStocks {
@@ -248,6 +464,7 @@ export interface PieceAvecStocks {
   modeles?: ModeleItemSimple[]
   quantiteStockGeneral: number
   quantiteStockSite: number
+  quantiteStockSiteAdminOnly?: number
 }
 
 export interface SiteDetail {
@@ -270,8 +487,56 @@ export interface StockItem {
   variant?: string | null
   nature?: string | null
   quantite: number
+  scope?: string
   dateReference: string | null
   updatedAt: string
+}
+
+export interface StockMovementItem {
+  id: number
+  movementType: string
+  stockScope: string
+  quantityDelta: number
+  quantityBefore: number
+  quantityAfter: number
+  reason: string
+  commentaire: string | null
+  createdAt: string
+  piece: {
+    id: number
+    reference: string
+    refBis: string | null
+    libelle: string
+    categorie: string
+  }
+  user: {
+    id: number
+    email: string
+    firstName: string
+    lastName: string
+  }
+  intervention: {
+    id: number
+    title: string
+    statut: string
+  } | null
+}
+
+export interface StockMovementCreatePayload {
+  pieceId: number
+  quantityDelta: number
+  reason?: string
+  commentaire?: string | null
+  scope?: 'TECH_VISIBLE' | 'ADMIN_ONLY'
+  interventionId?: number | null
+}
+
+export interface StockMovementSearchParams {
+  limit?: number
+  pieceId?: number
+  movementType?: string
+  reason?: string
+  scope?: 'TECH_VISIBLE' | 'ADMIN_ONLY'
 }
 
 /** Vue globale des stocks : quantité site null + total sites client */
@@ -293,6 +558,7 @@ export interface ModeleItem {
   id: number
   nom: string
   constructeur: string
+  reference?: string | null
 }
 
 export interface StockSearchParams {
@@ -407,6 +673,39 @@ export async function fetchSiteDetail(id: number, params?: StockSearchParams): P
   return data
 }
 
+export async function fetchSiteStockMovements(
+  siteId: number,
+  params?: StockMovementSearchParams
+): Promise<StockMovementItem[]> {
+  const sp = new URLSearchParams()
+  if (params?.limit != null) sp.set('limit', String(params.limit))
+  if (params?.pieceId != null) sp.set('pieceId', String(params.pieceId))
+  if (params?.movementType) sp.set('movementType', params.movementType)
+  if (params?.reason) sp.set('reason', params.reason)
+  if (params?.scope) sp.set('scope', params.scope)
+  const qs = sp.toString()
+  const url = `${API_BASE}/sites/${siteId}/stock-movements` + (qs ? `?${qs}` : '')
+  const res = await apiFetch(url)
+  if (!res.ok) throw new Error('Erreur chargement des mouvements de stock')
+  return res.json()
+}
+
+export async function createSiteStockMovement(
+  siteId: number,
+  data: StockMovementCreatePayload
+): Promise<{ movement: StockMovementItem; stock: StockItem }> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/stock-movements`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur creation mouvement de stock')
+  }
+  return body
+}
+
 export async function updatePieceRefBis(pieceId: number, refBis: string | null): Promise<{ refBis: string | null }> {
   const res = await apiFetch(`${API_BASE}/pieces/${pieceId}`, {
     method: 'PATCH',
@@ -468,11 +767,16 @@ export async function removeModeleFromPiece(pieceId: number, modeleId: number): 
   return res.json()
 }
 
-export async function upsertStock(siteId: number, pieceId: number, quantite: number): Promise<StockItem> {
+export async function upsertStock(
+  siteId: number,
+  pieceId: number,
+  quantite: number,
+  scope?: 'TECH_VISIBLE' | 'ADMIN_ONLY'
+): Promise<StockItem> {
   const res = await apiFetch(`${API_BASE}/sites/${siteId}/stocks`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ pieceId, quantite }),
+    body: JSON.stringify({ pieceId, quantite, scope }),
   })
   if (!res.ok) throw new Error('Erreur mise à jour du stock')
   return res.json()
@@ -499,8 +803,13 @@ export async function deleteStockGeneral(pieceId: number): Promise<void> {
   }
 }
 
-export async function deleteStock(siteId: number, pieceId: number): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/sites/${siteId}/stocks/${pieceId}`, {
+export async function deleteStock(
+  siteId: number,
+  pieceId: number,
+  scope?: 'TECH_VISIBLE' | 'ADMIN_ONLY'
+): Promise<void> {
+  const qs = scope ? `?scope=${encodeURIComponent(scope)}` : ''
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/stocks/${pieceId}${qs}`, {
     method: 'DELETE',
   })
   if (!res.ok) {

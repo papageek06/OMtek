@@ -48,7 +48,7 @@ class Piece
     #[ORM\Column(type: Types::STRING, length: 50, nullable: true)]
     private ?string $type = null;
 
-    #[ORM\Column(type: Types::STRING, length: 30, enumType: CategoriePiece::class)]
+    #[ORM\Column(type: Types::STRING, length: 30, enumType: CategoriePiece::class, options: ['default' => 'AUTRE'])]
     private CategoriePiece $categorie = CategoriePiece::AUTRE;
 
     #[ORM\Column(type: Types::STRING, length: 15, nullable: true, enumType: VariantPiece::class)]

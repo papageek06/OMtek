@@ -1,33 +1,38 @@
-# OMtek — API Symfony + Frontend React
+# OMtek
+
+## Documentation projet
+
+- Audit architecture et backlog : `docs/architecture-audit.md`
+- Organisation des agents : `AGENTS.md`
+- Questionnaire client : `docs/questionnaire-client.md`
+- Schema BDD cible : `docs/data-architecture-target.md`
+- Strategie de tests : `docs/test-strategy.md`
 
 ## Structure
 
-- **`api/`** — API REST Symfony 8 avec Doctrine ORM
-- **`frontend/`** — Application React (Vite + TypeScript)
+- `api/` : API REST Symfony 8 avec Doctrine ORM
+- `frontend/` : application React avec Vite et TypeScript
+- `mail-fetcher/` : ingestion des alertes et rapports recus par email
 
-## Prérequis
+## Prerequis
 
-- PHP 8.4+ avec extensions : ctype, iconv, json, pdo, xml, mbstring
+- PHP 8.4+
 - Composer
 - Node.js 18+
-- Base de données : SQLite (par défaut) ou PostgreSQL/MySQL
+- base de donnees SQLite, PostgreSQL ou MySQL
 
-## Démarrer l’API Symfony
+## Demarrer l'API
 
 ```bash
 cd api
 composer install
-# Optionnel : modifier .env pour DATABASE_URL (SQLite par défaut)
 php bin/console doctrine:migrations:migrate --no-interaction
 php -S localhost:8000 -t public
 ```
 
-L’API est disponible sur **http://localhost:8000**.
+API disponible sur `http://localhost:8000`.
 
-- **Santé :** `GET /api/health`
-- **Items :** `GET /api/items`, `POST /api/items`, `GET/PATCH/DELETE /api/items/{id}`
-
-## Démarrer le frontend React
+## Demarrer le frontend
 
 ```bash
 cd frontend
@@ -35,13 +40,33 @@ npm install
 npm run dev
 ```
 
-Le front est sur **http://localhost:5173**. Les appels vers `/api` sont proxyfiés vers `http://localhost:8000` (configurable dans `frontend/vite.config.ts`).
+Frontend disponible sur `http://localhost:5173`.
 
-## Base de données
+## Etat du projet
 
-Par défaut, l’API utilise **SQLite** (`api/var/data.db`). Pour utiliser PostgreSQL ou MySQL, modifiez `api/.env` (variable `DATABASE_URL`) et réglez éventuellement `api/config/packages/doctrine.yaml` (ex. `server_version` pour PostgreSQL).
+Le socle actuel couvre deja :
 
-## CORS
+- utilisateurs
+- sites
+- imprimantes
+- modeles
+- pieces
+- stocks
+- alertes
+- rapports
 
-L’API autorise les requêtes depuis `localhost` et `127.0.0.1` (tous ports). Pour d’autres origines, éditez `api/.env` (`CORS_ALLOW_ORIGIN`).
-# OMtek
+Les chantiers prioritaires restants sont :
+
+- interventions
+- separation forte admin / technicien
+- dashboard technicien mobile-first
+- historique des mouvements de stock
+- supervision de non-remontee cote serveur
+- stock cache admin-only par site
+
+## Tests
+
+Un socle de tests a ete prepare dans `api/tests/` avec `api/phpunit.xml.dist`.
+
+Les dependances PHPUnit / BrowserKit restent a installer avant execution.
+La strategie cible est decrite dans `docs/test-strategy.md`.

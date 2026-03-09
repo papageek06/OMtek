@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Link, NavLink } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
+import DashboardPage from './pages/DashboardPage'
 import SitesPage from './pages/SitesPage'
 import SiteDetailPage from './pages/SiteDetailPage'
 import StocksPage from './pages/StocksPage'
@@ -7,6 +8,7 @@ import ModelesPage from './pages/ModelesPage'
 import ImprimantePage from './pages/ImprimantePage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
+import InterventionsPage from './pages/InterventionsPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import './App.css'
 
@@ -15,6 +17,9 @@ function HeaderNav() {
   return (
     <nav className="header__nav">
       <NavLink to="/" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')} end>
+        Accueil
+      </NavLink>
+      <NavLink to="/sites" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
         Sites
       </NavLink>
       <NavLink to="/stocks" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
@@ -22,6 +27,9 @@ function HeaderNav() {
       </NavLink>
       {user ? (
         <>
+          <NavLink to="/interventions" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
+            Interventions
+          </NavLink>
           <NavLink to="/profil" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
             Profil
           </NavLink>
@@ -51,8 +59,10 @@ function App() {
           </header>
           <main className="main">
             <Routes>
-              <Route path="/" element={<SitesPage />} />
+              <Route path="/" element={<DashboardPage />} />
+              <Route path="/sites" element={<SitesPage />} />
               <Route path="/stocks" element={<StocksPage />} />
+              <Route path="/interventions" element={<InterventionsPage />} />
               <Route path="/modeles" element={<ModelesPage />} />
               <Route path="/sites/:id" element={<SiteDetailPage />} />
               <Route path="/imprimantes/:id" element={<ImprimantePage />} />

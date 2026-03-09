@@ -5,6 +5,7 @@ import {
   fetchMe,
   setStoredAuth,
   clearStoredAuth,
+  onAuthCleared,
   getStoredToken,
   type User,
 } from '../api/client'
@@ -45,6 +46,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     refreshUser()
   }, [refreshUser])
+
+  useEffect(() => {
+    return onAuthCleared(() => {
+      setState((s) => ({ ...s, user: null, loading: false, error: null }))
+    })
+  }, [])
 
   const login = useCallback(
     async (email: string, password: string) => {

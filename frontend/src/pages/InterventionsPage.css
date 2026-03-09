@@ -1,0 +1,300 @@
+.interventions-page {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.25rem;
+}
+
+.interventions-page__nav {
+  margin-bottom: 1rem;
+}
+
+.interventions-page__back {
+  color: #b5bac1;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.interventions-page__back:hover {
+  color: #f2f3f5;
+}
+
+.interventions-page__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.interventions-page__header h1 {
+  margin: 0;
+  color: #f2f3f5;
+}
+
+.interventions-page__header p {
+  margin: 0.45rem 0 0;
+  color: #b5bac1;
+}
+
+.interventions-page__primary-btn,
+.intervention-card__secondary-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.interventions-page__primary-btn {
+  background: linear-gradient(135deg, #00a8fc, #1982ff);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0, 168, 252, 0.2);
+}
+
+.interventions-page__primary-btn:disabled,
+.intervention-card__secondary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.intervention-card__secondary-btn {
+  background: rgba(255, 255, 255, 0.07);
+  color: #f2f3f5;
+  border: 1px solid #3f4147;
+}
+
+.interventions-page__message,
+.interventions-page__error {
+  margin-bottom: 1rem;
+  padding: 0.9rem 1rem;
+  border-radius: 12px;
+}
+
+.interventions-page__message {
+  background: rgba(35, 165, 90, 0.14);
+  border: 1px solid rgba(35, 165, 90, 0.25);
+  color: #57f287;
+}
+
+.interventions-page__error {
+  background: rgba(237, 66, 69, 0.14);
+  border: 1px solid rgba(237, 66, 69, 0.25);
+  color: #ff6b6b;
+}
+
+.interventions-form-card,
+.intervention-card,
+.interventions-filters {
+  background: linear-gradient(180deg, rgba(43, 45, 49, 0.98), rgba(30, 31, 34, 0.98));
+  border: 1px solid #1e1f22;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+}
+
+.interventions-form-card {
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.interventions-form-card h2 {
+  margin: 0 0 1rem;
+  color: #f2f3f5;
+}
+
+.interventions-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+}
+
+.interventions-form label,
+.interventions-filters label,
+.intervention-card__actions label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.interventions-form span,
+.interventions-filters span,
+.intervention-card__actions span {
+  font-size: 0.82rem;
+  color: #b5bac1;
+}
+
+.interventions-form input,
+.interventions-form textarea,
+.interventions-form select,
+.interventions-filters select,
+.intervention-card__actions select {
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  background: #1e1f22;
+  color: #f2f3f5;
+  padding: 0.75rem 0.85rem;
+  font: inherit;
+}
+
+.interventions-form textarea {
+  resize: vertical;
+}
+
+.interventions-form__wide {
+  grid-column: 1 / -1;
+}
+
+.interventions-filters {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.85rem;
+  padding: 1rem;
+  margin-bottom: 1rem;
+}
+
+.interventions-page__empty {
+  color: #b5bac1;
+  margin: 1.25rem 0 0;
+}
+
+.interventions-list {
+  display: grid;
+  gap: 0.9rem;
+}
+
+.intervention-card {
+  padding: 1rem;
+}
+
+.intervention-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.intervention-card__eyebrow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.7rem;
+}
+
+.intervention-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.32rem 0.62rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.intervention-chip--a-faire {
+  background: rgba(255, 196, 61, 0.15);
+  color: #ffd166;
+}
+
+.intervention-chip--en-cours {
+  background: rgba(0, 168, 252, 0.15);
+  color: #74cfff;
+}
+
+.intervention-chip--terminee {
+  background: rgba(35, 165, 90, 0.15);
+  color: #57f287;
+}
+
+.intervention-chip--annulee,
+.intervention-chip--basse {
+  background: rgba(185, 187, 190, 0.16);
+  color: #b9bbbe;
+}
+
+.intervention-chip--normale {
+  background: rgba(88, 101, 242, 0.18);
+  color: #b8c0ff;
+}
+
+.intervention-chip--haute,
+.intervention-chip--a-facturer {
+  background: rgba(255, 133, 82, 0.18);
+  color: #ffb089;
+}
+
+.intervention-chip--critique {
+  background: rgba(237, 66, 69, 0.2);
+  color: #ff8082;
+}
+
+.intervention-chip--non-facture,
+.intervention-chip--archived {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d2d4d7;
+}
+
+.intervention-card h2 {
+  margin: 0;
+  color: #f2f3f5;
+  font-size: 1.15rem;
+}
+
+.intervention-card__meta,
+.intervention-card__description,
+.intervention-card__details,
+.intervention-card__dates {
+  color: #b5bac1;
+}
+
+.intervention-card__meta {
+  margin: 0.4rem 0 0;
+}
+
+.intervention-card__dates {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+  text-align: right;
+}
+
+.intervention-card__description {
+  margin: 0.9rem 0;
+  line-height: 1.55;
+}
+
+.intervention-card__details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem 1rem;
+  font-size: 0.85rem;
+  margin-bottom: 1rem;
+}
+
+.intervention-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.85rem;
+  align-items: end;
+}
+
+@media (max-width: 720px) {
+  .interventions-page {
+    padding: 1rem;
+  }
+
+  .interventions-page__header,
+  .intervention-card__top {
+    flex-direction: column;
+  }
+
+  .intervention-card__dates {
+    text-align: left;
+  }
+
+  .intervention-card__actions {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}

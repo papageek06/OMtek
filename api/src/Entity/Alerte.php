@@ -46,7 +46,7 @@ class Alerte
     private string $numeroSerie = '';
 
     /** Type de motif unique (ex. "Toner bas", "Changement de cartouche", "Gaspillage de toner"). */
-    #[ORM\Column(type: Types::STRING, length: 255)]
+    #[ORM\Column(type: Types::TEXT)]
     private string $motifAlerte = '';
 
     /** Pièce concernée (ex. "Toner noir", "Toner cyan", "Cyan Cartridge"). */

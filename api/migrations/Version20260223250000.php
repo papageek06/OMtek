@@ -21,7 +21,7 @@ final class Version20260223250000 extends AbstractMigration
         if ($platform instanceof MySQLPlatform) {
             $this->addSql('CREATE TABLE modele (id INT AUTO_INCREMENT NOT NULL, nom VARCHAR(120) NOT NULL, constructeur VARCHAR(100) NOT NULL, reference VARCHAR(100) DEFAULT NULL, created_at DATETIME NOT NULL, UNIQUE INDEX uniq_modele_nom_constructeur (nom, constructeur), PRIMARY KEY(id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB');
             $this->addSql('CREATE TABLE piece (id INT AUTO_INCREMENT NOT NULL, reference VARCHAR(80) NOT NULL, libelle VARCHAR(255) NOT NULL, type VARCHAR(30) NOT NULL, created_at DATETIME NOT NULL, UNIQUE INDEX uniq_piece_reference (reference), PRIMARY KEY(id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB');
-            $this->addSql('CREATE TABLE modele_piece (modele_id INT NOT NULL, piece_id INT NOT NULL, INDEX IDX_modele_piece_modele (modele_id), INDEX IDX_modele_piece_piece (piece_id), PRIMARY KEY(modele_id, piece_id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB');
+            $this->addSql('CREATE TABLE modele_piece (modele_id INT NOT NULL, piece_id INT NOT NULL, INDEX IDX_E106393CAC14B70A (modele_id), INDEX IDX_E106393CC40FCFA8 (piece_id), PRIMARY KEY(modele_id, piece_id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB');
             $this->addSql('CREATE TABLE stock (id INT AUTO_INCREMENT NOT NULL, piece_id INT NOT NULL, site_id INT NOT NULL, quantite INT DEFAULT 0 NOT NULL, updated_at DATETIME NOT NULL, UNIQUE INDEX uniq_stock_piece_site (piece_id, site_id), INDEX idx_stock_site (site_id), INDEX idx_stock_piece (piece_id), PRIMARY KEY(id)) DEFAULT CHARACTER SET utf8mb4 COLLATE `utf8mb4_unicode_ci` ENGINE = InnoDB');
             $this->addSql('ALTER TABLE modele_piece ADD CONSTRAINT FK_modele_piece_modele FOREIGN KEY (modele_id) REFERENCES modele (id) ON DELETE CASCADE');
             $this->addSql('ALTER TABLE modele_piece ADD CONSTRAINT FK_modele_piece_piece FOREIGN KEY (piece_id) REFERENCES piece (id) ON DELETE CASCADE');
@@ -36,8 +36,8 @@ final class Version20260223250000 extends AbstractMigration
             $this->addSql('CREATE TABLE piece (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, reference VARCHAR(80) NOT NULL, libelle VARCHAR(255) NOT NULL, type VARCHAR(30) NOT NULL, created_at DATETIME NOT NULL)');
             $this->addSql('CREATE UNIQUE INDEX uniq_piece_reference ON piece (reference)');
             $this->addSql('CREATE TABLE modele_piece (modele_id INT NOT NULL, piece_id INT NOT NULL, PRIMARY KEY(modele_id, piece_id), CONSTRAINT FK_modele_piece_modele FOREIGN KEY (modele_id) REFERENCES modele (id) ON DELETE CASCADE, CONSTRAINT FK_modele_piece_piece FOREIGN KEY (piece_id) REFERENCES piece (id) ON DELETE CASCADE)');
-            $this->addSql('CREATE INDEX IDX_modele_piece_modele ON modele_piece (modele_id)');
-            $this->addSql('CREATE INDEX IDX_modele_piece_piece ON modele_piece (piece_id)');
+            $this->addSql('CREATE INDEX IDX_E106393CAC14B70A ON modele_piece (modele_id)');
+            $this->addSql('CREATE INDEX IDX_E106393CC40FCFA8 ON modele_piece (piece_id)');
             $this->addSql('CREATE TABLE stock (id INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, piece_id INT NOT NULL, site_id INT NOT NULL, quantite INT DEFAULT 0 NOT NULL, updated_at DATETIME NOT NULL, CONSTRAINT FK_stock_piece FOREIGN KEY (piece_id) REFERENCES piece (id) ON DELETE CASCADE, CONSTRAINT FK_stock_site FOREIGN KEY (site_id) REFERENCES site (id) ON DELETE CASCADE)');
             $this->addSql('CREATE UNIQUE INDEX uniq_stock_piece_site ON stock (piece_id, site_id)');
             $this->addSql('CREATE INDEX idx_stock_site ON stock (site_id)');

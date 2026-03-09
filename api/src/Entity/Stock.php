@@ -4,14 +4,16 @@ declare(strict_types=1);
 
 namespace App\Entity;
 
+use App\Entity\Enum\StockScope;
 use Doctrine\DBAL\Types\Types;
 use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'stock')]
-#[ORM\UniqueConstraint(name: 'uniq_stock_piece_site', columns: ['piece_id', 'site_id'])]
+#[ORM\UniqueConstraint(name: 'uniq_stock_piece_site_scope', columns: ['piece_id', 'site_id', 'scope'])]
 #[ORM\Index(columns: ['site_id'], name: 'idx_stock_site')]
 #[ORM\Index(columns: ['piece_id'], name: 'idx_stock_piece')]
+#[ORM\Index(columns: ['scope'], name: 'idx_stock_scope')]
 class Stock
 {
     #[ORM\Id]
@@ -30,6 +32,9 @@ class Stock
 
     #[ORM\Column(type: Types::INTEGER, options: ['default' => 0])]
     private int $quantite = 0;
+
+    #[ORM\Column(type: Types::STRING, length: 20, enumType: StockScope::class, options: ['default' => 'TECH_VISIBLE'])]
+    private StockScope $scope = StockScope::TECH_VISIBLE;
 
     /** Date de référence de l'inventaire (ex. 31.12.2025) si applicable */
     #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
@@ -78,6 +83,17 @@ class Stock
     public function setQuantite(int $quantite): static
     {
         $this->quantite = max(0, $quantite);
+        return $this;
+    }
+
+    public function getScope(): StockScope
+    {
+        return $this->scope;
+    }
+
+    public function setScope(StockScope $scope): static
+    {
+        $this->scope = $scope;
         return $this;
     }
 

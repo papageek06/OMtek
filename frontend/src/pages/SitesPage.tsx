@@ -1,10 +1,16 @@
 import { useEffect, useMemo, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
-import { fetchSites, fetchImprimantes, UnauthorizedError, type Site as SiteType, type Imprimante } from '../api/client'
+import {
+  fetchSites,
+  fetchImprimantes,
+  UnauthorizedError,
+  type Site as SiteType,
+  type Imprimante,
+} from '../api/client'
 import './SitesPage.css'
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '—'
+  if (!iso) return '-'
   const d = new Date(iso)
   return d.toLocaleDateString('fr-FR', {
     day: '2-digit',
@@ -18,7 +24,6 @@ function formatDate(iso: string | null): string {
 const JOURS_ALERTE_SCAN = 10
 const SEUIL_ALERTE_ENCRE_POURCENT = 20
 
-/** Convertit une chaîne type "50%", "Low", "100%" en nombre 0-100 pour la barre. */
 function parseLevelPercent(raw: string | null | undefined): number | null {
   if (raw == null || raw === '') return null
   const s = String(raw).trim()
@@ -30,7 +35,6 @@ function parseLevelPercent(raw: string | null | undefined): number | null {
   return null
 }
 
-/** true si le dernier scan est absent ou date de plus de 10 jours. */
 function isLastScanOld(lastScanDate: string | null | undefined): boolean {
   if (!lastScanDate) return true
   const scan = new Date(lastScanDate).getTime()
@@ -38,22 +42,20 @@ function isLastScanOld(lastScanDate: string | null | undefined): boolean {
   return scan < limit
 }
 
-/** true si au moins un niveau d'encre est ≤ 20%. */
 function hasInkLevelAlert(imp: Imprimante): boolean {
-  const r = imp.lastReport
-  if (!r) return false
+  const report = imp.lastReport
+  if (!report) return false
+
   const levels = [
-    parseLevelPercent(r.blackLevel),
-    parseLevelPercent(r.cyanLevel),
-    parseLevelPercent(r.magentaLevel),
-    parseLevelPercent(r.yellowLevel),
+    parseLevelPercent(report.blackLevel),
+    parseLevelPercent(report.cyanLevel),
+    parseLevelPercent(report.magentaLevel),
+    parseLevelPercent(report.yellowLevel),
   ]
-  return levels.some(
-    (p) => p !== null && p <= SEUIL_ALERTE_ENCRE_POURCENT
-  )
+
+  return levels.some((level) => level !== null && level <= SEUIL_ALERTE_ENCRE_POURCENT)
 }
 
-/** Pastille circulaire S (scan) ou T (toner) pour les alertes dans la liste des sites. */
 function AlertBadge({
   letter,
   title,
@@ -85,6 +87,7 @@ function InkLevelBar({
 }) {
   const pct = parseLevelPercent(raw)
   if (pct === null) return null
+
   return (
     <div className="ink-level">
       <span className="ink-level__label">{label}</span>
@@ -105,12 +108,14 @@ function InkLevelBar({
 
 function buildImprimantesBySite(imprimantes: Imprimante[]): Record<number, Imprimante[]> {
   const bySite: Record<number, Imprimante[]> = {}
-  for (const imp of imprimantes) {
-    const siteId = imp.site?.id
+
+  for (const imprimante of imprimantes) {
+    const siteId = imprimante.site?.id
     if (siteId == null) continue
     if (!bySite[siteId]) bySite[siteId] = []
-    bySite[siteId].push(imp)
+    bySite[siteId].push(imprimante)
   }
+
   return bySite
 }
 
@@ -129,6 +134,7 @@ export default function SitesPage() {
     let cancelled = false
     setLoading(true)
     setError(null)
+
     Promise.all([fetchSites(), fetchImprimantes()])
       .then(([sitesData, imprimantesData]) => {
         if (cancelled) return
@@ -136,17 +142,19 @@ export default function SitesPage() {
         setImprimantesBySite(buildImprimantesBySite(imprimantesData))
       })
       .catch((e) => {
-        if (!cancelled) {
-          if (e instanceof UnauthorizedError) {
-            setError('Veuillez vous connecter pour accéder à cette page')
-          } else {
-            setError(e instanceof Error ? e.message : 'Erreur chargement')
-          }
+        if (cancelled) return
+        if (e instanceof UnauthorizedError) {
+          setError('Veuillez vous connecter pour acceder a cette page')
+          return
         }
+        setError(e instanceof Error ? e.message : 'Erreur chargement')
       })
       .finally(() => {
-        if (!cancelled) setLoading(false)
+        if (!cancelled) {
+          setLoading(false)
+        }
       })
+
     return () => {
       cancelled = true
     }
@@ -154,7 +162,6 @@ export default function SitesPage() {
 
   const q = searchQuery.trim().toLowerCase()
 
-  /** Alertes au niveau du site : S si toutes les imprimantes ont un scan > 10 jours, T si au moins une a encre basse. */
   const getSiteAlerts = (siteId: number): { scan: boolean; ink: boolean } => {
     const list = imprimantesBySite[siteId] ?? []
     const scan =
@@ -166,10 +173,10 @@ export default function SitesPage() {
     return { scan, ink }
   }
 
-  /** Nombre de sites en alerte S et T (avant filtres recherche). */
   const alertCounts = useMemo(() => {
     let scan = 0
     let toner = 0
+
     for (const site of sites) {
       const list = imprimantesBySite[site.id] ?? []
       if (
@@ -177,15 +184,20 @@ export default function SitesPage() {
         list.every((imp) =>
           isLastScanOld(imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null)
         )
-      )
+      ) {
         scan += 1
-      if (list.some((imp) => hasInkLevelAlert(imp))) toner += 1
+      }
+      if (list.some((imp) => hasInkLevelAlert(imp))) {
+        toner += 1
+      }
     }
+
     return { scan, toner }
   }, [sites, imprimantesBySite])
 
   const filteredSites = useMemo(() => {
     let list = sites
+
     if (q) {
       list = list.filter(
         (site) =>
@@ -195,6 +207,7 @@ export default function SitesPage() {
           )
       )
     }
+
     if (filterScanAlert || filterTonerAlert) {
       list = list.filter((site) => {
         const alerts = getSiteAlerts(site.id)
@@ -204,27 +217,31 @@ export default function SitesPage() {
         return true
       })
     }
+
     return list
   }, [sites, imprimantesBySite, q, filterScanAlert, filterTonerAlert])
 
   const handleSiteClick = (siteId: number) => {
     setExpandedSiteIds((prev) => {
       const next = new Set(prev)
-      if (next.has(siteId)) next.delete(siteId)
-      else next.add(siteId)
+      if (next.has(siteId)) {
+        next.delete(siteId)
+      } else {
+        next.add(siteId)
+      }
       return next
     })
   }
 
   const allExpanded =
-    filteredSites.length > 0 &&
-    filteredSites.every((s) => expandedSiteIds.has(s.id))
+    filteredSites.length > 0 && filteredSites.every((site) => expandedSiteIds.has(site.id))
+
   const handleToggleExpandAll = () => {
     if (allExpanded) {
       setExpandedSiteIds(new Set())
-    } else {
-      setExpandedSiteIds(new Set(filteredSites.map((s) => s.id)))
+      return
     }
+    setExpandedSiteIds(new Set(filteredSites.map((site) => site.id)))
   }
 
   const getImprimantesForSite = (siteId: number): Imprimante[] => {
@@ -240,8 +257,15 @@ export default function SitesPage() {
   return (
     <div className="sites-page">
       <header className="sites-header">
-        <h1>Sites</h1>
-        <p>Cliquez sur un site pour afficher ses imprimantes. Utilisez « Tout déployer » pour une vue d'ensemble.</p>
+        <div className="sites-header__top">
+          <div>
+            <h1>Sites</h1>
+            <p>Recherche, alertes terrain et acces rapide aux imprimantes du parc client.</p>
+          </div>
+          <Link to="/" className="sites-header__link">
+            Retour accueil technique
+          </Link>
+        </div>
       </header>
 
       {!loading && sites.length > 0 && (
@@ -250,10 +274,10 @@ export default function SitesPage() {
             <input
               type="search"
               className="sites-search"
-              placeholder="Rechercher par nom de site ou numéro de série…"
+              placeholder="Rechercher par nom de site ou numero de serie..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Rechercher site ou numéro de série"
+              aria-label="Rechercher site ou numero de serie"
             />
             <div className="sites-filters">
               <label className="sites-filter-check">
@@ -261,7 +285,7 @@ export default function SitesPage() {
                   type="checkbox"
                   checked={filterScanAlert}
                   onChange={(e) => setFilterScanAlert(e.target.checked)}
-                  aria-label="Filtrer les sites avec alerte Scan"
+                  aria-label="Filtrer les sites avec alerte scan"
                 />
                 <span className="sites-filter-check__badge sites-filter-check__badge--scan">S</span>
                 <span>Scan ({alertCounts.scan})</span>
@@ -271,7 +295,7 @@ export default function SitesPage() {
                   type="checkbox"
                   checked={filterTonerAlert}
                   onChange={(e) => setFilterTonerAlert(e.target.checked)}
-                  aria-label="Filtrer les sites avec alerte Toner"
+                  aria-label="Filtrer les sites avec alerte toner"
                 />
                 <span className="sites-filter-check__badge sites-filter-check__badge--toner">T</span>
                 <span>Toner ({alertCounts.toner})</span>
@@ -281,10 +305,10 @@ export default function SitesPage() {
                 className="sites-expand-all-btn"
                 onClick={handleToggleExpandAll}
                 disabled={filteredSites.length === 0}
-                title={allExpanded ? 'Réduire tous les sites' : 'Déployer tous les sites'}
-                aria-label={allExpanded ? 'Réduire tous les sites' : 'Déployer tous les sites'}
+                title={allExpanded ? 'Reduire tous les sites' : 'Deployer tous les sites'}
+                aria-label={allExpanded ? 'Reduire tous les sites' : 'Deployer tous les sites'}
               >
-                {allExpanded ? 'Tout réduire' : 'Tout déployer'}
+                {allExpanded ? 'Tout reduire' : 'Tout deployer'}
               </button>
             </div>
           </div>
@@ -297,7 +321,7 @@ export default function SitesPage() {
           {error.includes('connecter') && (
             <div style={{ marginTop: '1rem' }}>
               <Link to="/login" className="sites-error__login-link">
-                Se connecter →
+                Se connecter -&gt;
               </Link>
             </div>
           )}
@@ -305,16 +329,17 @@ export default function SitesPage() {
       )}
 
       {loading ? (
-        <p className="sites-loading">Chargement des sites et imprimantes…</p>
+        <p className="sites-loading">Chargement des sites et imprimantes...</p>
       ) : sites.length === 0 ? (
         <p className="sites-empty">Aucun site.</p>
       ) : filteredSites.length === 0 ? (
-        <p className="sites-empty">Aucun site ni imprimante ne correspond à la recherche.</p>
+        <p className="sites-empty">Aucun site ni imprimante ne correspond a la recherche.</p>
       ) : (
         <div className="sites-grid">
           {filteredSites.map((site) => {
             const alerts = getSiteAlerts(site.id)
             const isExpanded = expandedSiteIds.has(site.id)
+
             return (
               <article
                 key={site.id}
@@ -341,7 +366,7 @@ export default function SitesPage() {
                           <AlertBadge
                             letter="T"
                             type="toner"
-                            title="Niveau d'encre ≤ 20% sur au moins une imprimante"
+                            title="Niveau d'encre <= 20% sur au moins une imprimante"
                           />
                         )}
                       </span>
@@ -356,13 +381,14 @@ export default function SitesPage() {
                   <div className="site-card__body">
                     <div className="site-card__body-header">
                       <Link to={'/sites/' + site.id} className="site-card__detail-link">
-                        Voir détails (stocks, graphiques) →
+                        Voir details (stocks, graphiques) -&gt;
                       </Link>
                     </div>
+
                     {!getImprimantesForSite(site.id).length ? (
                       <p className="site-card__empty">
                         {q
-                          ? 'Aucune imprimante ne correspond à la recherche sur ce site.'
+                          ? 'Aucune imprimante ne correspond a la recherche sur ce site.'
                           : 'Aucune imprimante sur ce site.'}
                       </p>
                     ) : (
@@ -373,6 +399,7 @@ export default function SitesPage() {
                           )
                           const inkAlert = hasInkLevelAlert(imp)
                           const hasAlert = scanAlert || inkAlert
+
                           return (
                             <li key={imp.id} className="imprimante-item">
                               <button
@@ -398,7 +425,7 @@ export default function SitesPage() {
                                         <AlertBadge
                                           letter="T"
                                           type="toner"
-                                          title="Niveau d'encre ≤ 20%"
+                                          title="Niveau d'encre <= 20%"
                                         />
                                       )}
                                     </span>
@@ -413,21 +440,24 @@ export default function SitesPage() {
                                     {imp.color ? 'Couleur' : 'Mono'}
                                   </span>
                                 </div>
+
                                 <div className="imprimante-item__meta">
                                   {imp.ipAddress && (
                                     <span className="imprimante-item__ip">{imp.ipAddress}</span>
                                   )}
                                   <span className="imprimante-item__modele">
-                                    {imp.modele || '—'}
-                                    {imp.emplacement ? ' · ' + imp.emplacement : ''}
+                                    {imp.modele || '-'}
+                                    {imp.emplacement ? ' - ' + imp.emplacement : ''}
                                   </span>
                                 </div>
+
                                 <span className="imprimante-item__last">
                                   Dernier scan :{' '}
                                   {formatDate(
                                     imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
                                   )}
                                 </span>
+
                                 {imp.lastReport &&
                                   (imp.lastReport.blackLevel ||
                                     imp.lastReport.cyanLevel ||
@@ -436,24 +466,24 @@ export default function SitesPage() {
                                     <div className="ink-levels">
                                       <InkLevelBar
                                         label="Noir"
-                                        raw={imp.lastReport?.blackLevel}
+                                        raw={imp.lastReport.blackLevel}
                                         fillClass="ink-level__fill--black"
                                       />
                                       {imp.color && (
                                         <>
                                           <InkLevelBar
                                             label="Cyan"
-                                            raw={imp.lastReport?.cyanLevel}
+                                            raw={imp.lastReport.cyanLevel}
                                             fillClass="ink-level__fill--cyan"
                                           />
                                           <InkLevelBar
                                             label="Magenta"
-                                            raw={imp.lastReport?.magentaLevel}
+                                            raw={imp.lastReport.magentaLevel}
                                             fillClass="ink-level__fill--magenta"
                                           />
                                           <InkLevelBar
                                             label="Jaune"
-                                            raw={imp.lastReport?.yellowLevel}
+                                            raw={imp.lastReport.yellowLevel}
                                             fillClass="ink-level__fill--yellow"
                                           />
                                         </>

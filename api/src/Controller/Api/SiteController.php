@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace App\Controller\Api;
 
 use App\Entity\Enum\NaturePiece;
+use App\Entity\Enum\StockScope;
 use App\Entity\Imprimante;
 use App\Entity\Piece;
-use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Entity\Stock;
+use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -25,9 +26,6 @@ class SiteController extends AbstractController
     ) {
     }
 
-    /**
-     * GET /api/sites : liste des sites (pour assignation imprimante, etc.).
-     */
     #[Route('', name: 'list', methods: ['GET'])]
     public function list(): JsonResponse
     {
@@ -40,15 +38,12 @@ class SiteController extends AbstractController
         return new JsonResponse($data, Response::HTTP_OK);
     }
 
-    /**
-     * GET /api/sites/{id} : détail d'un site (sans la liste des imprimantes pour garder la réponse légère).
-     */
     #[Route('/{id}', name: 'show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(int $id): JsonResponse|Response
     {
         $site = $this->em->getRepository(Site::class)->find($id);
         if (!$site) {
-            return new JsonResponse(['error' => 'Site non trouvé'], Response::HTTP_NOT_FOUND);
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
         return new JsonResponse([
             'id' => $site->getId(),
@@ -57,153 +52,143 @@ class SiteController extends AbstractController
         ], Response::HTTP_OK);
     }
 
-    /**
-     * GET /api/sites/{id}/detail : détail complet (imprimantes, stocks, pièces compatibles).
-     * Query: ref, refBis, categorie, modeleImprimante (recherche).
-     */
     #[Route('/{id}/detail', name: 'detail', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function detail(int $id, Request $request): JsonResponse|Response
     {
         try {
             $site = $this->em->getRepository(Site::class)->find($id);
             if (!$site) {
-                return new JsonResponse(['error' => 'Site non trouvé'], Response::HTTP_NOT_FOUND);
+                return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
             }
 
             $imprimantes = $this->em->getRepository(Imprimante::class)->findBy(
-            ['site' => $site],
-            ['numeroSerie' => 'ASC']
-        );
+                ['site' => $site],
+                ['numeroSerie' => 'ASC']
+            );
 
-        $imprimantesData = [];
-        $modeleIds = [];
-        foreach ($imprimantes as $imp) {
-            $imprimantesData[] = $this->imprimanteToArray($imp);
-            $modele = $imp->getModele();
-            if ($modele) {
-                $modeleIds[$modele->getId()] = true;
-            }
-        }
-
-        // Stocks du site
-        $stocks = $this->em->getRepository(Stock::class)->findBy(
-            ['site' => $site],
-            ['id' => 'ASC']
-        );
-        $stocksData = [];
-        foreach ($stocks as $s) {
-            $p = $s->getPiece();
-            if (!$p) {
-                continue;
-            }
-            $stocksData[] = [
-                'id' => $s->getId(),
-                'pieceId' => $p->getId(),
-                'pieceReference' => $p->getReference(),
-                'pieceRefBis' => $p->getRefBis(),
-                'pieceLibelle' => $p->getLibelle(),
-                'pieceType' => $p->getTypeDisplay(),
-                'categorie' => $p->getCategorie()->value,
-                'variant' => $p->getVariant()?->value,
-                'nature' => $p->getNature()?->value,
-                'quantite' => $s->getQuantite(),
-                'dateReference' => $s->getDateReference()?->format('Y-m-d'),
-                'updatedAt' => $s->getUpdatedAt()->format(\DateTimeInterface::ATOM),
-            ];
-        }
-
-        // Filtre par imprimante si demandé
-        $imprimanteId = $request->query->get('imprimanteId');
-        $imprimanteId = is_numeric($imprimanteId) ? (int) $imprimanteId : null;
-        $imprimanteFilter = null;
-        if ($imprimanteId !== null) {
+            $imprimantesData = [];
             foreach ($imprimantes as $imp) {
-                if ($imp->getId() === $imprimanteId) {
-                    $imprimanteFilter = $imp;
-                    break;
+                $imprimantesData[] = $this->imprimanteToArray($imp);
+            }
+
+            $stocks = $this->em->getRepository(Stock::class)->findBy(
+                $this->buildStockCriteriaForSite($site),
+                ['id' => 'ASC']
+            );
+            $stocksData = [];
+            foreach ($stocks as $s) {
+                $p = $s->getPiece();
+                if (!$p) {
+                    continue;
                 }
-            }
-        }
-
-        // Pièces des modèles des imprimantes du site
-        // Filtrer uniquement les pièces de nature CONSUMABLE
-        // Si imprimanteId est spécifié, ne prendre que les pièces de cette imprimante
-        $piecesById = [];
-        $imprimantesToProcess = $imprimanteFilter ? [$imprimanteFilter] : $imprimantes;
-        foreach ($imprimantesToProcess as $imp) {
-            $modele = $imp->getModele();
-            if (!$modele) {
-                continue;
-            }
-            foreach ($modele->getPieces() as $p) {
-                // Filtrer uniquement les pièces de nature CONSUMABLE
-                if ($p->getNature() === NaturePiece::CONSUMABLE) {
-                    $piecesById[$p->getId()] = $p;
-                }
-            }
-        }
-
-        $stockGeneralByPiece = [];
-        $stockSiteByPiece = [];
-        foreach ($this->em->getRepository(Stock::class)->findBy(['site' => null], []) as $s) {
-            $piece = $s->getPiece();
-            if ($piece) {
-                $stockGeneralByPiece[$piece->getId()] = $s->getQuantite();
-            }
-        }
-        foreach ($stocks as $s) {
-            $piece = $s->getPiece();
-            if ($piece) {
-                $stockSiteByPiece[$piece->getId()] = $s->getQuantite();
-            }
-        }
-
-        $ref = trim((string) $request->query->get('ref', ''));
-        $refBis = trim((string) $request->query->get('refBis', ''));
-        $categorie = trim((string) $request->query->get('categorie', ''));
-        $modeleId = $request->query->get('modeleId');
-        $modeleId = is_numeric($modeleId) ? (int) $modeleId : null;
-        $piecesAvecStocks = [];
-        foreach ($piecesById as $p) {
-            $pieceId = $p->getId();
-            if ($pieceId === null) {
-                continue;
-            }
-            if (!$this->pieceMatchesSearch($p, $ref, $refBis, $categorie, $modeleId)) {
-                continue;
-            }
-            $modeles = [];
-            foreach ($p->getModeles() as $m) {
-                $modeles[] = [
-                    'id' => $m->getId(),
-                    'nom' => $m->getNom(),
-                    'constructeur' => $m->getConstructeur(),
+                $stocksData[] = [
+                    'id' => $s->getId(),
+                    'pieceId' => $p->getId(),
+                    'pieceReference' => $p->getReference(),
+                    'pieceRefBis' => $p->getRefBis(),
+                    'pieceLibelle' => $p->getLibelle(),
+                    'pieceType' => $p->getTypeDisplay(),
+                    'categorie' => $p->getCategorie()->value,
+                    'variant' => $p->getVariant()?->value,
+                    'nature' => $p->getNature()?->value,
+                    'quantite' => $s->getQuantite(),
+                    'scope' => $s->getScope()->value,
+                    'dateReference' => $s->getDateReference()?->format('Y-m-d'),
+                    'updatedAt' => $s->getUpdatedAt()->format(\DateTimeInterface::ATOM),
                 ];
             }
-            $piecesAvecStocks[] = [
-                'pieceId' => $pieceId,
-                'reference' => $p->getReference(),
-                'refBis' => $p->getRefBis(),
-                'libelle' => $p->getLibelle(),
-                'type' => $p->getTypeDisplay(),
-                'categorie' => $p->getCategorie()->value,
-                'variant' => $p->getVariant()?->value,
-                'nature' => $p->getNature()?->value,
-                'modeles' => $modeles,
-                'quantiteStockGeneral' => $stockGeneralByPiece[$pieceId] ?? 0,
-                'quantiteStockSite' => $stockSiteByPiece[$pieceId] ?? 0,
-            ];
-        }
-        usort($piecesAvecStocks, static fn ($a, $b) => strcmp($a['reference'], $b['reference']));
 
-        return new JsonResponse([
-            'id' => $site->getId(),
-            'nom' => $site->getNom(),
-            'createdAt' => $site->getCreatedAt()->format(\DateTimeInterface::ATOM),
-            'imprimantes' => $imprimantesData,
-            'stocks' => $stocksData,
-            'piecesAvecStocks' => $piecesAvecStocks,
-        ], Response::HTTP_OK);
+            $imprimanteId = $request->query->get('imprimanteId');
+            $imprimanteId = is_numeric($imprimanteId) ? (int) $imprimanteId : null;
+            $imprimanteFilter = null;
+            if ($imprimanteId !== null) {
+                foreach ($imprimantes as $imp) {
+                    if ($imp->getId() === $imprimanteId) {
+                        $imprimanteFilter = $imp;
+                        break;
+                    }
+                }
+            }
+
+            $piecesById = [];
+            $imprimantesToProcess = $imprimanteFilter ? [$imprimanteFilter] : $imprimantes;
+            foreach ($imprimantesToProcess as $imp) {
+                $modele = $imp->getModele();
+                if (!$modele) {
+                    continue;
+                }
+                foreach ($modele->getPieces() as $p) {
+                    if ($p->getNature() === NaturePiece::CONSUMABLE) {
+                        $piecesById[$p->getId()] = $p;
+                    }
+                }
+            }
+
+            $stockGeneralByPiece = [];
+            $stockSiteByPiece = [];
+            foreach ($this->em->getRepository(Stock::class)->findBy($this->buildGeneralStockCriteria(), []) as $s) {
+                $piece = $s->getPiece();
+                if ($piece) {
+                    $stockGeneralByPiece[$piece->getId()] = ($stockGeneralByPiece[$piece->getId()] ?? 0) + $s->getQuantite();
+                }
+            }
+            foreach ($stocks as $s) {
+                $piece = $s->getPiece();
+                if ($piece) {
+                    $pieceId = $piece->getId();
+                    if ($pieceId !== null) {
+                        $stockSiteByPiece[$pieceId] = ($stockSiteByPiece[$pieceId] ?? 0) + $s->getQuantite();
+                    }
+                }
+            }
+
+            $ref = trim((string) $request->query->get('ref', ''));
+            $refBis = trim((string) $request->query->get('refBis', ''));
+            $categorie = trim((string) $request->query->get('categorie', ''));
+            $modeleId = $request->query->get('modeleId');
+            $modeleId = is_numeric($modeleId) ? (int) $modeleId : null;
+            $piecesAvecStocks = [];
+            foreach ($piecesById as $p) {
+                $pieceId = $p->getId();
+                if ($pieceId === null) {
+                    continue;
+                }
+                if (!$this->pieceMatchesSearch($p, $ref, $refBis, $categorie, $modeleId)) {
+                    continue;
+                }
+                $modeles = [];
+                foreach ($p->getModeles() as $m) {
+                    $modeles[] = [
+                        'id' => $m->getId(),
+                        'nom' => $m->getNom(),
+                        'constructeur' => $m->getConstructeur(),
+                    ];
+                }
+                $piecesAvecStocks[] = [
+                    'pieceId' => $pieceId,
+                    'reference' => $p->getReference(),
+                    'refBis' => $p->getRefBis(),
+                    'libelle' => $p->getLibelle(),
+                    'type' => $p->getTypeDisplay(),
+                    'categorie' => $p->getCategorie()->value,
+                    'variant' => $p->getVariant()?->value,
+                    'nature' => $p->getNature()?->value,
+                    'modeles' => $modeles,
+                    'quantiteStockGeneral' => $stockGeneralByPiece[$pieceId] ?? 0,
+                    'quantiteStockSite' => $stockSiteByPiece[$pieceId] ?? 0,
+                    'quantiteStockSiteAdminOnly' => $this->isAdmin() ? $this->findScopeQuantity($site, $p, StockScope::ADMIN_ONLY) : 0,
+                ];
+            }
+            usort($piecesAvecStocks, static fn ($a, $b) => strcmp($a['reference'], $b['reference']));
+
+            return new JsonResponse([
+                'id' => $site->getId(),
+                'nom' => $site->getNom(),
+                'createdAt' => $site->getCreatedAt()->format(\DateTimeInterface::ATOM),
+                'imprimantes' => $imprimantesData,
+                'stocks' => $stocksData,
+                'piecesAvecStocks' => $piecesAvecStocks,
+            ], Response::HTTP_OK);
         } catch (\Throwable $e) {
             return new JsonResponse([
                 'error' => 'Erreur serveur: ' . $e->getMessage(),
@@ -272,5 +257,39 @@ class SiteController extends AbstractController
             'createdAt' => $imprimante->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'updatedAt' => $imprimante->getUpdatedAt()->format(\DateTimeInterface::ATOM),
         ];
+    }
+
+    private function buildStockCriteriaForSite(Site $site): array
+    {
+        $criteria = ['site' => $site];
+        if (!$this->isAdmin()) {
+            $criteria['scope'] = StockScope::TECH_VISIBLE;
+        }
+        return $criteria;
+    }
+
+    private function buildGeneralStockCriteria(): array
+    {
+        $criteria = ['site' => null];
+        if (!$this->isAdmin()) {
+            $criteria['scope'] = StockScope::TECH_VISIBLE;
+        }
+        return $criteria;
+    }
+
+    private function findScopeQuantity(Site $site, Piece $piece, StockScope $scope): int
+    {
+        $stock = $this->em->getRepository(Stock::class)->findOneBy([
+            'site' => $site,
+            'piece' => $piece,
+            'scope' => $scope,
+        ]);
+
+        return $stock?->getQuantite() ?? 0;
+    }
+
+    private function isAdmin(): bool
+    {
+        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
     }
 }

@@ -12,13 +12,12 @@ import {
 } from 'recharts'
 import {
   fetchSiteDetail,
+  fetchSiteStockMovements,
   fetchRapports,
   fetchAlertes,
   upsertStock,
-  deleteStock,
   updatePiece,
   deletePiece,
-  updatePieceRefBis,
   fetchPiecesByModele,
   fetchModeles,
   addModeleToPiece,
@@ -29,9 +28,11 @@ import {
   type RapportImprimante,
   type Alerte,
   type StockSearchParams,
+  type StockMovementItem,
   type PieceItem,
   type ModeleItem,
 } from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import './SiteDetailPage.css'
 
 function formatDate(iso: string | null): string {
@@ -88,6 +89,23 @@ function pieceTypeClass(type?: string | null, categorie?: string | null): string
   return raw.replace(/\s+/g, '_').toLowerCase()
 }
 
+const STOCK_MOVEMENT_TYPE_LABELS: Record<string, string> = {
+  ENTREE: 'Entree',
+  SORTIE: 'Sortie',
+  AJUSTEMENT: 'Ajustement',
+  TRANSFERT: 'Transfert',
+}
+
+const STOCK_MOVEMENT_REASON_LABELS: Record<string, string> = {
+  INVENTAIRE: 'Inventaire',
+  LIVRAISON: 'Livraison',
+  DEPANNAGE: 'Depannage',
+  REAPPRO: 'Reappro',
+  CORRECTION: 'Correction',
+  TRANSFERT_SITE: 'Transfert site',
+  TRANSFERT_RESERVE: 'Transfert reserve',
+}
+
 /** Point de données pour le graphique consommation. */
 interface ChartPoint {
   date: string
@@ -137,6 +155,7 @@ function buildChartData(
 }
 
 export default function SiteDetailPage() {
+  const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
   const [site, setSite] = useState<SiteDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -147,6 +166,8 @@ export default function SiteDetailPage() {
   const [rapportsByImp, setRapportsByImp] = useState<Record<number, RapportImprimante[]>>({})
   const [alertesByImp, setAlertesByImp] = useState<Record<number, Alerte[]>>({})
   const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
+  const [adminStockQuantites, setAdminStockQuantites] = useState<Record<number, number>>({})
+  const [stockMovements, setStockMovements] = useState<StockMovementItem[]>([])
   const [search, setSearch] = useState<StockSearchParams>({})
   const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
@@ -155,22 +176,27 @@ export default function SiteDetailPage() {
     libelle: string
     refBis: string
     quantite: number
+    quantiteAdmin: number
     variant: string | null
     nature: string | null
     categorie: string | null
   } | null>(null)
   const [showAddForm, setShowAddForm] = useState(false)
-  const [addFormData, setAddFormData] = useState<{ modeleId: number | null; pieceId: number | null; quantite: number }>({
+  const [addFormData, setAddFormData] = useState<{ modeleId: number | null; pieceId: number | null; quantite: number; scope: 'TECH_VISIBLE' | 'ADMIN_ONLY' }>({
     modeleId: null,
     pieceId: null,
     quantite: 0,
+    scope: 'TECH_VISIBLE',
   })
   const [availablePieces, setAvailablePieces] = useState<PieceItem[]>([])
   const [loadingPieces, setLoadingPieces] = useState(false)
   const [allModeles, setAllModeles] = useState<ModeleItem[]>([])
   const [saving, setSaving] = useState(false)
+  const [quickSavingPieceId, setQuickSavingPieceId] = useState<number | null>(null)
   const scrollPositionRef = useRef<number>(0)
   const shouldRestoreScrollRef = useRef<boolean>(false)
+
+  const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
 
   const siteId = id ? parseInt(id, 10) : NaN
 
@@ -187,17 +213,25 @@ export default function SiteDetailPage() {
     if (!Number.isFinite(siteId)) return
     setLoading(true)
     setError(null)
-    Promise.all([fetchSiteDetail(siteId, appliedSearch), fetchModeles()])
-      .then(([data, modelesData]) => {
+    Promise.all([
+      fetchSiteDetail(siteId, appliedSearch),
+      fetchModeles(),
+      fetchSiteStockMovements(siteId, { limit: 20 }),
+    ])
+      .then(([data, modelesData, movementsData]) => {
         setSite(data)
         setAllModeles(modelesData)
+        setStockMovements(movementsData)
         const qty: Record<number, number> = {}
+        const adminQty: Record<number, number> = {}
         const refBis: Record<number, string> = {}
         for (const p of data.piecesAvecStocks ?? []) {
           qty[p.pieceId] = p.quantiteStockSite
+          adminQty[p.pieceId] = p.quantiteStockSiteAdminOnly ?? 0
           refBis[p.pieceId] = p.refBis ?? ''
         }
         setStockQuantites(qty)
+        setAdminStockQuantites(adminQty)
         setRefBisValues(refBis)
       })
       .catch((e) => {
@@ -237,47 +271,27 @@ export default function SiteDetailPage() {
     })
   }, [rapportsByImp])
 
-  const handleRefBisChange = useCallback(
-    async (pieceId: number, newRefBis: string) => {
-      if (!site) return
-      const prev = refBisValues[pieceId] ?? ''
-      setRefBisValues((r) => ({ ...r, [pieceId]: newRefBis }))
-      try {
-        await updatePieceRefBis(pieceId, newRefBis.trim() || null)
-        setSite((prevSite) => {
-          if (!prevSite) return prevSite
-          const pieces = (prevSite.piecesAvecStocks ?? []).map((p) =>
-            p.pieceId === pieceId ? { ...p, refBis: newRefBis.trim() || null } : p
-          )
-          return { ...prevSite, piecesAvecStocks: pieces }
-        })
-      } catch {
-        setRefBisValues((r) => ({ ...r, [pieceId]: prev }))
-      }
-    },
-    [site, refBisValues]
-  )
-
   const handleSearch = useCallback(() => setAppliedSearch({ ...search }), [search])
 
-  const handleStartEdit = useCallback((piece: { pieceId: number; libelle: string; refBis?: string | null; quantiteStockSite: number; variant?: string | null; nature?: string | null; categorie?: string | null }) => {
+  const handleStartEdit = useCallback((piece: { pieceId: number; libelle: string; refBis?: string | null; quantiteStockSite: number; quantiteStockSiteAdminOnly?: number; variant?: string | null; nature?: string | null; categorie?: string | null }) => {
     setEditingRowId(piece.pieceId)
     setEditingValues({
       libelle: piece.libelle,
       refBis: refBisValues[piece.pieceId] ?? piece.refBis ?? '',
       quantite: stockQuantites[piece.pieceId] ?? piece.quantiteStockSite,
+      quantiteAdmin: adminStockQuantites[piece.pieceId] ?? piece.quantiteStockSiteAdminOnly ?? 0,
       variant: piece.variant ?? null,
       nature: piece.nature ?? null,
       categorie: piece.categorie ?? null,
     })
-  }, [refBisValues, stockQuantites])
+  }, [refBisValues, stockQuantites, adminStockQuantites])
 
   const handleCancelEdit = useCallback(() => {
     setEditingRowId(null)
     setEditingValues(null)
   }, [])
 
-  const handleSaveEdit = useCallback(async (piece: { pieceId: number; libelle: string; refBis?: string | null; variant?: string | null; nature?: string | null; categorie?: string | null }) => {
+  const handleSaveEdit = useCallback(async (piece: { pieceId: number; libelle: string; refBis?: string | null; variant?: string | null; nature?: string | null; categorie?: string | null; quantiteStockSiteAdminOnly?: number }) => {
     if (!editingValues || !site || !Number.isFinite(siteId)) {
       console.error('Conditions non remplies pour la sauvegarde')
       return
@@ -368,9 +382,15 @@ export default function SiteDetailPage() {
       
       // Toujours mettre à jour le stock, même si la quantité n'a pas changé (au cas où)
       await upsertStock(siteId, piece.pieceId, editingValues.quantite)
+      if (isAdmin) {
+        await upsertStock(siteId, piece.pieceId, editingValues.quantiteAdmin, 'ADMIN_ONLY')
+      }
       
       setRefBisValues((r) => ({ ...r, [piece.pieceId]: editingValues.refBis }))
       setStockQuantites((q) => ({ ...q, [piece.pieceId]: editingValues.quantite }))
+      if (isAdmin) {
+        setAdminStockQuantites((q) => ({ ...q, [piece.pieceId]: editingValues.quantiteAdmin }))
+      }
       setEditingRowId(null)
       setEditingValues(null)
       
@@ -390,6 +410,7 @@ export default function SiteDetailPage() {
                   variant: pieceChanged && pieceUpdates.variant !== undefined ? pieceUpdates.variant : p.variant,
                   nature: pieceChanged && pieceUpdates.nature !== undefined ? pieceUpdates.nature : p.nature,
                   quantiteStockSite: editingValues.quantite,
+                  quantiteStockSiteAdminOnly: isAdmin ? editingValues.quantiteAdmin : p.quantiteStockSiteAdminOnly,
                 }
               }
               return p
@@ -410,7 +431,7 @@ export default function SiteDetailPage() {
     } finally {
       setSaving(false)
     }
-  }, [editingValues, site, siteId, refBisValues, stockQuantites, loadSite, saving])
+  }, [editingValues, site, siteId, refBisValues, stockQuantites, loadSite, saving, isAdmin])
 
   const handleModeleChange = useCallback(async (modeleId: number | null) => {
     setAddFormData((prev) => ({ ...prev, modeleId, pieceId: null }))
@@ -433,9 +454,9 @@ export default function SiteDetailPage() {
   const handleAddStock = useCallback(async () => {
     if (!addFormData.pieceId || !site || !Number.isFinite(siteId)) return
     try {
-      await upsertStock(siteId, addFormData.pieceId, addFormData.quantite)
+      await upsertStock(siteId, addFormData.pieceId, addFormData.quantite, addFormData.scope)
       setShowAddForm(false)
-      setAddFormData({ modeleId: null, pieceId: null, quantite: 0 })
+      setAddFormData({ modeleId: null, pieceId: null, quantite: 0, scope: 'TECH_VISIBLE' })
       setAvailablePieces([])
       loadSite()
     } catch (e) {
@@ -499,27 +520,6 @@ export default function SiteDetailPage() {
     }
   }, [site, siteId, loadSite])
 
-  const handleStockChange = useCallback(
-    async (pieceId: number, newQuantite: number) => {
-      if (!site || !Number.isFinite(siteId)) return
-      const prev = stockQuantites[pieceId] ?? 0
-      setStockQuantites((s) => ({ ...s, [pieceId]: newQuantite }))
-      try {
-        const updated = await upsertStock(siteId, pieceId, newQuantite)
-        setSite((prevSite) => {
-          if (!prevSite) return prevSite
-          const pieces = (prevSite.piecesAvecStocks ?? []).map((p) =>
-            p.pieceId === pieceId ? { ...p, quantiteStockSite: updated.quantite } : p
-          )
-          return { ...prevSite, piecesAvecStocks: pieces }
-        })
-      } catch {
-        setStockQuantites((s) => ({ ...s, [pieceId]: prev }))
-      }
-    },
-    [site, siteId, stockQuantites]
-  )
-
   if (loading) {
     return (
       <div className="site-detail-page">
@@ -542,6 +542,25 @@ export default function SiteDetailPage() {
 
   const imprimantes = site.imprimantes
   const piecesAvecStocks = site.piecesAvecStocks ?? []
+  const totalVisibleStock = piecesAvecStocks.reduce((sum, piece) => sum + (stockQuantites[piece.pieceId] ?? piece.quantiteStockSite ?? 0), 0)
+  const totalAdminStock = piecesAvecStocks.reduce((sum, piece) => sum + (adminStockQuantites[piece.pieceId] ?? piece.quantiteStockSiteAdminOnly ?? 0), 0)
+
+  const handleQuickStockSave = async (pieceId: number) => {
+    if (!Number.isFinite(siteId)) return
+    setQuickSavingPieceId(pieceId)
+    setError(null)
+    try {
+      await upsertStock(siteId, pieceId, Math.max(0, stockQuantites[pieceId] ?? 0))
+      if (isAdmin) {
+        await upsertStock(siteId, pieceId, Math.max(0, adminStockQuantites[pieceId] ?? 0), 'ADMIN_ONLY')
+      }
+      loadSite()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour stock')
+    } finally {
+      setQuickSavingPieceId(null)
+    }
+  }
 
   return (
     <div className="site-detail-page">
@@ -549,7 +568,35 @@ export default function SiteDetailPage() {
         <Link to="/" className="site-detail-back">← Retour aux sites</Link>
       </nav>
       <header className="site-detail-header">
-        <h1>{site.nom}</h1>
+        <div className="site-detail-header__top">
+          <div>
+            <h1>{site.nom}</h1>
+            <p className="site-detail-header__subtitle">Vue site terrain: imprimantes, stock visible et reserve admin.</p>
+          </div>
+          <Link to={`/interventions?siteId=${site.id}&create=1`} className="site-detail-header__cta">
+            CrÃ©er une intervention
+          </Link>
+        </div>
+        <div className="site-detail-summary">
+          <article className="site-detail-summary__card">
+            <span className="site-detail-summary__label">Imprimantes</span>
+            <strong className="site-detail-summary__value">{imprimantes.length}</strong>
+          </article>
+          <article className="site-detail-summary__card">
+            <span className="site-detail-summary__label">PiÃ¨ces suivies</span>
+            <strong className="site-detail-summary__value">{piecesAvecStocks.length}</strong>
+          </article>
+          <article className="site-detail-summary__card">
+            <span className="site-detail-summary__label">Stock visible site</span>
+            <strong className="site-detail-summary__value">{totalVisibleStock}</strong>
+          </article>
+          {isAdmin && (
+            <article className="site-detail-summary__card site-detail-summary__card--admin">
+              <span className="site-detail-summary__label">RÃ©serve admin</span>
+              <strong className="site-detail-summary__value">{totalAdminStock}</strong>
+            </article>
+          )}
+        </div>
       </header>
 
       {/* Onglets : Stocks | Imprimante 1 | Imprimante 2 | ... */}
@@ -646,7 +693,7 @@ export default function SiteDetailPage() {
           {showAddForm && (
             <div className="site-detail-add-form" style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #3f4147', borderRadius: '4px' }}>
               <h3 style={{ marginTop: 0 }}>Ajouter un stock</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
+              <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr 1fr 1fr auto' : '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
                 <div>
                   <label style={{ display: 'block', marginBottom: '0.25rem' }}>Modèle</label>
                   <select
@@ -688,6 +735,19 @@ export default function SiteDetailPage() {
                     style={{ width: '100%', padding: '0.5rem' }}
                   />
                 </div>
+                {isAdmin && (
+                  <div>
+                    <label style={{ display: 'block', marginBottom: '0.25rem' }}>PortÃ©e</label>
+                    <select
+                      value={addFormData.scope}
+                      onChange={(e) => setAddFormData((prev) => ({ ...prev, scope: e.target.value as 'TECH_VISIBLE' | 'ADMIN_ONLY' }))}
+                      style={{ width: '100%', padding: '0.5rem' }}
+                    >
+                      <option value="TECH_VISIBLE">Visible technicien</option>
+                      <option value="ADMIN_ONLY">RÃ©serve admin</option>
+                    </select>
+                  </div>
+                )}
                 <button
                   type="button"
                   onClick={handleAddStock}
@@ -705,7 +765,73 @@ export default function SiteDetailPage() {
               Aucune pièce. Associez des modèles aux imprimantes du site et liez des pièces à ces modèles (table modele_piece).
             </p>
           ) : (
-            <div className="pieces-table-wrap">
+            <>
+            <div className="pieces-cards">
+              {piecesAvecStocks.map((p) => (
+                <article key={`mobile-${p.pieceId}`} className="piece-card">
+                  <div className="piece-card__header">
+                    <div>
+                      <strong className="piece-card__ref">{p.reference}</strong>
+                      <h3>{p.libelle}</h3>
+                    </div>
+                    <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
+                      {pieceTypeLabel(p.categorie ?? p.type)}
+                    </span>
+                  </div>
+                  <div className="piece-card__meta">
+                    <span>Ref-bis: {refBisValues[p.pieceId] ?? p.refBis ?? '—'}</span>
+                    <span>Stock gÃ©nÃ©ral: {p.quantiteStockGeneral}</span>
+                  </div>
+                  {p.modeles && p.modeles.length > 0 && (
+                    <div className="piece-card__modeles">
+                      {p.modeles.map((m) => (
+                        <span key={m.id} className="piece-card__modele-chip">
+                          {m.constructeur} {m.nom}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  <div className="piece-card__stock-grid">
+                    <label>
+                      <span>Stock site</span>
+                      <input
+                        type="number"
+                        min={0}
+                        value={stockQuantites[p.pieceId] ?? p.quantiteStockSite}
+                        onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
+                        className="pieces-table__input"
+                      />
+                    </label>
+                    {isAdmin && (
+                      <label>
+                        <span>RÃ©serve admin</span>
+                        <input
+                          type="number"
+                          min={0}
+                          value={adminStockQuantites[p.pieceId] ?? p.quantiteStockSiteAdminOnly ?? 0}
+                          onChange={(e) => setAdminStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
+                          className="pieces-table__input"
+                        />
+                      </label>
+                    )}
+                  </div>
+                  <div className="piece-card__actions">
+                    <button
+                      type="button"
+                      className="piece-card__save-btn"
+                      disabled={quickSavingPieceId === p.pieceId}
+                      onClick={() => handleQuickStockSave(p.pieceId)}
+                    >
+                      {quickSavingPieceId === p.pieceId ? 'Enregistrement...' : 'Enregistrer'}
+                    </button>
+                    <Link to={`/interventions?siteId=${site.id}&create=1`} className="piece-card__link-btn">
+                      Intervention
+                    </Link>
+                  </div>
+                </article>
+              ))}
+            </div>
+            <div className="pieces-table-wrap pieces-table-wrap--desktop">
               <table className="pieces-table">
                 <thead>
                   <tr>
@@ -718,6 +844,7 @@ export default function SiteDetailPage() {
                     <th>Modèles</th>
                     <th className="pieces-table__th--num">Stock général (agent)</th>
                     <th className="pieces-table__th--num">Stock site</th>
+                    {isAdmin && <th className="pieces-table__th--num">RÃ©serve admin</th>}
                     <th>Actions</th>
                   </tr>
                 </thead>
@@ -926,6 +1053,31 @@ export default function SiteDetailPage() {
                             />
                           )}
                         </td>
+                        {isAdmin && (
+                          <td className="pieces-table__num">
+                            {isEditing && editingValues ? (
+                              <input
+                                type="number"
+                                min={0}
+                                value={editingValues.quantiteAdmin}
+                                onChange={(e) => {
+                                  const v = parseInt(e.target.value, 10)
+                                  if (!Number.isNaN(v) && v >= 0) setEditingValues((prev) => prev ? { ...prev, quantiteAdmin: v } : null)
+                                }}
+                                className="pieces-table__input"
+                              />
+                            ) : (
+                              <input
+                                type="number"
+                                min={0}
+                                value={adminStockQuantites[p.pieceId] ?? p.quantiteStockSiteAdminOnly ?? 0}
+                                readOnly
+                                className="pieces-table__input"
+                                style={{ backgroundColor: '#2b2d31' }}
+                              />
+                            )}
+                          </td>
+                        )}
                         <td style={{ backgroundColor: isEditing ? '#35373c' : 'inherit' }}>
                           {isEditing ? (
                             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'nowrap' }}>
@@ -1020,6 +1172,77 @@ export default function SiteDetailPage() {
                 </tbody>
               </table>
             </div>
+
+            <section className="site-detail-section">
+              <div className="stock-movements__header">
+                <div>
+                  <h3>Derniers mouvements de stock</h3>
+                  <p className="site-detail-section-desc">
+                    Historique recent des mouvements visibles pour ce site.
+                  </p>
+                </div>
+                <span className="stock-movements__count">{stockMovements.length}</span>
+              </div>
+
+              {stockMovements.length === 0 ? (
+                <p className="site-detail-empty">Aucun mouvement enregistre pour le moment.</p>
+              ) : (
+                <div className="stock-movements">
+                  {stockMovements.map((movement) => (
+                    <article key={movement.id} className="stock-movement-card">
+                      <div className="stock-movement-card__top">
+                        <div>
+                          <strong>{movement.piece.reference}</strong>
+                          <p>
+                            {movement.piece.libelle}
+                            {movement.piece.refBis ? ` - ${movement.piece.refBis}` : ''}
+                          </p>
+                        </div>
+                        <span
+                          className={
+                            'stock-movement-card__delta ' +
+                            (movement.quantityDelta > 0
+                              ? 'stock-movement-card__delta--positive'
+                              : 'stock-movement-card__delta--negative')
+                          }
+                        >
+                          {movement.quantityDelta > 0 ? '+' : ''}
+                          {movement.quantityDelta}
+                        </span>
+                      </div>
+
+                      <div className="stock-movement-card__meta">
+                        <span>{STOCK_MOVEMENT_TYPE_LABELS[movement.movementType] ?? movement.movementType}</span>
+                        <span>{STOCK_MOVEMENT_REASON_LABELS[movement.reason] ?? movement.reason}</span>
+                        <span>
+                          {movement.quantityBefore} → {movement.quantityAfter}
+                        </span>
+                        <span>
+                          {movement.user.firstName} {movement.user.lastName}
+                        </span>
+                        <span>{formatDate(movement.createdAt)}</span>
+                        {isAdmin && (
+                          <span>
+                            {movement.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
+                          </span>
+                        )}
+                      </div>
+
+                      {movement.commentaire && (
+                        <p className="stock-movement-card__comment">{movement.commentaire}</p>
+                      )}
+
+                      {movement.intervention && (
+                        <p className="stock-movement-card__comment">
+                          Intervention liee: {movement.intervention.title}
+                        </p>
+                      )}
+                    </article>
+                  ))}
+                </div>
+              )}
+            </section>
+            </>
           )}
         </section>
       )}
