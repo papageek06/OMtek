@@ -32,6 +32,19 @@ class UserController extends AbstractController
      * POST /api/users : créer un utilisateur (admin uniquement).
      * Body: { "email", "password", "firstName", "lastName", "roles": ["ROLE_TECH"] ou ["ROLE_ADMIN"] }
      */
+    #[Route('', name: 'list', methods: ['GET'])]
+    public function list(): JsonResponse|Response
+    {
+        $this->denyAccessUnlessGranted('ROLE_ADMIN');
+
+        $users = $this->userRepository->findBy([], ['createdAt' => 'DESC', 'id' => 'DESC']);
+
+        return new JsonResponse(array_map(
+            fn (User $user): array => $this->userToArray($user),
+            $users
+        ), Response::HTTP_OK);
+    }
+
     #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse|Response
     {

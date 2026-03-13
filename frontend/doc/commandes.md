@@ -27,3 +27,10 @@ npm run preview
 - **npm run preview** : Sert `dist/` localement pour tester le build.
 
 Variables d'environnement : voir `doc/config-prod.md` pour l'URL de l'API en prod.
+
+## Proxy API local
+
+La cible du proxy Vite est configurable via `VITE_PROXY_TARGET`.
+
+- Valeur par défaut : `http://127.0.0.1:8000`
+- Exemple HTTPS (Symfony CLI) : `VITE_PROXY_TARGET=https://127.0.0.1:8000 npm run dev`

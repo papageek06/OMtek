@@ -1,0 +1,145 @@
+.users-page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.users-page__nav {
+  display: flex;
+}
+
+.users-page__back {
+  color: #b5bac1;
+  text-decoration: none;
+  font-size: 0.9rem;
+}
+
+.users-page__back:hover {
+  color: #f2f3f5;
+}
+
+.users-page__header h1 {
+  margin: 0;
+  color: #f2f3f5;
+}
+
+.users-page__header p {
+  margin: 0.45rem 0 0;
+  color: #b5bac1;
+}
+
+.users-page__message,
+.users-page__error {
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.users-page__message {
+  background: rgba(35, 165, 90, 0.14);
+  border: 1px solid rgba(35, 165, 90, 0.25);
+  color: #57f287;
+}
+
+.users-page__error {
+  background: rgba(237, 66, 69, 0.14);
+  border: 1px solid rgba(237, 66, 69, 0.25);
+  color: #ff6b6b;
+}
+
+.users-card {
+  background: linear-gradient(180deg, rgba(43, 45, 49, 0.98), rgba(30, 31, 34, 0.98));
+  border: 1px solid #1e1f22;
+  border-radius: 16px;
+  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
+  padding: 1rem;
+}
+
+.users-card h2 {
+  margin: 0 0 0.9rem;
+  color: #f2f3f5;
+  font-size: 1.1rem;
+}
+
+.users-form {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.75rem;
+}
+
+.users-form label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.users-form span {
+  font-size: 0.82rem;
+  color: #b5bac1;
+}
+
+.users-form input,
+.users-form select {
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  background: #1e1f22;
+  color: #f2f3f5;
+  padding: 0.75rem 0.85rem;
+  font: inherit;
+}
+
+.users-page__primary-btn {
+  border: none;
+  border-radius: 10px;
+  padding: 0.7rem 1rem;
+  font-size: 0.92rem;
+  font-weight: 600;
+  cursor: pointer;
+  background: linear-gradient(135deg, #00a8fc, #1982ff);
+  color: #fff;
+  box-shadow: 0 10px 24px rgba(0, 168, 252, 0.2);
+}
+
+.users-page__primary-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.users-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.users-list li {
+  border: 1px solid #3f4147;
+  border-radius: 12px;
+  background: rgba(54, 55, 61, 0.8);
+  padding: 0.85rem;
+  display: grid;
+  gap: 0.2rem;
+}
+
+.users-list strong {
+  color: #f2f3f5;
+}
+
+.users-list span {
+  color: #b5bac1;
+  font-size: 0.88rem;
+}
+
+.users-page__empty {
+  color: #b5bac1;
+  margin: 0;
+}
+
+@media (max-width: 720px) {
+  .users-page {
+    padding: 1rem;
+  }
+}
+

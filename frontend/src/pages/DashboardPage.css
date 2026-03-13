@@ -81,6 +81,45 @@
   margin-top: 1.2rem;
 }
 
+.dashboard-home__admin-quick {
+  margin-top: 1rem;
+  padding: 1rem;
+  border: 1px solid rgba(0, 168, 252, 0.2);
+  border-radius: 16px;
+  background: linear-gradient(180deg, rgba(43, 45, 49, 0.96), rgba(30, 31, 34, 0.98));
+}
+
+.dashboard-home__admin-quick h2 {
+  margin: 0 0 0.8rem;
+  color: #f2f3f5;
+  font-size: 1rem;
+}
+
+.dashboard-home__admin-links {
+  display: grid;
+  gap: 0.6rem;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+
+.dashboard-home__admin-link {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 2.5rem;
+  padding: 0.55rem 0.75rem;
+  border-radius: 10px;
+  text-decoration: none;
+  border: 1px solid rgba(0, 168, 252, 0.24);
+  background: rgba(54, 55, 61, 0.8);
+  color: #cdeeff;
+  font-weight: 700;
+}
+
+.dashboard-home__admin-link:hover {
+  border-color: #00a8fc;
+  background: rgba(63, 65, 71, 0.9);
+}
+
 .dashboard-home__stat-card,
 .dashboard-home__panel,
 .dashboard-home__empty-state {

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Entity;
 
 use App\Entity\Enum\InterventionBillingStatus;
+use App\Entity\Enum\InterventionApprovalStatus;
 use App\Entity\Enum\InterventionPriority;
 use App\Entity\Enum\InterventionSource;
 use App\Entity\Enum\InterventionStatus;
@@ -17,6 +18,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(columns: ['site_id', 'statut'], name: 'idx_intervention_site_statut')]
 #[ORM\Index(columns: ['assigned_to_user_id', 'statut'], name: 'idx_intervention_assigned_statut')]
 #[ORM\Index(columns: ['billing_status'], name: 'idx_intervention_billing_status')]
+#[ORM\Index(columns: ['approval_status'], name: 'idx_intervention_approval_status')]
+#[ORM\Index(columns: ['approved_by_user_id'], name: 'idx_intervention_approved_by')]
 class Intervention
 {
     #[ORM\Id]
@@ -40,6 +43,10 @@ class Intervention
     #[ORM\JoinColumn(name: 'assigned_to_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
     private ?User $assignedTo = null;
 
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'approved_by_user_id', referencedColumnName: 'id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $approvedBy = null;
+
     #[ORM\ManyToOne(targetEntity: Alerte::class)]
     #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
     private ?Alerte $sourceAlerte = null;
@@ -59,6 +66,9 @@ class Intervention
     #[ORM\Column(name: 'billing_status', type: Types::STRING, length: 20, enumType: InterventionBillingStatus::class)]
     private InterventionBillingStatus $billingStatus = InterventionBillingStatus::NON_FACTURE;
 
+    #[ORM\Column(name: 'approval_status', type: Types::STRING, length: 20, enumType: InterventionApprovalStatus::class, options: ['default' => 'DRAFT'])]
+    private InterventionApprovalStatus $approvalStatus = InterventionApprovalStatus::DRAFT;
+
     #[ORM\Column(type: Types::STRING, length: 160)]
     private string $title = '';
 
@@ -73,6 +83,15 @@ class Intervention
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $closedAt = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $submittedAt = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $approvedAt = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $approvalNote = null;
 
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
     private bool $archived = false;
@@ -138,6 +157,17 @@ class Intervention
     public function setAssignedTo(?User $assignedTo): static
     {
         $this->assignedTo = $assignedTo;
+        return $this;
+    }
+
+    public function getApprovedBy(): ?User
+    {
+        return $this->approvedBy;
+    }
+
+    public function setApprovedBy(?User $approvedBy): static
+    {
+        $this->approvedBy = $approvedBy;
         return $this;
     }
 
@@ -207,6 +237,17 @@ class Intervention
         return $this;
     }
 
+    public function getApprovalStatus(): InterventionApprovalStatus
+    {
+        return $this->approvalStatus;
+    }
+
+    public function setApprovalStatus(InterventionApprovalStatus $approvalStatus): static
+    {
+        $this->approvalStatus = $approvalStatus;
+        return $this;
+    }
+
     public function getTitle(): string
     {
         return $this->title;
@@ -259,6 +300,39 @@ class Intervention
     public function setClosedAt(?\DateTimeImmutable $closedAt): static
     {
         $this->closedAt = $closedAt;
+        return $this;
+    }
+
+    public function getSubmittedAt(): ?\DateTimeImmutable
+    {
+        return $this->submittedAt;
+    }
+
+    public function setSubmittedAt(?\DateTimeImmutable $submittedAt): static
+    {
+        $this->submittedAt = $submittedAt;
+        return $this;
+    }
+
+    public function getApprovedAt(): ?\DateTimeImmutable
+    {
+        return $this->approvedAt;
+    }
+
+    public function setApprovedAt(?\DateTimeImmutable $approvedAt): static
+    {
+        $this->approvedAt = $approvedAt;
+        return $this;
+    }
+
+    public function getApprovalNote(): ?string
+    {
+        return $this->approvalNote;
+    }
+
+    public function setApprovalNote(?string $approvalNote): static
+    {
+        $this->approvalNote = $approvalNote;
         return $this;
     }
 

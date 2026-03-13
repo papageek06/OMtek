@@ -3,10 +3,14 @@
 ## Documentation projet
 
 - Audit architecture et backlog : `docs/architecture-audit.md`
+- Audit architecture actualise : `docs/audit-architecture-2026-03-12.md`
 - Organisation des agents : `AGENTS.md`
 - Questionnaire client : `docs/questionnaire-client.md`
 - Schema BDD cible : `docs/data-architecture-target.md`
 - Strategie de tests : `docs/test-strategy.md`
+- Documentation fonctionnalites : `docs/documentation-fonctionnalites.md`
+- Resume des echanges projet : `docs/resume-conversation-projet.md`
+- Etude faisabilite comptable : `docs/etude-faisabilite-comptable-2026-03-12.md`
 
 ## Structure
 
@@ -27,7 +31,7 @@
 cd api
 composer install
 php bin/console doctrine:migrations:migrate --no-interaction
-php -S localhost:8000 -t public
+php -S 127.0.0.1:8000 -t public public/index.php
 ```
 
 API disponible sur `http://localhost:8000`.

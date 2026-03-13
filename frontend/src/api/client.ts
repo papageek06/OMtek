@@ -179,6 +179,37 @@ export async function updateProfile(patch: ProfileUpdate): Promise<User> {
   return data.user ?? data
 }
 
+export interface UserCreatePayload {
+  email: string
+  password: string
+  firstName: string
+  lastName: string
+  roles: string[]
+}
+
+export async function fetchUsers(): Promise<User[]> {
+  const res = await apiFetch(`${API_BASE}/users`)
+  const body = await res.json().catch(() => [])
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement utilisateurs')
+  }
+  return body
+}
+
+export async function createUser(data: UserCreatePayload): Promise<User> {
+  const res = await apiFetch(`${API_BASE}/users`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = (body?.error as string) || (body?.errors ? JSON.stringify(body.errors) : 'Erreur creation utilisateur')
+    throw new Error(err)
+  }
+  return body
+}
+
 // --- Items (legacy, pour compat) ---
 
 export interface Item {
@@ -339,6 +370,7 @@ export interface InterventionItem {
   priorite: string
   statut: string
   billingStatus: string
+  approvalStatus?: string
   archived: boolean
   title: string
   description: string | null
@@ -367,6 +399,15 @@ export interface InterventionItem {
   sourceAlerteId: number | null
   startedAt: string | null
   closedAt: string | null
+  submittedAt?: string | null
+  approvedAt?: string | null
+  approvedBy?: {
+    id: number
+    email: string
+    firstName: string
+    lastName: string
+  } | null
+  approvalNote?: string | null
   archivedAt: string | null
   createdAt: string
   updatedAt: string
@@ -375,6 +416,7 @@ export interface InterventionItem {
 export interface InterventionFilters {
   statut?: string
   billingStatus?: string
+  approvalStatus?: string
   archived?: 'all' | 'true' | 'false'
   siteId?: number
 }
@@ -417,6 +459,7 @@ export async function fetchInterventions(filters?: InterventionFilters): Promise
   const sp = new URLSearchParams()
   if (filters?.statut) sp.set('statut', filters.statut)
   if (filters?.billingStatus) sp.set('billingStatus', filters.billingStatus)
+  if (filters?.approvalStatus) sp.set('approvalStatus', filters.approvalStatus)
   if (filters?.archived) sp.set('archived', filters.archived)
   if (filters?.siteId != null) sp.set('siteId', String(filters.siteId))
   const qs = sp.toString()
@@ -450,6 +493,383 @@ export async function updateIntervention(id: number, data: InterventionUpdatePay
     throw new Error((body?.error as string) || 'Erreur mise a jour intervention')
   }
   return body
+}
+
+export async function submitInterventionForApproval(id: number): Promise<InterventionItem> {
+  const res = await apiFetch(`${API_BASE}/interventions/${id}/submit`, {
+    method: 'POST',
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur soumission intervention')
+  }
+  return body
+}
+
+export async function approveIntervention(id: number, approvalNote?: string): Promise<InterventionItem> {
+  const res = await apiFetch(`${API_BASE}/interventions/${id}/approve`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approvalNote: approvalNote ?? '' }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur validation intervention')
+  }
+  return body
+}
+
+export async function rejectIntervention(id: number, approvalNote: string): Promise<InterventionItem> {
+  const res = await apiFetch(`${API_BASE}/interventions/${id}/reject`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ approvalNote }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur rejet intervention')
+  }
+  return body
+}
+
+// --- Contrats / Facturation ---
+
+export interface ContractItem {
+  id: number
+  reference: string
+  libelle: string
+  periodicite: 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  statut: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED'
+  dateDebut: string
+  dateFin: string | null
+  forfaitMaintenance: string
+  devise: string
+  notes: string | null
+  site: {
+    id: number
+    nom: string
+  }
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ContractFilters {
+  siteId?: number
+  statut?: string
+  periodicite?: string
+}
+
+export interface ContractCreatePayload {
+  siteId: number
+  reference: string
+  libelle: string
+  periodicite: 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  statut?: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED'
+  dateDebut: string
+  dateFin?: string | null
+  forfaitMaintenance?: string
+  devise?: string
+  notes?: string | null
+}
+
+export type ContractUpdatePayload = Partial<ContractCreatePayload>
+
+export interface ContractRateItem {
+  id: number
+  dateEffet: string
+  prixPageNoir: string
+  prixPageCouleur: string
+  coefficientIndexation: string
+  createdAt: string
+}
+
+export interface ContractRateCreatePayload {
+  dateEffet: string
+  prixPageNoir: string
+  prixPageCouleur: string
+  coefficientIndexation?: string
+}
+
+export type ContractRateUpdatePayload = Partial<ContractRateCreatePayload>
+
+export interface ContractIndexationItem {
+  id: number
+  dateEffet: string
+  type: 'MANUAL_COEFFICIENT' | 'FIXED_PERCENTAGE' | 'EXTERNAL_INDEX'
+  valeur: string
+  commentaire: string | null
+  createdAt: string
+}
+
+export interface ContractIndexationCreatePayload {
+  dateEffet: string
+  type: 'MANUAL_COEFFICIENT' | 'FIXED_PERCENTAGE' | 'EXTERNAL_INDEX'
+  valeur: string
+  commentaire?: string | null
+}
+
+export type ContractIndexationUpdatePayload = Partial<ContractIndexationCreatePayload>
+
+export interface BillingPeriodItem {
+  id: number
+  contratId: number
+  dateDebut: string
+  dateFin: string
+  statut: 'DRAFT' | 'READY' | 'LOCKED' | 'EXPORTED'
+  totalHt: string
+  lineCount: number
+  generatedAt: string
+  lockedAt: string | null
+}
+
+export interface BillingLineItem {
+  id: number
+  type: string
+  description: string
+  quantite: string
+  prixUnitaireHt: string
+  montantHt: string
+  interventionId: number | null
+  imprimanteId: number | null
+  meta: Record<string, unknown> | null
+  createdAt: string
+}
+
+export interface BillingPeriodDetail extends BillingPeriodItem {
+  contrat: {
+    id: number
+    reference: string
+    libelle: string
+    site: {
+      id: number
+      nom: string
+    }
+  }
+  lignes: BillingLineItem[]
+}
+
+export interface BillingPeriodGeneratePayload {
+  dateDebut?: string
+  dateFin?: string
+  replaceExisting?: boolean
+  interventionUnitPriceHt?: string
+}
+
+export async function fetchContracts(filters?: ContractFilters): Promise<ContractItem[]> {
+  const sp = new URLSearchParams()
+  if (filters?.siteId != null) sp.set('siteId', String(filters.siteId))
+  if (filters?.statut) sp.set('statut', filters.statut)
+  if (filters?.periodicite) sp.set('periodicite', filters.periodicite)
+  const qs = sp.toString()
+  const url = `${API_BASE}/contracts` + (qs ? `?${qs}` : '')
+  const res = await apiFetch(url)
+  const body = await res.json().catch(() => [])
+  if (!res.ok) {
+    const err = (body?.error as string) || 'Erreur chargement contrats'
+    throw new Error(err)
+  }
+  return body
+}
+
+export async function createContract(data: ContractCreatePayload): Promise<ContractItem> {
+  const res = await apiFetch(`${API_BASE}/contracts`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur creation contrat')
+  }
+  return body
+}
+
+export async function fetchContract(id: number): Promise<ContractItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${id}`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement contrat')
+  }
+  return body
+}
+
+export async function updateContract(id: number, data: ContractUpdatePayload): Promise<ContractItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour contrat')
+  }
+  return body
+}
+
+export async function deleteContract(id: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/contracts/${id}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression contrat')
+  }
+}
+
+export async function fetchContractRates(contractId: number): Promise<ContractRateItem[]> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates`)
+  const body = await res.json().catch(() => [])
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement tarifs')
+  }
+  return body
+}
+
+export async function createContractRate(contractId: number, data: ContractRateCreatePayload): Promise<ContractRateItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur creation tarif')
+  }
+  return body
+}
+
+export async function updateContractRate(
+  contractId: number,
+  rateId: number,
+  data: ContractRateUpdatePayload
+): Promise<ContractRateItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates/${rateId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour tarif')
+  }
+  return body
+}
+
+export async function deleteContractRate(contractId: number, rateId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates/${rateId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression tarif')
+  }
+}
+
+export async function fetchContractIndexations(contractId: number): Promise<ContractIndexationItem[]> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations`)
+  const body = await res.json().catch(() => [])
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement indexations')
+  }
+  return body
+}
+
+export async function createContractIndexation(
+  contractId: number,
+  data: ContractIndexationCreatePayload
+): Promise<ContractIndexationItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur creation indexation')
+  }
+  return body
+}
+
+export async function updateContractIndexation(
+  contractId: number,
+  indexationId: number,
+  data: ContractIndexationUpdatePayload
+): Promise<ContractIndexationItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations/${indexationId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour indexation')
+  }
+  return body
+}
+
+export async function deleteContractIndexation(contractId: number, indexationId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations/${indexationId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression indexation')
+  }
+}
+
+export async function fetchBillingPeriods(contractId: number): Promise<BillingPeriodItem[]> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/billing-periods`)
+  const body = await res.json().catch(() => [])
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement periodes')
+  }
+  return body
+}
+
+export async function generateBillingPeriod(
+  contractId: number,
+  data: BillingPeriodGeneratePayload
+): Promise<BillingPeriodDetail> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/billing-periods/generate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur generation periode')
+  }
+  return body
+}
+
+export async function fetchBillingPeriodPreview(periodId: number): Promise<BillingPeriodDetail> {
+  const res = await apiFetch(`${API_BASE}/billing-periods/${periodId}/preview`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement preview periode')
+  }
+  return body
+}
+
+export async function lockBillingPeriod(periodId: number): Promise<BillingPeriodDetail> {
+  const res = await apiFetch(`${API_BASE}/billing-periods/${periodId}/lock`, {
+    method: 'POST',
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur verrouillage periode')
+  }
+  return body
+}
+
+export async function deleteBillingPeriod(periodId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/billing-periods/${periodId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression periode')
+  }
 }
 
 export interface PieceAvecStocks {

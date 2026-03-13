@@ -37,7 +37,8 @@
 }
 
 .interventions-page__primary-btn,
-.intervention-card__secondary-btn {
+.intervention-card__secondary-btn,
+.intervention-card__danger-btn {
   border: none;
   border-radius: 10px;
   padding: 0.7rem 1rem;
@@ -53,7 +54,8 @@
 }
 
 .interventions-page__primary-btn:disabled,
-.intervention-card__secondary-btn:disabled {
+.intervention-card__secondary-btn:disabled,
+.intervention-card__danger-btn:disabled {
   opacity: 0.6;
   cursor: not-allowed;
 }
@@ -62,6 +64,12 @@
   background: rgba(255, 255, 255, 0.07);
   color: #f2f3f5;
   border: 1px solid #3f4147;
+}
+
+.intervention-card__danger-btn {
+  background: rgba(237, 66, 69, 0.2);
+  color: #ffd5d6;
+  border: 1px solid rgba(237, 66, 69, 0.4);
 }
 
 .interventions-page__message,
@@ -232,6 +240,26 @@
 .intervention-chip--archived {
   background: rgba(255, 255, 255, 0.08);
   color: #d2d4d7;
+}
+
+.intervention-chip--draft {
+  background: rgba(255, 255, 255, 0.08);
+  color: #d2d4d7;
+}
+
+.intervention-chip--submitted {
+  background: rgba(0, 168, 252, 0.18);
+  color: #85d6ff;
+}
+
+.intervention-chip--approved {
+  background: rgba(35, 165, 90, 0.2);
+  color: #72f3a0;
+}
+
+.intervention-chip--rejected {
+  background: rgba(237, 66, 69, 0.2);
+  color: #ff9091;
 }
 
 .intervention-card h2 {

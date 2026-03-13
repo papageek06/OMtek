@@ -1,9 +1,12 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import {
+  approveIntervention,
   createIntervention,
   fetchInterventions,
   fetchSites,
+  rejectIntervention,
+  submitInterventionForApproval,
   updateIntervention,
   UnauthorizedError,
   type InterventionFilters,
@@ -18,6 +21,7 @@ const TYPE_OPTIONS = ['LIVRAISON_TONER', 'DEPANNAGE', 'TELEMAINTENANCE', 'AUTRE'
 const SOURCE_OPTIONS = ['MANUEL', 'ALERTE_MAIL', 'SUPERVISION', 'ABSENCE_SCAN'] as const
 const PRIORITY_OPTIONS = ['BASSE', 'NORMALE', 'HAUTE', 'CRITIQUE'] as const
 const BILLING_OPTIONS = ['NON_FACTURE', 'A_FACTURER'] as const
+const APPROVAL_OPTIONS = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] as const
 
 const STATUS_LABELS: Record<string, string> = {
   A_FAIRE: 'A faire',
@@ -50,6 +54,13 @@ const PRIORITY_LABELS: Record<string, string> = {
 const BILLING_LABELS: Record<string, string> = {
   NON_FACTURE: 'Non facture',
   A_FACTURER: 'A facturer',
+}
+
+const APPROVAL_LABELS: Record<string, string> = {
+  DRAFT: 'Brouillon',
+  SUBMITTED: 'Soumise',
+  APPROVED: 'Validee',
+  REJECTED: 'Rejetee',
 }
 
 function formatDate(iso: string | null): string {
@@ -172,6 +183,60 @@ export default function InterventionsPage() {
       setMessage('Intervention mise a jour')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur mise a jour intervention')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleSubmitForApproval = async (intervention: InterventionItem) => {
+    setSubmitting(true)
+    setError(null)
+    setMessage(null)
+    try {
+      await submitInterventionForApproval(intervention.id)
+      await loadData()
+      setMessage('Intervention soumise a validation admin')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur soumission validation')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleApprove = async (intervention: InterventionItem) => {
+    const note = window.prompt('Note de validation (optionnelle):', '') ?? ''
+    setSubmitting(true)
+    setError(null)
+    setMessage(null)
+    try {
+      await approveIntervention(intervention.id, note)
+      await loadData()
+      setMessage('Intervention validee')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur validation intervention')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const handleReject = async (intervention: InterventionItem) => {
+    const note = window.prompt('Motif du rejet (obligatoire):', '')
+    if (note === null) {
+      return
+    }
+    if (note.trim() === '') {
+      setError('Un motif est requis pour rejeter une intervention')
+      return
+    }
+    setSubmitting(true)
+    setError(null)
+    setMessage(null)
+    try {
+      await rejectIntervention(intervention.id, note.trim())
+      await loadData()
+      setMessage('Intervention rejetee')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur rejet intervention')
     } finally {
       setSubmitting(false)
     }
@@ -360,6 +425,23 @@ export default function InterventionsPage() {
 
         {isAdmin && (
           <label>
+            <span>Validation</span>
+            <select
+              value={filters.approvalStatus ?? ''}
+              onChange={(e) => setFilters((prev) => ({ ...prev, approvalStatus: e.target.value || undefined }))}
+            >
+              <option value="">Toutes</option>
+              {APPROVAL_OPTIONS.map((value) => (
+                <option key={value} value={value}>
+                  {APPROVAL_LABELS[value]}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
+
+        {isAdmin && (
+          <label>
             <span>Archive</span>
             <select
               value={filters.archived ?? 'false'}
@@ -379,8 +461,17 @@ export default function InterventionsPage() {
         <p className="interventions-page__empty">Aucune intervention pour ces filtres.</p>
       ) : (
         <div className="interventions-list">
-          {interventions.map((intervention) => (
-            <article key={intervention.id} className="intervention-card">
+          {interventions.map((intervention) => {
+            const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
+            const canSubmitForApproval =
+              !isAdmin &&
+              intervention.statut === 'TERMINEE' &&
+              (approvalStatus === 'DRAFT' || approvalStatus === 'REJECTED')
+            const canApprove = isAdmin && approvalStatus === 'SUBMITTED'
+            const canReject = isAdmin && (approvalStatus === 'SUBMITTED' || approvalStatus === 'APPROVED')
+
+            return (
+              <article key={intervention.id} className="intervention-card">
               <div className="intervention-card__top">
                 <div>
                   <div className="intervention-card__eyebrow">
@@ -395,6 +486,9 @@ export default function InterventionsPage() {
                         {BILLING_LABELS[intervention.billingStatus] ?? intervention.billingStatus}
                       </span>
                     )}
+                    <span className={`intervention-chip intervention-chip--${statusClass(approvalStatus)}`}>
+                      Validation: {APPROVAL_LABELS[approvalStatus] ?? approvalStatus}
+                    </span>
                     {intervention.archived && (
                       <span className="intervention-chip intervention-chip--archived">Archivee</span>
                     )}
@@ -419,6 +513,14 @@ export default function InterventionsPage() {
                 <span>Assigne: {intervention.assignedTo ? `${intervention.assignedTo.firstName} ${intervention.assignedTo.lastName}` : 'Non assignee'}</span>
                 <span>Debut: {formatDate(intervention.startedAt)}</span>
                 <span>Cloture: {formatDate(intervention.closedAt)}</span>
+                <span>Soumise: {formatDate(intervention.submittedAt ?? null)}</span>
+                <span>Validee: {formatDate(intervention.approvedAt ?? null)}</span>
+                {intervention.approvedBy && (
+                  <span>Validee par: {intervention.approvedBy.firstName} {intervention.approvedBy.lastName}</span>
+                )}
+                {intervention.approvalNote && (
+                  <span>Note validation: {intervention.approvalNote}</span>
+                )}
               </div>
 
               <div className="intervention-card__actions">
@@ -464,9 +566,43 @@ export default function InterventionsPage() {
                     {intervention.archived ? 'Desarchiver' : 'Archiver'}
                   </button>
                 )}
+
+                {canSubmitForApproval && (
+                  <button
+                    type="button"
+                    className="interventions-page__primary-btn"
+                    onClick={() => handleSubmitForApproval(intervention)}
+                    disabled={submitting}
+                  >
+                    Soumettre validation
+                  </button>
+                )}
+
+                {canApprove && (
+                  <button
+                    type="button"
+                    className="interventions-page__primary-btn"
+                    onClick={() => handleApprove(intervention)}
+                    disabled={submitting}
+                  >
+                    Valider
+                  </button>
+                )}
+
+                {canReject && (
+                  <button
+                    type="button"
+                    className="intervention-card__danger-btn"
+                    onClick={() => handleReject(intervention)}
+                    disabled={submitting}
+                  >
+                    Rejeter
+                  </button>
+                )}
               </div>
-            </article>
-          ))}
+              </article>
+            )
+          })}
         </div>
       )}
     </div>

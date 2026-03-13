@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace App\Controller\Api;
 
 use App\Entity\Alerte;
+use App\Entity\Enum\InterventionApprovalStatus;
 use App\Entity\Enum\InterventionBillingStatus;
 use App\Entity\Enum\InterventionPriority;
 use App\Entity\Enum\InterventionSource;
@@ -50,6 +51,12 @@ class InterventionController extends AbstractController
         if ($billingStatus && $this->isAdmin()) {
             $qb->andWhere('i.billingStatus = :billingStatus')
                 ->setParameter('billingStatus', $billingStatus->value);
+        }
+
+        $approvalStatus = InterventionApprovalStatus::tryFrom((string) $request->query->get('approvalStatus', ''));
+        if ($approvalStatus) {
+            $qb->andWhere('i.approvalStatus = :approvalStatus')
+                ->setParameter('approvalStatus', $approvalStatus->value);
         }
 
         $siteId = $request->query->get('siteId');
@@ -144,6 +151,129 @@ class InterventionController extends AbstractController
         return new JsonResponse($this->toArray($intervention), Response::HTTP_OK);
     }
 
+    #[Route('/{id}/submit', name: 'submit', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function submit(int $id): JsonResponse|Response
+    {
+        $intervention = $this->em->getRepository(Intervention::class)->find($id);
+        if (!$intervention) {
+            return new JsonResponse(['error' => 'Intervention non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccess($intervention)) {
+            return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
+        }
+        if ($intervention->isArchived()) {
+            return new JsonResponse(['error' => 'Intervention archivee'], Response::HTTP_BAD_REQUEST);
+        }
+        if ($intervention->getStatus() !== InterventionStatus::TERMINEE) {
+            return new JsonResponse(['error' => 'Intervention doit etre terminee avant soumission'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $now = new \DateTimeImmutable();
+        $intervention
+            ->setApprovalStatus(InterventionApprovalStatus::SUBMITTED)
+            ->setSubmittedAt($now)
+            ->setApprovedAt(null)
+            ->setApprovedBy(null)
+            ->setApprovalNote(null)
+            ->setUpdatedAt($now);
+
+        $this->em->flush();
+
+        return new JsonResponse($this->toArray($intervention), Response::HTTP_OK);
+    }
+
+    #[Route('/{id}/approve', name: 'approve', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function approve(int $id, Request $request): JsonResponse|Response
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return new JsonResponse(['error' => 'Non authentifie'], Response::HTTP_UNAUTHORIZED);
+        }
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
+        }
+
+        $intervention = $this->em->getRepository(Intervention::class)->find($id);
+        if (!$intervention) {
+            return new JsonResponse(['error' => 'Intervention non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+        if ($intervention->isArchived()) {
+            return new JsonResponse(['error' => 'Intervention archivee'], Response::HTTP_BAD_REQUEST);
+        }
+        if ($intervention->getStatus() !== InterventionStatus::TERMINEE) {
+            return new JsonResponse(['error' => 'Intervention doit etre terminee avant validation'], Response::HTTP_BAD_REQUEST);
+        }
+        if ($intervention->getApprovalStatus() !== InterventionApprovalStatus::SUBMITTED) {
+            return new JsonResponse(['error' => 'Intervention non soumise a validation'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $approvalNote = null;
+        if (\is_array($data) && array_key_exists('approvalNote', $data)) {
+            $approvalNote = trim((string) $data['approvalNote']) ?: null;
+        }
+
+        $now = new \DateTimeImmutable();
+        $intervention
+            ->setApprovalStatus(InterventionApprovalStatus::APPROVED)
+            ->setSubmittedAt($intervention->getSubmittedAt() ?? $now)
+            ->setApprovedAt($now)
+            ->setApprovedBy($user)
+            ->setApprovalNote($approvalNote)
+            ->setUpdatedAt($now);
+
+        $this->em->flush();
+
+        return new JsonResponse($this->toArray($intervention), Response::HTTP_OK);
+    }
+
+    #[Route('/{id}/reject', name: 'reject', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function reject(int $id, Request $request): JsonResponse|Response
+    {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return new JsonResponse(['error' => 'Non authentifie'], Response::HTTP_UNAUTHORIZED);
+        }
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
+        }
+
+        $intervention = $this->em->getRepository(Intervention::class)->find($id);
+        if (!$intervention) {
+            return new JsonResponse(['error' => 'Intervention non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+        if ($intervention->isArchived()) {
+            return new JsonResponse(['error' => 'Intervention archivee'], Response::HTTP_BAD_REQUEST);
+        }
+        if (
+            $intervention->getApprovalStatus() !== InterventionApprovalStatus::SUBMITTED
+            && $intervention->getApprovalStatus() !== InterventionApprovalStatus::APPROVED
+        ) {
+            return new JsonResponse(['error' => 'Intervention non soumise a validation'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!\is_array($data)) {
+            return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
+        }
+        $approvalNote = trim((string) ($data['approvalNote'] ?? ''));
+        if ($approvalNote === '') {
+            return new JsonResponse(['error' => 'approvalNote requis pour un rejet'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $now = new \DateTimeImmutable();
+        $intervention
+            ->setApprovalStatus(InterventionApprovalStatus::REJECTED)
+            ->setApprovedAt($now)
+            ->setApprovedBy($user)
+            ->setApprovalNote($approvalNote)
+            ->setUpdatedAt($now);
+
+        $this->em->flush();
+
+        return new JsonResponse($this->toArray($intervention), Response::HTTP_OK);
+    }
+
     private function canAccess(Intervention $intervention): bool
     {
         $user = $this->getUser();
@@ -168,7 +298,17 @@ class InterventionController extends AbstractController
             return $data;
         }
 
-        unset($data['billingStatus'], $data['archived'], $data['archivedAt'], $data['assignedToUserId']);
+        unset(
+            $data['billingStatus'],
+            $data['archived'],
+            $data['archivedAt'],
+            $data['assignedToUserId'],
+            $data['approvalStatus'],
+            $data['submittedAt'],
+            $data['approvedAt'],
+            $data['approvedByUserId'],
+            $data['approvalNote'],
+        );
 
         return $data;
     }
@@ -312,6 +452,7 @@ class InterventionController extends AbstractController
             'priorite' => $intervention->getPriorite()->value,
             'statut' => $intervention->getStatus()->value,
             'billingStatus' => $intervention->getBillingStatus()->value,
+            'approvalStatus' => $intervention->getApprovalStatus()->value,
             'archived' => $intervention->isArchived(),
             'title' => $intervention->getTitle(),
             'description' => $intervention->getDescription(),
@@ -337,9 +478,18 @@ class InterventionController extends AbstractController
                 'firstName' => $intervention->getAssignedTo()?->getFirstName(),
                 'lastName' => $intervention->getAssignedTo()?->getLastName(),
             ] : null,
+            'approvedBy' => $intervention->getApprovedBy() ? [
+                'id' => $intervention->getApprovedBy()?->getId(),
+                'email' => $intervention->getApprovedBy()?->getEmail(),
+                'firstName' => $intervention->getApprovedBy()?->getFirstName(),
+                'lastName' => $intervention->getApprovedBy()?->getLastName(),
+            ] : null,
+            'approvalNote' => $intervention->getApprovalNote(),
             'sourceAlerteId' => $intervention->getSourceAlerte()?->getId(),
             'startedAt' => $intervention->getStartedAt()?->format(\DateTimeInterface::ATOM),
             'closedAt' => $intervention->getClosedAt()?->format(\DateTimeInterface::ATOM),
+            'submittedAt' => $intervention->getSubmittedAt()?->format(\DateTimeInterface::ATOM),
+            'approvedAt' => $intervention->getApprovedAt()?->format(\DateTimeInterface::ATOM),
             'archivedAt' => $intervention->getArchivedAt()?->format(\DateTimeInterface::ATOM),
             'createdAt' => $intervention->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'updatedAt' => $intervention->getUpdatedAt()->format(\DateTimeInterface::ATOM),
