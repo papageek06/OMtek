@@ -31,6 +31,7 @@
 cd api
 composer install
 php bin/console doctrine:migrations:migrate --no-interaction
+php bin/console app:user:bootstrap-admin --email=admin@votre-domaine.fr --password='MotDePasseFort!'
 php -S 127.0.0.1:8000 -t public public/index.php
 ```
 

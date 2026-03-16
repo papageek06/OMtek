@@ -1,0 +1,23 @@
+﻿{
+    "terminal.integrated.defaultProfile.windows": "PowerShell (Normalized)",
+    "terminal.integrated.profiles.windows": {
+        "PowerShell (Normalized)": {
+            "source": "PowerShell",
+            "args": [
+                "-NoLogo",
+                "-NoExit",
+                "-Command",
+                "$p=(Get-Location).ProviderPath; if($p -and $p.StartsWith('\\\\?\\')){ Set-Location -LiteralPath $p.Substring(4) }"
+            ]
+        }
+    },
+    "terminal.integrated.automationProfile.windows": {
+        "source": "PowerShell",
+        "args": [
+            "-NoLogo",
+            "-NoProfile",
+            "-Command",
+            "$p=(Get-Location).ProviderPath; if($p -and $p.StartsWith('\\\\?\\')){ Set-Location -LiteralPath $p.Substring(4) }"
+        ]
+    }
+}

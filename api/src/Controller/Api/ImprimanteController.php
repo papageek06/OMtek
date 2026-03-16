@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Entity\Enum\ContractStatus;
 use App\Entity\Imprimante;
+use App\Entity\LigneContrat;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use Doctrine\ORM\EntityManagerInterface;
@@ -113,6 +115,15 @@ class ImprimanteController extends AbstractController
 
         if (array_key_exists('siteId', $body)) {
             $siteId = $body['siteId'];
+            $requestedSiteId = ($siteId === null || $siteId === '') ? null : (int) $siteId;
+            $currentSiteId = $imprimante->getSite()?->getId();
+
+            if ($requestedSiteId !== $currentSiteId && $this->hasActiveContractLink($imprimante)) {
+                return new JsonResponse([
+                    'error' => 'Changement de site interdit: imprimante liee a un contrat actif. Utiliser le workflow de remplacement.',
+                ], Response::HTTP_CONFLICT);
+            }
+
             if ($siteId === null || $siteId === '') {
                 $imprimante->setSite(null);
             } else {
@@ -195,5 +206,27 @@ class ImprimanteController extends AbstractController
             return true;
         }
         return false;
+    }
+
+    private function hasActiveContractLink(Imprimante $imprimante): bool
+    {
+        $today = new \DateTimeImmutable('today');
+
+        $count = (int) $this->em->getRepository(LigneContrat::class)
+            ->createQueryBuilder('lc')
+            ->select('COUNT(lc.id)')
+            ->innerJoin('lc.contrat', 'c')
+            ->andWhere('lc.imprimante = :imprimante')
+            ->andWhere('lc.actif = true')
+            ->andWhere('c.status IN (:statuses)')
+            ->andWhere('(lc.dateDebut IS NULL OR lc.dateDebut <= :today)')
+            ->andWhere('(lc.dateFin IS NULL OR lc.dateFin >= :today)')
+            ->setParameter('imprimante', $imprimante)
+            ->setParameter('statuses', [ContractStatus::ACTIVE->value, ContractStatus::SUSPENDED->value])
+            ->setParameter('today', $today->format('Y-m-d'))
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return $count > 0;
     }
 }

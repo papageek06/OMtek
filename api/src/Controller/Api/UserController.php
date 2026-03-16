@@ -19,6 +19,11 @@ use Symfony\Component\Validator\Validator\ValidatorInterface;
 #[Route('/api/users', name: 'api_users_')]
 class UserController extends AbstractController
 {
+    private const ASSIGNABLE_ROLES = [
+        User::ROLE_ADMIN,
+        User::ROLE_TECH,
+    ];
+
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly UserRepository $userRepository,
@@ -65,8 +70,32 @@ class UserController extends AbstractController
         $user->setPassword($this->passwordHasher->hashPassword($user, (string) $data['password']));
         $user->setFirstName(trim((string) ($data['firstName'] ?? '')));
         $user->setLastName(trim((string) ($data['lastName'] ?? '')));
-        $roles = $data['roles'] ?? ['ROLE_TECH'];
-        $user->setRoles(\is_array($roles) ? $roles : ['ROLE_TECH']);
+        $requestedRoles = $data['roles'] ?? [User::ROLE_TECH];
+        if (!\is_array($requestedRoles)) {
+            return new JsonResponse(['error' => 'Le champ roles doit etre un tableau'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $normalizedRoles = array_values(array_unique(array_filter(array_map(
+            static fn (mixed $role): string => \is_string($role) ? strtoupper(trim($role)) : '',
+            $requestedRoles
+        ))));
+
+        if (\in_array(User::ROLE_SUPER_ADMIN, $normalizedRoles, true)) {
+            return new JsonResponse([
+                'error' => 'La creation de ROLE_SUPER_ADMIN via API est interdite. Utiliser la commande de bootstrap.',
+            ], Response::HTTP_FORBIDDEN);
+        }
+
+        $invalidRoles = array_values(array_diff($normalizedRoles, self::ASSIGNABLE_ROLES));
+        if ($invalidRoles !== []) {
+            return new JsonResponse([
+                'error' => 'Roles invalides',
+                'details' => $invalidRoles,
+                'allowedRoles' => self::ASSIGNABLE_ROLES,
+            ], Response::HTTP_BAD_REQUEST);
+        }
+
+        $user->setRoles($normalizedRoles !== [] ? $normalizedRoles : [User::ROLE_TECH]);
 
         $violations = $this->validator->validate($user);
         if ($violations->count() > 0) {

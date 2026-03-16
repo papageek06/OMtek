@@ -6,10 +6,12 @@ namespace App\Service;
 
 use App\Entity\Contrat;
 use App\Entity\Enum\BillingLineType;
+use App\Entity\Enum\ContractLineType;
 use App\Entity\Enum\BillingPeriodStatus;
 use App\Entity\Enum\InterventionApprovalStatus;
 use App\Entity\Enum\InterventionBillingStatus;
 use App\Entity\Intervention;
+use App\Entity\LigneContrat;
 use App\Entity\LigneFacturation;
 use App\Entity\PeriodeFacturation;
 use Doctrine\ORM\EntityManagerInterface;
@@ -66,32 +68,8 @@ final class BillingPeriodGenerationService
         $this->em->persist($period);
 
         $totalCents = 0;
-
-        $forfaitHt = $this->normalizeDecimal($contrat->getForfaitMaintenance(), 2);
-        if ($forfaitHt === null) {
-            $forfaitHt = '0.00';
-        }
-        if (!$this->isZeroDecimal($forfaitHt)) {
-            $line = new LigneFacturation();
-            $line
-                ->setPeriodeFacturation($period)
-                ->setType(BillingLineType::FORFAIT_MAINTENANCE)
-                ->setDescription(sprintf(
-                    'Forfait maintenance %s (%s -> %s)',
-                    strtolower($contrat->getPeriodicite()->value),
-                    $dateDebut->format('Y-m-d'),
-                    $dateFin->format('Y-m-d')
-                ))
-                ->setQuantite('1.000')
-                ->setPrixUnitaireHt($this->toScale($forfaitHt, 6))
-                ->setMontantHt($forfaitHt)
-                ->setMeta([
-                    'contractReference' => $contrat->getReference(),
-                    'contractPeriodicity' => $contrat->getPeriodicite()->value,
-                ]);
-            $this->em->persist($line);
-            $totalCents += $this->toCents($forfaitHt);
-        }
+        $activeContractLines = $this->findActiveContractLines($contrat, $dateDebut, $dateFin);
+        $totalCents += $this->appendContractLines($period, $contrat, $activeContractLines, $dateDebut, $dateFin);
 
         if ($interventionUnitPriceHt !== null) {
             $unitIntervention = $this->normalizeDecimal($interventionUnitPriceHt, 6);
@@ -106,6 +84,12 @@ final class BillingPeriodGenerationService
 
         $interventions = $this->findInterventionsToBill($contrat, $dateDebut, $dateFin);
         foreach ($interventions as $intervention) {
+            $hasInterventionSpecificAmount = $intervention->getInterventionTotalCostHt() !== null;
+            $interventionLineAmount = $hasInterventionSpecificAmount
+                ? $this->toScale($intervention->getInterventionTotalCostHt() ?? '0', 2)
+                : $interventionAmount;
+            $interventionUnitHt = $this->toScale($interventionLineAmount, 6);
+
             $line = new LigneFacturation();
             $line
                 ->setPeriodeFacturation($period)
@@ -114,21 +98,146 @@ final class BillingPeriodGenerationService
                 ->setType(BillingLineType::INTERVENTION)
                 ->setDescription($intervention->getTitle())
                 ->setQuantite('1.000')
-                ->setPrixUnitaireHt($unitIntervention)
-                ->setMontantHt($interventionAmount)
+                ->setTarifUnitaireHt($interventionUnitHt)
+                ->setCoefficientIndexation('1.000000')
+                ->setPrixUnitaireHt($interventionUnitHt)
+                ->setMontantHt($interventionLineAmount)
                 ->setMeta([
                     'interventionId' => $intervention->getId(),
                     'approvedAt' => $intervention->getApprovedAt()?->format(\DateTimeInterface::ATOM),
                     'approvalStatus' => $intervention->getApprovalStatus()->value,
                     'billingStatus' => $intervention->getBillingStatus()->value,
+                    'interventionDurationMinutes' => $intervention->getInterventionDurationMinutes(),
+                    'interventionLaborCostHt' => $intervention->getInterventionLaborCostHt(),
+                    'interventionPartsCostHt' => $intervention->getInterventionPartsCostHt(),
+                    'interventionTravelCostHt' => $intervention->getInterventionTravelCostHt(),
+                    'interventionTotalCostHt' => $intervention->getInterventionTotalCostHt(),
+                    'interventionBillingNotes' => $intervention->getInterventionBillingNotes(),
+                    'pricingSource' => $hasInterventionSpecificAmount ? 'INTERVENTION_TOTAL_COST' : 'GLOBAL_INTERVENTION_UNIT_PRICE',
                 ]);
             $this->em->persist($line);
-            $totalCents += $this->toCents($interventionAmount);
+            $totalCents += $this->toCents($interventionLineAmount);
         }
 
         $period->setTotalHt($this->fromCents($totalCents));
 
         return $period;
+    }
+
+    /**
+     * @return list<LigneContrat>
+     */
+    private function findActiveContractLines(
+        Contrat $contrat,
+        \DateTimeImmutable $dateDebut,
+        \DateTimeImmutable $dateFin,
+    ): array {
+        $qb = $this->em->getRepository(LigneContrat::class)->createQueryBuilder('l');
+        $qb
+            ->andWhere('l.contrat = :contrat')
+            ->andWhere('l.actif = true')
+            ->andWhere('(l.dateDebut IS NULL OR l.dateDebut <= :periodEnd)')
+            ->andWhere('(l.dateFin IS NULL OR l.dateFin >= :periodStart)')
+            ->setParameter('contrat', $contrat)
+            ->setParameter('periodStart', $dateDebut)
+            ->setParameter('periodEnd', $dateFin)
+            ->orderBy('l.id', 'ASC');
+
+        return $qb->getQuery()->getResult();
+    }
+
+    /**
+     * @param list<LigneContrat> $activeContractLines
+     */
+    private function appendContractLines(
+        PeriodeFacturation $period,
+        Contrat $contrat,
+        array $activeContractLines,
+        \DateTimeImmutable $dateDebut,
+        \DateTimeImmutable $dateFin,
+    ): int {
+        $totalCents = 0;
+
+        foreach ($activeContractLines as $contractLine) {
+            $unitHt = $this->applyIndexation($contractLine->getPrixUnitaireHt(), $contractLine->getCoefficientIndexation());
+            $amountHt = $this->computeLineAmountHt($contractLine->getQuantite(), $unitHt);
+            if ($this->isZeroDecimal($amountHt)) {
+                continue;
+            }
+
+            $line = new LigneFacturation();
+            $line
+                ->setPeriodeFacturation($period)
+                ->setIntervention(null)
+                ->setImprimante($contractLine->getImprimante())
+                ->setType($this->mapContractLineTypeToBillingType($contractLine->getType()))
+                ->setDescription($this->buildContractLineDescription($contractLine, $dateDebut, $dateFin))
+                ->setQuantite($contractLine->getQuantite())
+                ->setTarifUnitaireHt($contractLine->getPrixUnitaireHt())
+                ->setCoefficientIndexation($contractLine->getCoefficientIndexation() ?? '1.000000')
+                ->setPrixUnitaireHt($unitHt)
+                ->setMontantHt($amountHt)
+                ->setMeta([
+                    'source' => 'CONTRACT_LINE',
+                    'contractLineId' => $contractLine->getId(),
+                    'contractLineType' => $contractLine->getType()->value,
+                    'contractReference' => $contrat->getReference(),
+                    'contractPeriodicity' => $contrat->getPeriodicite()->value,
+                    'siteId' => $contractLine->getSite()?->getId(),
+                    'imprimanteId' => $contractLine->getImprimante()?->getId(),
+                ]);
+            $this->em->persist($line);
+            $totalCents += $this->toCents($amountHt);
+        }
+
+        return $totalCents;
+    }
+
+    private function mapContractLineTypeToBillingType(ContractLineType $type): BillingLineType
+    {
+        return match ($type) {
+            ContractLineType::FORFAIT_MAINTENANCE => BillingLineType::FORFAIT_MAINTENANCE,
+            ContractLineType::INTERVENTION => BillingLineType::INTERVENTION,
+            default => BillingLineType::AJUSTEMENT,
+        };
+    }
+
+    private function buildContractLineDescription(
+        LigneContrat $line,
+        \DateTimeImmutable $dateDebut,
+        \DateTimeImmutable $dateFin,
+    ): string {
+        return sprintf(
+            'Ligne contrat %s - %s (%s -> %s)',
+            strtolower(str_replace('_', ' ', $line->getType()->value)),
+            $line->getLibelle(),
+            $dateDebut->format('Y-m-d'),
+            $dateFin->format('Y-m-d')
+        );
+    }
+
+    private function applyIndexation(string $prixUnitaireHt, ?string $coefficientIndexation): string
+    {
+        $unit = $this->toScale($prixUnitaireHt, 6);
+        $coefficient = $this->toScale($coefficientIndexation ?? '1', 6);
+        if (\function_exists('bcmul')) {
+            return $this->toScale(\bcmul($unit, $coefficient, 8), 6);
+        }
+
+        $indexedUnit = (float) $unit * (float) $coefficient;
+        return $this->toScale(number_format($indexedUnit, 8, '.', ''), 6);
+    }
+
+    private function computeLineAmountHt(string $quantite, string $prixUnitaireHt): string
+    {
+        $qty = $this->toScale($quantite, 3);
+        $unit = $this->toScale($prixUnitaireHt, 6);
+        if (\function_exists('bcmul')) {
+            return $this->toScale(\bcmul($qty, $unit, 8), 2);
+        }
+
+        $amount = (float) $qty * (float) $unit;
+        return $this->toScale(number_format($amount, 8, '.', ''), 2);
     }
 
     /**

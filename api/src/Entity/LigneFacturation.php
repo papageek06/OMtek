@@ -44,6 +44,12 @@ class LigneFacturation
     #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 6, options: ['default' => '0.000000'])]
     private string $prixUnitaireHt = '0.000000';
 
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 6, nullable: true)]
+    private ?string $tarifUnitaireHt = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 6, nullable: true)]
+    private ?string $coefficientIndexation = null;
+
     #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2, options: ['default' => '0.00'])]
     private string $montantHt = '0.00';
 
@@ -148,6 +154,28 @@ class LigneFacturation
     public function setMontantHt(string $montantHt): static
     {
         $this->montantHt = $montantHt;
+        return $this;
+    }
+
+    public function getTarifUnitaireHt(): ?string
+    {
+        return $this->tarifUnitaireHt;
+    }
+
+    public function setTarifUnitaireHt(?string $tarifUnitaireHt): static
+    {
+        $this->tarifUnitaireHt = $tarifUnitaireHt;
+        return $this;
+    }
+
+    public function getCoefficientIndexation(): ?string
+    {
+        return $this->coefficientIndexation;
+    }
+
+    public function setCoefficientIndexation(?string $coefficientIndexation): static
+    {
+        $this->coefficientIndexation = $coefficientIndexation;
         return $this;
     }
 

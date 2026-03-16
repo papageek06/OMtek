@@ -45,9 +45,6 @@ class Contrat
     #[ORM\Column(type: Types::DATE_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $dateFin = null;
 
-    #[ORM\Column(type: Types::DECIMAL, precision: 10, scale: 2, options: ['default' => '0.00'])]
-    private string $forfaitMaintenance = '0.00';
-
     #[ORM\Column(type: Types::STRING, length: 3, options: ['default' => 'EUR'])]
     private string $devise = 'EUR';
 
@@ -60,26 +57,20 @@ class Contrat
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $updatedAt;
 
-    /** @var Collection<int, ContratTarif> */
-    #[ORM\OneToMany(targetEntity: ContratTarif::class, mappedBy: 'contrat')]
-    #[ORM\OrderBy(['dateEffet' => 'DESC'])]
-    private Collection $tarifs;
-
-    /** @var Collection<int, ContratIndexation> */
-    #[ORM\OneToMany(targetEntity: ContratIndexation::class, mappedBy: 'contrat')]
-    #[ORM\OrderBy(['dateEffet' => 'DESC'])]
-    private Collection $indexations;
-
     /** @var Collection<int, PeriodeFacturation> */
     #[ORM\OneToMany(targetEntity: PeriodeFacturation::class, mappedBy: 'contrat')]
     #[ORM\OrderBy(['dateDebut' => 'DESC'])]
     private Collection $periodesFacturation;
 
+    /** @var Collection<int, LigneContrat> */
+    #[ORM\OneToMany(targetEntity: LigneContrat::class, mappedBy: 'contrat')]
+    #[ORM\OrderBy(['createdAt' => 'DESC', 'id' => 'DESC'])]
+    private Collection $lignesContrat;
+
     public function __construct()
     {
-        $this->tarifs = new ArrayCollection();
-        $this->indexations = new ArrayCollection();
         $this->periodesFacturation = new ArrayCollection();
+        $this->lignesContrat = new ArrayCollection();
         $this->dateDebut = new \DateTimeImmutable();
         $this->createdAt = new \DateTimeImmutable();
         $this->updatedAt = new \DateTimeImmutable();
@@ -167,17 +158,6 @@ class Contrat
         return $this;
     }
 
-    public function getForfaitMaintenance(): string
-    {
-        return $this->forfaitMaintenance;
-    }
-
-    public function setForfaitMaintenance(string $forfaitMaintenance): static
-    {
-        $this->forfaitMaintenance = $forfaitMaintenance;
-        return $this;
-    }
-
     public function getDevise(): string
     {
         return $this->devise;
@@ -216,21 +196,15 @@ class Contrat
         return $this;
     }
 
-    /** @return Collection<int, ContratTarif> */
-    public function getTarifs(): Collection
-    {
-        return $this->tarifs;
-    }
-
-    /** @return Collection<int, ContratIndexation> */
-    public function getIndexations(): Collection
-    {
-        return $this->indexations;
-    }
-
     /** @return Collection<int, PeriodeFacturation> */
     public function getPeriodesFacturation(): Collection
     {
         return $this->periodesFacturation;
+    }
+
+    /** @return Collection<int, LigneContrat> */
+    public function getLignesContrat(): Collection
+    {
+        return $this->lignesContrat;
     }
 }

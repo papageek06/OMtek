@@ -1,40 +1,40 @@
-import { useEffect, useState } from 'react'
+﻿import { useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import {
   createContract,
-  createContractIndexation,
-  createContractRate,
+  createContractLine,
   deleteBillingPeriod,
   deleteContract,
-  deleteContractIndexation,
-  deleteContractRate,
+  deleteContractLine,
   fetchBillingPeriodPreview,
   fetchBillingPeriods,
-  fetchContractIndexations,
-  fetchContractRates,
+  fetchContractLines,
   fetchContracts,
+  fetchImprimantes,
   fetchSites,
   generateBillingPeriod,
   lockBillingPeriod,
+  updateContractLine,
   updateContract,
   UnauthorizedError,
   type BillingPeriodDetail,
   type BillingPeriodItem,
-  type ContractIndexationItem,
+  type ContractLineItem,
   type ContractItem,
-  type ContractRateItem,
+  type Imprimante,
   type Site,
 } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import './ContractsPage.css'
 
-const PERIODICITY_OPTIONS = ['MONTHLY', 'QUARTERLY', 'YEARLY'] as const
+const PERIODICITY_OPTIONS = ['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'YEARLY'] as const
 const STATUS_OPTIONS = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'CLOSED'] as const
-const INDEXATION_TYPES = ['MANUAL_COEFFICIENT', 'FIXED_PERCENTAGE', 'EXTERNAL_INDEX'] as const
+const CONTRACT_LINE_TYPES = ['FORFAIT_MAINTENANCE', 'IMPRIMANTE', 'INTERVENTION', 'AUTRE'] as const
 
 const PERIODICITY_LABELS: Record<string, string> = {
   MONTHLY: 'Mensuel',
   QUARTERLY: 'Trimestriel',
+  SEMIANNUAL: 'Semestriel',
   YEARLY: 'Annuel',
 }
 
@@ -52,14 +52,15 @@ const BILLING_STATUS_LABELS: Record<string, string> = {
   EXPORTED: 'Exporte',
 }
 
-const INDEXATION_LABELS: Record<string, string> = {
-  MANUAL_COEFFICIENT: 'Coef manuel',
-  FIXED_PERCENTAGE: '% fixe',
-  EXTERNAL_INDEX: 'Indice externe',
+const CONTRACT_LINE_LABELS: Record<string, string> = {
+  FORFAIT_MAINTENANCE: 'Forfait maintenance',
+  IMPRIMANTE: 'Imprimante',
+  INTERVENTION: 'Intervention',
+  AUTRE: 'Autre',
 }
 
 function formatDate(isoOrDate: string | null): string {
-  if (!isoOrDate) return '—'
+  if (!isoOrDate) return '-'
   return new Date(isoOrDate).toLocaleDateString('fr-FR', {
     day: '2-digit',
     month: '2-digit',
@@ -68,7 +69,7 @@ function formatDate(isoOrDate: string | null): string {
 }
 
 function formatDateTime(value: string | null): string {
-  if (!value) return '—'
+  if (!value) return '-'
   return new Date(value).toLocaleString('fr-FR', {
     day: '2-digit',
     month: '2-digit',
@@ -85,10 +86,11 @@ export default function ContractsPage() {
   const [sites, setSites] = useState<Site[]>([])
   const [contracts, setContracts] = useState<ContractItem[]>([])
   const [selectedContractId, setSelectedContractId] = useState<number | null>(null)
-  const [rates, setRates] = useState<ContractRateItem[]>([])
-  const [indexations, setIndexations] = useState<ContractIndexationItem[]>([])
+  const [contractLines, setContractLines] = useState<ContractLineItem[]>([])
+  const [printers, setPrinters] = useState<Imprimante[]>([])
   const [periods, setPeriods] = useState<BillingPeriodItem[]>([])
   const [preview, setPreview] = useState<BillingPeriodDetail | null>(null)
+  const [editingLineId, setEditingLineId] = useState<number | null>(null)
   const [loading, setLoading] = useState(true)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -102,23 +104,21 @@ export default function ContractsPage() {
     statut: 'DRAFT',
     dateDebut: '',
     dateFin: '',
-    forfaitMaintenance: '0.00',
     devise: 'EUR',
     notes: '',
   })
 
-  const [rateForm, setRateForm] = useState({
-    dateEffet: '',
-    prixPageNoir: '0.000000',
-    prixPageCouleur: '0.000000',
-    coefficientIndexation: '1.000000',
-  })
-
-  const [indexationForm, setIndexationForm] = useState({
-    dateEffet: '',
-    type: 'MANUAL_COEFFICIENT',
-    valeur: '1.000000',
-    commentaire: '',
+  const [lineForm, setLineForm] = useState({
+    type: 'FORFAIT_MAINTENANCE',
+    libelle: '',
+    quantite: '1.000',
+    prixUnitaireHt: '0.000000',
+    coefficientIndexation: '',
+    dateDebut: '',
+    dateFin: '',
+    siteId: '',
+    imprimanteId: '',
+    actif: true,
   })
 
   const [periodForm, setPeriodForm] = useState({
@@ -137,12 +137,16 @@ export default function ContractsPage() {
       setContracts(contractsData)
       if (contractsData.length > 0) {
         setSelectedContractId((prev) => prev ?? contractsData[0].id)
+        setLineForm((prev) => ({
+          ...prev,
+          siteId: prev.siteId || String(contractsData[0].site.id),
+        }))
       } else {
         setSelectedContractId(null)
       }
     } catch (e) {
       if (e instanceof UnauthorizedError) {
-        setError('Session expirée, reconnectez-vous.')
+        setError('Session expiree, reconnectez-vous.')
       } else {
         setError(e instanceof Error ? e.message : 'Erreur chargement contrats')
       }
@@ -154,19 +158,19 @@ export default function ContractsPage() {
   async function loadDetails(contractId: number): Promise<void> {
     setError(null)
     try {
-      const [ratesData, indexationsData, periodsData] = await Promise.all([
-        fetchContractRates(contractId),
-        fetchContractIndexations(contractId),
+      const [linesData, periodsData, printersData] = await Promise.all([
+        fetchContractLines(contractId),
         fetchBillingPeriods(contractId),
+        fetchImprimantes(),
       ])
-      setRates(ratesData)
-      setIndexations(indexationsData)
+      setContractLines(linesData)
       setPeriods(periodsData)
+      setPrinters(printersData)
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur chargement detail contrat')
-      setRates([])
-      setIndexations([])
+      setContractLines([])
       setPeriods([])
+      setPrinters([])
     }
   }
 
@@ -176,12 +180,14 @@ export default function ContractsPage() {
 
   useEffect(() => {
     if (selectedContractId != null) {
+      setEditingLineId(null)
       void loadDetails(selectedContractId)
     } else {
-      setRates([])
-      setIndexations([])
+      setContractLines([])
       setPeriods([])
+      setPrinters([])
       setPreview(null)
+      setEditingLineId(null)
     }
   }, [selectedContractId])
 
@@ -193,6 +199,26 @@ export default function ContractsPage() {
   }
 
   const selectedContract = contracts.find((c) => c.id === selectedContractId) ?? null
+  const selectablePrinters = lineForm.siteId
+    ? printers.filter((printer) => printer.site?.id === Number(lineForm.siteId))
+    : printers
+
+  function resetLineForm(siteId?: string): void {
+    const fallbackSiteId = siteId ?? (selectedContract ? String(selectedContract.site.id) : '')
+    setLineForm({
+      type: 'FORFAIT_MAINTENANCE',
+      libelle: '',
+      quantite: '1.000',
+      prixUnitaireHt: '0.000000',
+      coefficientIndexation: '',
+      dateDebut: '',
+      dateFin: '',
+      siteId: fallbackSiteId,
+      imprimanteId: '',
+      actif: true,
+    })
+    setEditingLineId(null)
+  }
 
   async function refreshAllForContract(contractId?: number): Promise<void> {
     await loadBase()
@@ -217,11 +243,10 @@ export default function ContractsPage() {
         siteId: Number(contractForm.siteId),
         reference: contractForm.reference.trim(),
         libelle: contractForm.libelle.trim(),
-        periodicite: contractForm.periodicite as 'MONTHLY' | 'QUARTERLY' | 'YEARLY',
+        periodicite: contractForm.periodicite as 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY',
         statut: contractForm.statut as 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED',
         dateDebut: contractForm.dateDebut,
         dateFin: contractForm.dateFin || null,
-        forfaitMaintenance: contractForm.forfaitMaintenance,
         devise: contractForm.devise.toUpperCase(),
         notes: contractForm.notes.trim() || null,
       })
@@ -234,7 +259,6 @@ export default function ContractsPage() {
         statut: 'DRAFT',
         dateDebut: '',
         dateFin: '',
-        forfaitMaintenance: '0.00',
         devise: 'EUR',
         notes: '',
       })
@@ -281,91 +305,99 @@ export default function ContractsPage() {
     }
   }
 
-  async function handleCreateRate(e: React.FormEvent): Promise<void> {
+  async function handleCreateContractLine(e: React.FormEvent): Promise<void> {
     e.preventDefault()
     if (!selectedContractId) return
+    if (!lineForm.libelle.trim()) {
+      setError('Le libelle de ligne est requis')
+      return
+    }
+    if (lineForm.type === 'IMPRIMANTE' && !lineForm.imprimanteId) {
+      setError('Selectionnez une imprimante pour une ligne de type IMPRIMANTE')
+      return
+    }
+
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
-      await createContractRate(selectedContractId, {
-        dateEffet: rateForm.dateEffet,
-        prixPageNoir: rateForm.prixPageNoir,
-        prixPageCouleur: rateForm.prixPageCouleur,
-        coefficientIndexation: rateForm.coefficientIndexation,
-      })
-      setMessage('Tarif ajoute')
-      setRateForm({
-        dateEffet: '',
-        prixPageNoir: '0.000000',
-        prixPageCouleur: '0.000000',
-        coefficientIndexation: '1.000000',
-      })
+      const payload = {
+        type: lineForm.type as 'FORFAIT_MAINTENANCE' | 'IMPRIMANTE' | 'INTERVENTION' | 'AUTRE',
+        libelle: lineForm.libelle.trim(),
+        quantite: lineForm.quantite,
+        prixUnitaireHt: lineForm.prixUnitaireHt,
+        coefficientIndexation: lineForm.coefficientIndexation.trim() || null,
+        dateDebut: lineForm.dateDebut || null,
+        dateFin: lineForm.dateFin || null,
+        siteId: lineForm.siteId ? Number(lineForm.siteId) : null,
+        imprimanteId: lineForm.imprimanteId ? Number(lineForm.imprimanteId) : null,
+        actif: lineForm.actif,
+      }
+
+      if (editingLineId !== null) {
+        await updateContractLine(selectedContractId, editingLineId, payload)
+        setMessage('Ligne de contrat mise a jour')
+      } else {
+        await createContractLine(selectedContractId, payload)
+        setMessage('Ligne de contrat ajoutee')
+      }
+
+      resetLineForm(lineForm.siteId || undefined)
       await loadDetails(selectedContractId)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur ajout tarif')
+      setError(e instanceof Error ? e.message : 'Erreur enregistrement ligne contrat')
     } finally {
       setBusy(false)
     }
   }
 
-  async function handleDeleteRate(rateId: number): Promise<void> {
+  function handleEditContractLine(line: ContractLineItem): void {
+    setEditingLineId(line.id)
+    setLineForm({
+      type: line.type,
+      libelle: line.libelle,
+      quantite: line.quantite,
+      prixUnitaireHt: line.prixUnitaireHt,
+      coefficientIndexation: line.coefficientIndexation ?? '',
+      dateDebut: line.dateDebut ?? '',
+      dateFin: line.dateFin ?? '',
+      siteId: line.site ? String(line.site.id) : (selectedContract ? String(selectedContract.site.id) : ''),
+      imprimanteId: line.imprimante ? String(line.imprimante.id) : '',
+      actif: line.actif,
+    })
+  }
+
+  async function handleToggleContractLine(line: ContractLineItem): Promise<void> {
     if (!selectedContractId) return
-    if (!window.confirm('Supprimer ce tarif ?')) return
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
-      await deleteContractRate(selectedContractId, rateId)
-      setMessage('Tarif supprime')
+      await updateContractLine(selectedContractId, line.id, { actif: !line.actif })
+      setMessage(line.actif ? 'Ligne desactivee' : 'Ligne activee')
       await loadDetails(selectedContractId)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur suppression tarif')
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour ligne contrat')
     } finally {
       setBusy(false)
     }
   }
 
-  async function handleCreateIndexation(e: React.FormEvent): Promise<void> {
-    e.preventDefault()
+  async function handleDeleteContractLine(lineId: number): Promise<void> {
     if (!selectedContractId) return
+    if (!window.confirm('Supprimer cette ligne de contrat ?')) return
     setBusy(true)
     setError(null)
     setMessage(null)
     try {
-      await createContractIndexation(selectedContractId, {
-        dateEffet: indexationForm.dateEffet,
-        type: indexationForm.type as 'MANUAL_COEFFICIENT' | 'FIXED_PERCENTAGE' | 'EXTERNAL_INDEX',
-        valeur: indexationForm.valeur,
-        commentaire: indexationForm.commentaire || null,
-      })
-      setMessage('Indexation ajoutee')
-      setIndexationForm({
-        dateEffet: '',
-        type: 'MANUAL_COEFFICIENT',
-        valeur: '1.000000',
-        commentaire: '',
-      })
+      await deleteContractLine(selectedContractId, lineId)
+      setMessage('Ligne de contrat supprimee')
+      if (editingLineId === lineId) {
+        resetLineForm(lineForm.siteId || undefined)
+      }
       await loadDetails(selectedContractId)
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur ajout indexation')
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  async function handleDeleteIndexation(indexationId: number): Promise<void> {
-    if (!selectedContractId) return
-    if (!window.confirm('Supprimer cette indexation ?')) return
-    setBusy(true)
-    setError(null)
-    setMessage(null)
-    try {
-      await deleteContractIndexation(selectedContractId, indexationId)
-      setMessage('Indexation supprimee')
-      await loadDetails(selectedContractId)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur suppression indexation')
+      setError(e instanceof Error ? e.message : 'Erreur suppression ligne contrat')
     } finally {
       setBusy(false)
     }
@@ -448,12 +480,12 @@ export default function ContractsPage() {
   return (
     <div className="contracts-page">
       <nav className="contracts-page__nav">
-        <Link to="/" className="contracts-page__back">← Tableau de bord</Link>
+        <Link to="/" className="contracts-page__back">{'<-'} Tableau de bord</Link>
       </nav>
 
       <header className="contracts-page__header">
         <h1>Contrats et facturation</h1>
-        <p>Gestion admin des contrats, tarifs, indexations et periodes de facturation.</p>
+        <p>Gestion admin des contrats, lignes de facturation et periodes de facturation.</p>
       </header>
 
       {message && <div className="contracts-page__message">{message}</div>}
@@ -538,15 +570,6 @@ export default function ContractsPage() {
           </label>
 
           <label>
-            <span>Forfait maintenance HT</span>
-            <input
-              type="text"
-              value={contractForm.forfaitMaintenance}
-              onChange={(e) => setContractForm((p) => ({ ...p, forfaitMaintenance: e.target.value }))}
-            />
-          </label>
-
-          <label>
             <span>Devise</span>
             <input
               type="text"
@@ -587,13 +610,21 @@ export default function ContractsPage() {
                 <button
                   type="button"
                   className="contract-card__select"
-                  onClick={() => setSelectedContractId(contract.id)}
+                  onClick={() => {
+                    setSelectedContractId(contract.id)
+                    setEditingLineId(null)
+                    setLineForm((prev) => ({
+                      ...prev,
+                      siteId: String(contract.site.id),
+                      imprimanteId: '',
+                    }))
+                  }}
                 >
                   <strong>{contract.reference}</strong>
                   <span>{contract.libelle}</span>
-                  <span>{contract.site.nom} · {PERIODICITY_LABELS[contract.periodicite]}</span>
-                  <span>Debut {formatDate(contract.dateDebut)} · Fin {formatDate(contract.dateFin)}</span>
-                  <span>Forfait {contract.forfaitMaintenance} {contract.devise}</span>
+                  <span>{contract.site.nom} - {PERIODICITY_LABELS[contract.periodicite]}</span>
+                  <span>Debut {formatDate(contract.dateDebut)} - Fin {formatDate(contract.dateFin)}</span>
+                  <span>Devise {contract.devise}</span>
                 </button>
                 <div className="contract-card__actions">
                   <select
@@ -626,84 +657,151 @@ export default function ContractsPage() {
 
           <div className="contracts-grid">
             <div className="contracts-subpanel">
-              <h3>Tarifs pages</h3>
-              <form className="contracts-form" onSubmit={handleCreateRate}>
+              <h3>{editingLineId ? `Modifier ligne #${editingLineId}` : 'Lignes de contrat'}</h3>
+              <form className="contracts-form" onSubmit={handleCreateContractLine}>
                 <label>
-                  <span>Date effet</span>
-                  <input type="date" value={rateForm.dateEffet} onChange={(e) => setRateForm((p) => ({ ...p, dateEffet: e.target.value }))} required />
+                  <span>Type</span>
+                  <select
+                    value={lineForm.type}
+                    onChange={(e) => setLineForm((prev) => ({
+                      ...prev,
+                      type: e.target.value,
+                      imprimanteId: e.target.value === 'IMPRIMANTE' ? prev.imprimanteId : '',
+                    }))}
+                  >
+                    {CONTRACT_LINE_TYPES.map((value) => (
+                      <option key={value} value={value}>{CONTRACT_LINE_LABELS[value]}</option>
+                    ))}
+                  </select>
+                </label>
+                <label className="contracts-form__wide">
+                  <span>Libelle</span>
+                  <input
+                    type="text"
+                    value={lineForm.libelle}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, libelle: e.target.value }))}
+                    maxLength={255}
+                    required
+                  />
                 </label>
                 <label>
-                  <span>Prix page noir</span>
-                  <input type="text" value={rateForm.prixPageNoir} onChange={(e) => setRateForm((p) => ({ ...p, prixPageNoir: e.target.value }))} required />
+                  <span>Quantite</span>
+                  <input
+                    type="text"
+                    value={lineForm.quantite}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, quantite: e.target.value }))}
+                  />
                 </label>
                 <label>
-                  <span>Prix page couleur</span>
-                  <input type="text" value={rateForm.prixPageCouleur} onChange={(e) => setRateForm((p) => ({ ...p, prixPageCouleur: e.target.value }))} required />
+                  <span>PU HT</span>
+                  <input
+                    type="text"
+                    value={lineForm.prixUnitaireHt}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, prixUnitaireHt: e.target.value }))}
+                  />
                 </label>
                 <label>
                   <span>Coef indexation</span>
-                  <input type="text" value={rateForm.coefficientIndexation} onChange={(e) => setRateForm((p) => ({ ...p, coefficientIndexation: e.target.value }))} required />
-                </label>
-                <button type="submit" className="contracts-btn contracts-btn--primary" disabled={busy}>Ajouter tarif</button>
-              </form>
-
-              {rates.length === 0 ? (
-                <p className="contracts-empty">Aucun tarif.</p>
-              ) : (
-                <ul className="contracts-simple-list">
-                  {rates.map((rate) => (
-                    <li key={rate.id}>
-                      <span>{formatDate(rate.dateEffet)} · Noir {rate.prixPageNoir} · Couleur {rate.prixPageCouleur} · Coef {rate.coefficientIndexation}</span>
-                      <button type="button" className="contracts-btn contracts-btn--danger" onClick={() => void handleDeleteRate(rate.id)} disabled={busy}>
-                        Supprimer
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-              )}
-            </div>
-
-            <div className="contracts-subpanel">
-              <h3>Indexations</h3>
-              <form className="contracts-form" onSubmit={handleCreateIndexation}>
-                <label>
-                  <span>Date effet</span>
-                  <input type="date" value={indexationForm.dateEffet} onChange={(e) => setIndexationForm((p) => ({ ...p, dateEffet: e.target.value }))} required />
+                  <input
+                    type="text"
+                    value={lineForm.coefficientIndexation}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, coefficientIndexation: e.target.value }))}
+                    placeholder="1.000000"
+                  />
                 </label>
                 <label>
-                  <span>Type</span>
-                  <select value={indexationForm.type} onChange={(e) => setIndexationForm((p) => ({ ...p, type: e.target.value }))}>
-                    {INDEXATION_TYPES.map((value) => (
-                      <option key={value} value={value}>{INDEXATION_LABELS[value]}</option>
+                  <span>Date debut</span>
+                  <input
+                    type="date"
+                    value={lineForm.dateDebut}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, dateDebut: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Date fin</span>
+                  <input
+                    type="date"
+                    value={lineForm.dateFin}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, dateFin: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>Site</span>
+                  <select
+                    value={lineForm.siteId}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, siteId: e.target.value, imprimanteId: '' }))}
+                  >
+                    <option value="">Aucun</option>
+                    {sites.map((site) => (
+                      <option key={site.id} value={site.id}>{site.nom}</option>
                     ))}
                   </select>
                 </label>
                 <label>
-                  <span>Valeur</span>
-                  <input type="text" value={indexationForm.valeur} onChange={(e) => setIndexationForm((p) => ({ ...p, valeur: e.target.value }))} required />
+                  <span>Imprimante</span>
+                  <select
+                    value={lineForm.imprimanteId}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, imprimanteId: e.target.value }))}
+                  >
+                    <option value="">Aucune</option>
+                    {selectablePrinters.map((printer) => (
+                      <option key={printer.id} value={printer.id}>
+                        {printer.numeroSerie} - {printer.modele}
+                      </option>
+                    ))}
+                  </select>
                 </label>
-                <label className="contracts-form__wide">
-                  <span>Commentaire</span>
-                  <input type="text" value={indexationForm.commentaire} onChange={(e) => setIndexationForm((p) => ({ ...p, commentaire: e.target.value }))} />
+                <label className="contracts-check">
+                  <input
+                    type="checkbox"
+                    checked={lineForm.actif}
+                    onChange={(e) => setLineForm((prev) => ({ ...prev, actif: e.target.checked }))}
+                  />
+                  <span>Ligne active</span>
                 </label>
-                <button type="submit" className="contracts-btn contracts-btn--primary" disabled={busy}>Ajouter indexation</button>
+                <button type="submit" className="contracts-btn contracts-btn--primary" disabled={busy}>
+                  {editingLineId ? 'Enregistrer modifications' : 'Ajouter ligne'}
+                </button>
+                {editingLineId && (
+                  <button
+                    type="button"
+                    className="contracts-btn"
+                    onClick={() => resetLineForm(lineForm.siteId || undefined)}
+                    disabled={busy}
+                  >
+                    Annuler edition
+                  </button>
+                )}
               </form>
 
-              {indexations.length === 0 ? (
-                <p className="contracts-empty">Aucune indexation.</p>
+              {contractLines.length === 0 ? (
+                <p className="contracts-empty">Aucune ligne de contrat.</p>
               ) : (
                 <ul className="contracts-simple-list">
-                  {indexations.map((item) => (
-                    <li key={item.id}>
-                      <span>{formatDate(item.dateEffet)} · {INDEXATION_LABELS[item.type]} · {item.valeur}{item.commentaire ? ` · ${item.commentaire}` : ''}</span>
-                      <button
-                        type="button"
-                        className="contracts-btn contracts-btn--danger"
-                        onClick={() => void handleDeleteIndexation(item.id)}
-                        disabled={busy}
-                      >
-                        Supprimer
-                      </button>
+                  {contractLines.map((line) => (
+                    <li key={line.id}>
+                      <span>
+                        {CONTRACT_LINE_LABELS[line.type] ?? line.type} - {line.libelle} - Qte {line.quantite} - PU {line.prixUnitaireHt}
+                        {line.imprimante ? ` - ${line.imprimante.numeroSerie}` : ''}
+                        {line.dateDebut || line.dateFin ? ` - ${line.dateDebut || '...'} -> ${line.dateFin || '...'}` : ''}
+                        {!line.actif ? ' - Inactive' : ''}
+                      </span>
+                      <div className="contracts-list-actions">
+                        <button
+                          type="button"
+                          className="contracts-btn"
+                          onClick={() => handleEditContractLine(line)}
+                          disabled={busy}
+                        >
+                          Modifier
+                        </button>
+                        <button type="button" className="contracts-btn" onClick={() => void handleToggleContractLine(line)} disabled={busy}>
+                          {line.actif ? 'Desactiver' : 'Activer'}
+                        </button>
+                        <button type="button" className="contracts-btn contracts-btn--danger" onClick={() => void handleDeleteContractLine(line.id)} disabled={busy}>
+                          Supprimer
+                        </button>
+                      </div>
                     </li>
                   ))}
                 </ul>
@@ -744,7 +842,7 @@ export default function ContractsPage() {
                 {periods.map((period) => (
                   <li key={period.id}>
                     <span>
-                      {formatDate(period.dateDebut)} → {formatDate(period.dateFin)} · {BILLING_STATUS_LABELS[period.statut] ?? period.statut} · Total {period.totalHt}
+                      {formatDate(period.dateDebut)} {'->'} {formatDate(period.dateFin)} - {BILLING_STATUS_LABELS[period.statut] ?? period.statut} - Total {period.totalHt}
                     </span>
                     <div className="contracts-list-actions">
                       <button type="button" className="contracts-btn" onClick={() => void handlePreviewPeriod(period.id)} disabled={busy}>
@@ -771,8 +869,8 @@ export default function ContractsPage() {
             <div className="contracts-subpanel contracts-subpanel--full">
               <h3>Preview periode #{preview.id}</h3>
               <p>
-                {formatDate(preview.dateDebut)} → {formatDate(preview.dateFin)} · {BILLING_STATUS_LABELS[preview.statut] ?? preview.statut} ·
-                {' '}Total HT {preview.totalHt} · Generee le {formatDateTime(preview.generatedAt)}
+                {formatDate(preview.dateDebut)} {'->'} {formatDate(preview.dateFin)} - {BILLING_STATUS_LABELS[preview.statut] ?? preview.statut} -
+                {' '}Total HT {preview.totalHt} - Generee le {formatDateTime(preview.generatedAt)}
               </p>
               {preview.lignes.length === 0 ? (
                 <p className="contracts-empty">Aucune ligne.</p>
@@ -784,6 +882,8 @@ export default function ContractsPage() {
                         <th>Type</th>
                         <th>Description</th>
                         <th>Quantite</th>
+                        <th>Tarif HT</th>
+                        <th>Coef</th>
                         <th>PU HT</th>
                         <th>Montant HT</th>
                       </tr>
@@ -794,6 +894,8 @@ export default function ContractsPage() {
                           <td>{line.type}</td>
                           <td>{line.description}</td>
                           <td>{line.quantite}</td>
+                          <td>{line.tarifUnitaireHt ?? '-'}</td>
+                          <td>{line.coefficientIndexation ?? '-'}</td>
                           <td>{line.prixUnitaireHt}</td>
                           <td>{line.montantHt}</td>
                         </tr>

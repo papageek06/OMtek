@@ -11,6 +11,7 @@ import {
   UnauthorizedError,
   type InterventionFilters,
   type InterventionItem,
+  type InterventionUpdatePayload,
   type Site,
 } from '../api/client'
 import { useAuth } from '../context/AuthContext'
@@ -173,7 +174,7 @@ export default function InterventionsPage() {
     }
   }
 
-  const handlePatch = async (intervention: InterventionItem, patch: { statut?: string; billingStatus?: string; archived?: boolean }) => {
+  const handlePatch = async (intervention: InterventionItem, patch: InterventionUpdatePayload) => {
     setSubmitting(true)
     setError(null)
     setMessage(null)
@@ -186,6 +187,61 @@ export default function InterventionsPage() {
     } finally {
       setSubmitting(false)
     }
+  }
+
+  const handleUpdateInterventionCost = async (intervention: InterventionItem) => {
+    const durationRaw = window.prompt(
+      'Duree intervention (minutes, vide = non renseigne):',
+      intervention.interventionDurationMinutes != null ? String(intervention.interventionDurationMinutes) : ''
+    )
+    if (durationRaw === null) return
+    const laborRaw = window.prompt(
+      'Main d oeuvre HT (ex: 80.00):',
+      intervention.interventionLaborCostHt ?? ''
+    )
+    if (laborRaw === null) return
+    const partsRaw = window.prompt(
+      'Pieces HT (ex: 35.50):',
+      intervention.interventionPartsCostHt ?? ''
+    )
+    if (partsRaw === null) return
+    const travelRaw = window.prompt(
+      'Deplacement HT (ex: 20.00):',
+      intervention.interventionTravelCostHt ?? ''
+    )
+    if (travelRaw === null) return
+    const notesRaw = window.prompt(
+      'Notes facturation (optionnel):',
+      intervention.interventionBillingNotes ?? ''
+    )
+    if (notesRaw === null) return
+
+    const normalizedDuration = durationRaw.trim()
+    if (normalizedDuration !== '' && (!/^\d+$/.test(normalizedDuration) || Number(normalizedDuration) < 0)) {
+      setError('Duree intervention invalide')
+      return
+    }
+
+    const amountRegex = /^\d+(?:[.,]\d{1,6})?$/
+    for (const [label, value] of [
+      ['Main d oeuvre', laborRaw],
+      ['Pieces', partsRaw],
+      ['Deplacement', travelRaw],
+    ] as const) {
+      const normalized = value.trim()
+      if (normalized !== '' && !amountRegex.test(normalized)) {
+        setError(`${label} HT invalide`)
+        return
+      }
+    }
+
+    await handlePatch(intervention, {
+      interventionDurationMinutes: normalizedDuration === '' ? null : Number(normalizedDuration),
+      interventionLaborCostHt: laborRaw.trim() === '' ? null : laborRaw.trim().replace(',', '.'),
+      interventionPartsCostHt: partsRaw.trim() === '' ? null : partsRaw.trim().replace(',', '.'),
+      interventionTravelCostHt: travelRaw.trim() === '' ? null : travelRaw.trim().replace(',', '.'),
+      interventionBillingNotes: notesRaw.trim() || null,
+    })
   }
 
   const handleSubmitForApproval = async (intervention: InterventionItem) => {
@@ -513,6 +569,11 @@ export default function InterventionsPage() {
                 <span>Assigne: {intervention.assignedTo ? `${intervention.assignedTo.firstName} ${intervention.assignedTo.lastName}` : 'Non assignee'}</span>
                 <span>Debut: {formatDate(intervention.startedAt)}</span>
                 <span>Cloture: {formatDate(intervention.closedAt)}</span>
+                <span>Duree (min): {intervention.interventionDurationMinutes ?? 'â€”'}</span>
+                <span>MO HT: {intervention.interventionLaborCostHt ?? 'â€”'}</span>
+                <span>Pieces HT: {intervention.interventionPartsCostHt ?? 'â€”'}</span>
+                <span>Deplacement HT: {intervention.interventionTravelCostHt ?? 'â€”'}</span>
+                <span>Total HT: {intervention.interventionTotalCostHt ?? 'â€”'}</span>
                 <span>Soumise: {formatDate(intervention.submittedAt ?? null)}</span>
                 <span>Validee: {formatDate(intervention.approvedAt ?? null)}</span>
                 {intervention.approvedBy && (
@@ -520,6 +581,9 @@ export default function InterventionsPage() {
                 )}
                 {intervention.approvalNote && (
                   <span>Note validation: {intervention.approvalNote}</span>
+                )}
+                {intervention.interventionBillingNotes && (
+                  <span>Notes facturation: {intervention.interventionBillingNotes}</span>
                 )}
               </div>
 
@@ -564,6 +628,17 @@ export default function InterventionsPage() {
                     disabled={submitting}
                   >
                     {intervention.archived ? 'Desarchiver' : 'Archiver'}
+                  </button>
+                )}
+
+                {isAdmin && (
+                  <button
+                    type="button"
+                    className="intervention-card__secondary-btn"
+                    onClick={() => handleUpdateInterventionCost(intervention)}
+                    disabled={submitting}
+                  >
+                    Valoriser cout
                   </button>
                 )}
 

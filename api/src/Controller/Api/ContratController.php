@@ -117,11 +117,6 @@ class ContratController extends AbstractController
             }
         }
 
-        $forfaitMaintenance = $this->normalizeDecimal($data['forfaitMaintenance'] ?? '0.00', 2);
-        if ($forfaitMaintenance === null || str_starts_with($forfaitMaintenance, '-')) {
-            return new JsonResponse(['error' => 'forfaitMaintenance invalide'], Response::HTTP_BAD_REQUEST);
-        }
-
         $devise = strtoupper(trim((string) ($data['devise'] ?? 'EUR')));
         if (!preg_match('/^[A-Z]{3}$/', $devise)) {
             return new JsonResponse(['error' => 'devise invalide (format ISO 3 lettres)'], Response::HTTP_BAD_REQUEST);
@@ -136,7 +131,6 @@ class ContratController extends AbstractController
             ->setStatus($status)
             ->setDateDebut($dateDebut)
             ->setDateFin($dateFin)
-            ->setForfaitMaintenance($forfaitMaintenance)
             ->setDevise($devise)
             ->setNotes(isset($data['notes']) ? (trim((string) $data['notes']) ?: null) : null);
 
@@ -246,14 +240,6 @@ class ContratController extends AbstractController
             return new JsonResponse(['error' => 'dateFin doit etre >= dateDebut'], Response::HTTP_BAD_REQUEST);
         }
 
-        if (array_key_exists('forfaitMaintenance', $data)) {
-            $forfaitMaintenance = $this->normalizeDecimal($data['forfaitMaintenance'], 2);
-            if ($forfaitMaintenance === null || str_starts_with($forfaitMaintenance, '-')) {
-                return new JsonResponse(['error' => 'forfaitMaintenance invalide'], Response::HTTP_BAD_REQUEST);
-            }
-            $contrat->setForfaitMaintenance($forfaitMaintenance);
-        }
-
         if (array_key_exists('devise', $data)) {
             $devise = strtoupper(trim((string) $data['devise']));
             if (!preg_match('/^[A-Z]{3}$/', $devise)) {
@@ -300,7 +286,6 @@ class ContratController extends AbstractController
             'statut' => $contrat->getStatus()->value,
             'dateDebut' => $contrat->getDateDebut()->format('Y-m-d'),
             'dateFin' => $contrat->getDateFin()?->format('Y-m-d'),
-            'forfaitMaintenance' => $contrat->getForfaitMaintenance(),
             'devise' => $contrat->getDevise(),
             'notes' => $contrat->getNotes(),
             'site' => [
@@ -327,32 +312,8 @@ class ContratController extends AbstractController
         return null;
     }
 
-    private function normalizeDecimal(mixed $value, int $scale): ?string
-    {
-        if ($value === null || $value === '') {
-            return null;
-        }
-
-        $raw = str_replace(',', '.', trim((string) $value));
-        if (!preg_match('/^-?\d+(?:\.\d+)?$/', $raw)) {
-            return null;
-        }
-
-        $negative = str_starts_with($raw, '-');
-        $unsigned = $negative ? substr($raw, 1) : $raw;
-        [$intPart, $decPart] = array_pad(explode('.', $unsigned, 2), 2, '');
-        $intPart = ltrim($intPart, '0');
-        if ($intPart === '') {
-            $intPart = '0';
-        }
-        $decPart = substr(str_pad($decPart, $scale, '0'), 0, $scale);
-
-        return sprintf('%s%s.%s', $negative ? '-' : '', $intPart, $decPart);
-    }
-
     private function isAdmin(): bool
     {
         return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
     }
 }
-

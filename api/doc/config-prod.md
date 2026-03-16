@@ -1,14 +1,14 @@
-# Configuration production — API (Symfony)
+# Configuration production - API (Symfony)
 
-Variables et fichiers à adapter pour déployer l'API en production.
+Variables et fichiers a adapter pour deployer l'API en production.
 
 ## Fichiers d'environnement
 
-- `.env` : valeurs par défaut (peut être versionné sans secrets).
+- `.env` : valeurs par defaut (peut etre versionne sans secrets).
 - `.env.local` : surcharge locale, ne pas commiter (secrets, URLs prod).
-- `.env.prod` : optionnel, valeurs par défaut pour APP_ENV=prod.
+- `.env.prod` : optionnel, valeurs par defaut pour APP_ENV=prod.
 
-En production, définir les variables via le serveur ou un fichier `.env.local` non versionné.
+En production, definir les variables via le serveur ou un fichier `.env.local` non versionne.
 
 ## Variables principales
 
@@ -17,10 +17,10 @@ En production, définir les variables via le serveur ou un fichier `.env.local` 
 | Variable | Description | Exemple prod |
 |----------|-------------|--------------|
 | APP_ENV | Environnement | prod |
-| APP_SECRET | Clé secrète Symfony | chaîne générée (bin2hex random) |
+| APP_SECRET | Cle secrete Symfony | chaine generee (bin2hex random) |
 | DATABASE_URL | Connexion BDD | Voir ci-dessous |
 
-### Base de données
+### Base de donnees
 
 MySQL : `DATABASE_URL="mysql://USER:PASSWORD@HOST:3306/NOM_BDD?serverVersion=8.0&charset=utf8mb4"`
 
@@ -34,19 +34,28 @@ Si le frontend est sur un autre domaine, adapter dans .env :
 
 `CORS_ALLOW_ORIGIN='^https://(votredomaine\.fr|www\.votredomaine\.fr)$'`
 
-### URL par défaut (optionnel)
+### URL par defaut (optionnel)
 
 `DEFAULT_URI=https://api.votredomaine.fr`
 
-## Déploiement
+## Deploiement
 
 1. APP_ENV=prod et APP_DEBUG=0
-2. Générer un APP_SECRET fort
+2. Generer un APP_SECRET fort
 3. Configurer DATABASE_URL
 4. Migrations : `php bin/console doctrine:migrations:migrate --no-interaction`
-5. Cache : `php bin/console cache:clear --env=prod`
-6. Serveur web : racine document = api/public, redirection vers public/index.php
+5. Bootstrap premier admin :
+   `php bin/console app:user:bootstrap-admin --email=admin@votre-domaine.fr --password='MotDePasseFort!'`
+6. Cache : `php bin/console cache:clear --env=prod`
+7. Serveur web : racine document = api/public, redirection vers public/index.php
 
-## Sécurité
+## Runbook premier acces
 
-Ne pas commiter .env.local ni les secrets. En prod utiliser HTTPS et APP_DEBUG=0.
+- Le `register` public reste desactive en production.
+- Le premier compte doit etre cree par CLI via `app:user:bootstrap-admin`.
+- Ensuite, la creation des autres comptes passe par l'API admin-only `POST /api/users`.
+- `ROLE_SUPER_ADMIN` n'est pas assignable via API (CLI uniquement).
+
+## Securite
+
+Ne pas commiter `.env.local` ni les secrets. En prod utiliser HTTPS et APP_DEBUG=0.

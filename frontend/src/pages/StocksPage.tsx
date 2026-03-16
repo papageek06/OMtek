@@ -839,18 +839,7 @@ export default function StocksPage() {
         </div>
       )}
 
-      <div className="stocks-page__sites">
-        <h2>Sites</h2>
-        <ul className="stocks-page__sites-list">
-          {sites.map((s) => (
-            <li key={s.id}>
-              <Link to={'/sites/' + s.id} className="stocks-page__site-link">
-                {s.nom}
-              </Link>
-            </li>
-          ))}
-        </ul>
-      </div>
+      
     </div>
   )
 }

@@ -104,8 +104,11 @@ export async function login(email: string, password: string): Promise<LoginRespo
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: email.trim(), password }),
   })
-  const data = await res.json().catch(() => ({}))
-  if (!res.ok) throw new Error((data?.error as string) || 'Identifiants invalides')
+  const data = await res.json().catch(() => null)
+  if (!res.ok) {
+    const fallback = res.status === 401 ? 'Identifiants invalides' : `Erreur API login (${res.status})`
+    throw new Error((data as { error?: string } | null)?.error || fallback)
+  }
   return data
 }
 
@@ -375,6 +378,12 @@ export interface InterventionItem {
   title: string
   description: string | null
   notesTech: string | null
+  interventionDurationMinutes?: number | null
+  interventionLaborCostHt?: string | null
+  interventionPartsCostHt?: string | null
+  interventionTravelCostHt?: string | null
+  interventionTotalCostHt?: string | null
+  interventionBillingNotes?: string | null
   site: {
     id: number
     nom: string
@@ -430,6 +439,11 @@ export interface InterventionCreatePayload {
   source?: string
   priorite?: string
   billingStatus?: string
+  interventionDurationMinutes?: number | null
+  interventionLaborCostHt?: string | null
+  interventionPartsCostHt?: string | null
+  interventionTravelCostHt?: string | null
+  interventionBillingNotes?: string | null
 }
 
 export interface InterventionUpdatePayload {
@@ -441,6 +455,11 @@ export interface InterventionUpdatePayload {
   billingStatus?: string
   statut?: string
   archived?: boolean
+  interventionDurationMinutes?: number | null
+  interventionLaborCostHt?: string | null
+  interventionPartsCostHt?: string | null
+  interventionTravelCostHt?: string | null
+  interventionBillingNotes?: string | null
 }
 
 export async function fetchSites(): Promise<Site[]> {
@@ -538,11 +557,10 @@ export interface ContractItem {
   id: number
   reference: string
   libelle: string
-  periodicite: 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  periodicite: 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY'
   statut: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED'
   dateDebut: string
   dateFin: string | null
-  forfaitMaintenance: string
   devise: string
   notes: string | null
   site: {
@@ -563,52 +581,57 @@ export interface ContractCreatePayload {
   siteId: number
   reference: string
   libelle: string
-  periodicite: 'MONTHLY' | 'QUARTERLY' | 'YEARLY'
+  periodicite: 'MONTHLY' | 'QUARTERLY' | 'SEMIANNUAL' | 'YEARLY'
   statut?: 'DRAFT' | 'ACTIVE' | 'SUSPENDED' | 'CLOSED'
   dateDebut: string
   dateFin?: string | null
-  forfaitMaintenance?: string
   devise?: string
   notes?: string | null
 }
 
 export type ContractUpdatePayload = Partial<ContractCreatePayload>
 
-export interface ContractRateItem {
+export type ContractLineType = 'FORFAIT_MAINTENANCE' | 'IMPRIMANTE' | 'INTERVENTION' | 'AUTRE'
+
+export interface ContractLineItem {
   id: number
-  dateEffet: string
-  prixPageNoir: string
-  prixPageCouleur: string
-  coefficientIndexation: string
+  type: ContractLineType
+  libelle: string
+  quantite: string
+  prixUnitaireHt: string
+  coefficientIndexation: string | null
+  dateDebut: string | null
+  dateFin: string | null
+  actif: boolean
+  site: {
+    id: number
+    nom: string
+  } | null
+  imprimante: {
+    id: number
+    numeroSerie: string
+    modele: string
+  } | null
+  meta: Record<string, unknown> | null
   createdAt: string
+  updatedAt: string
 }
 
-export interface ContractRateCreatePayload {
-  dateEffet: string
-  prixPageNoir: string
-  prixPageCouleur: string
-  coefficientIndexation?: string
+export interface ContractLineCreatePayload {
+  type: ContractLineType
+  libelle: string
+  quantite?: string
+  prixUnitaireHt?: string
+  coefficientIndexation?: string | null
+  dateDebut?: string | null
+  dateFin?: string | null
+  actif?: boolean
+  siteId?: number | null
+  imprimanteId?: number | null
+  meta?: Record<string, unknown> | null
 }
 
-export type ContractRateUpdatePayload = Partial<ContractRateCreatePayload>
-
-export interface ContractIndexationItem {
-  id: number
-  dateEffet: string
-  type: 'MANUAL_COEFFICIENT' | 'FIXED_PERCENTAGE' | 'EXTERNAL_INDEX'
-  valeur: string
-  commentaire: string | null
-  createdAt: string
-}
-
-export interface ContractIndexationCreatePayload {
-  dateEffet: string
-  type: 'MANUAL_COEFFICIENT' | 'FIXED_PERCENTAGE' | 'EXTERNAL_INDEX'
-  valeur: string
-  commentaire?: string | null
-}
-
-export type ContractIndexationUpdatePayload = Partial<ContractIndexationCreatePayload>
+export type ContractLineUpdatePayload = Partial<ContractLineCreatePayload>
 
 export interface BillingPeriodItem {
   id: number
@@ -627,6 +650,8 @@ export interface BillingLineItem {
   type: string
   description: string
   quantite: string
+  tarifUnitaireHt: string | null
+  coefficientIndexation: string | null
   prixUnitaireHt: string
   montantHt: string
   interventionId: number | null
@@ -716,104 +741,55 @@ export async function deleteContract(id: number): Promise<void> {
   }
 }
 
-export async function fetchContractRates(contractId: number): Promise<ContractRateItem[]> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates`)
+export async function fetchContractLines(contractId: number): Promise<ContractLineItem[]> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/lines`)
   const body = await res.json().catch(() => [])
   if (!res.ok) {
-    throw new Error((body?.error as string) || 'Erreur chargement tarifs')
+    throw new Error((body?.error as string) || 'Erreur chargement lignes contrat')
   }
   return body
 }
 
-export async function createContractRate(contractId: number, data: ContractRateCreatePayload): Promise<ContractRateItem> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates`, {
+export async function createContractLine(
+  contractId: number,
+  data: ContractLineCreatePayload
+): Promise<ContractLineItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/lines`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error((body?.error as string) || 'Erreur creation tarif')
+    throw new Error((body?.error as string) || 'Erreur creation ligne contrat')
   }
   return body
 }
 
-export async function updateContractRate(
+export async function updateContractLine(
   contractId: number,
-  rateId: number,
-  data: ContractRateUpdatePayload
-): Promise<ContractRateItem> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates/${rateId}`, {
+  lineId: number,
+  data: ContractLineUpdatePayload
+): Promise<ContractLineItem> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/lines/${lineId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   })
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
-    throw new Error((body?.error as string) || 'Erreur mise a jour tarif')
+    throw new Error((body?.error as string) || 'Erreur mise a jour ligne contrat')
   }
   return body
 }
 
-export async function deleteContractRate(contractId: number, rateId: number): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/rates/${rateId}`, {
+export async function deleteContractLine(contractId: number, lineId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/lines/${lineId}`, {
     method: 'DELETE',
   })
   if (!res.ok) {
     const body = await res.json().catch(() => ({}))
-    throw new Error((body?.error as string) || 'Erreur suppression tarif')
-  }
-}
-
-export async function fetchContractIndexations(contractId: number): Promise<ContractIndexationItem[]> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations`)
-  const body = await res.json().catch(() => [])
-  if (!res.ok) {
-    throw new Error((body?.error as string) || 'Erreur chargement indexations')
-  }
-  return body
-}
-
-export async function createContractIndexation(
-  contractId: number,
-  data: ContractIndexationCreatePayload
-): Promise<ContractIndexationItem> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error((body?.error as string) || 'Erreur creation indexation')
-  }
-  return body
-}
-
-export async function updateContractIndexation(
-  contractId: number,
-  indexationId: number,
-  data: ContractIndexationUpdatePayload
-): Promise<ContractIndexationItem> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations/${indexationId}`, {
-    method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(data),
-  })
-  const body = await res.json().catch(() => ({}))
-  if (!res.ok) {
-    throw new Error((body?.error as string) || 'Erreur mise a jour indexation')
-  }
-  return body
-}
-
-export async function deleteContractIndexation(contractId: number, indexationId: number): Promise<void> {
-  const res = await apiFetch(`${API_BASE}/contracts/${contractId}/indexations/${indexationId}`, {
-    method: 'DELETE',
-  })
-  if (!res.ok) {
-    const body = await res.json().catch(() => ({}))
-    throw new Error((body?.error as string) || 'Erreur suppression indexation')
+    throw new Error((body?.error as string) || 'Erreur suppression ligne contrat')
   }
 }
 

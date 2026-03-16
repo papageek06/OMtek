@@ -78,6 +78,24 @@ class Intervention
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notesTech = null;
 
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $interventionDurationMinutes = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2, nullable: true)]
+    private ?string $interventionLaborCostHt = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2, nullable: true)]
+    private ?string $interventionPartsCostHt = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2, nullable: true)]
+    private ?string $interventionTravelCostHt = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 12, scale: 2, nullable: true)]
+    private ?string $interventionTotalCostHt = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $interventionBillingNotes = null;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $startedAt = null;
 
@@ -278,6 +296,72 @@ class Intervention
     public function setNotesTech(?string $notesTech): static
     {
         $this->notesTech = $notesTech;
+        return $this;
+    }
+
+    public function getInterventionDurationMinutes(): ?int
+    {
+        return $this->interventionDurationMinutes;
+    }
+
+    public function setInterventionDurationMinutes(?int $interventionDurationMinutes): static
+    {
+        $this->interventionDurationMinutes = $interventionDurationMinutes;
+        return $this;
+    }
+
+    public function getInterventionLaborCostHt(): ?string
+    {
+        return $this->interventionLaborCostHt;
+    }
+
+    public function setInterventionLaborCostHt(?string $interventionLaborCostHt): static
+    {
+        $this->interventionLaborCostHt = $interventionLaborCostHt;
+        return $this;
+    }
+
+    public function getInterventionPartsCostHt(): ?string
+    {
+        return $this->interventionPartsCostHt;
+    }
+
+    public function setInterventionPartsCostHt(?string $interventionPartsCostHt): static
+    {
+        $this->interventionPartsCostHt = $interventionPartsCostHt;
+        return $this;
+    }
+
+    public function getInterventionTravelCostHt(): ?string
+    {
+        return $this->interventionTravelCostHt;
+    }
+
+    public function setInterventionTravelCostHt(?string $interventionTravelCostHt): static
+    {
+        $this->interventionTravelCostHt = $interventionTravelCostHt;
+        return $this;
+    }
+
+    public function getInterventionTotalCostHt(): ?string
+    {
+        return $this->interventionTotalCostHt;
+    }
+
+    public function setInterventionTotalCostHt(?string $interventionTotalCostHt): static
+    {
+        $this->interventionTotalCostHt = $interventionTotalCostHt;
+        return $this;
+    }
+
+    public function getInterventionBillingNotes(): ?string
+    {
+        return $this->interventionBillingNotes;
+    }
+
+    public function setInterventionBillingNotes(?string $interventionBillingNotes): static
+    {
+        $this->interventionBillingNotes = $interventionBillingNotes;
         return $this;
     }
 

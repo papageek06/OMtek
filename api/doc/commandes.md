@@ -1,12 +1,12 @@
-# Lignes de commande — API (Symfony)
+# Lignes de commande - API (Symfony)
 
-Commandes utiles pour l’API OMtek (Symfony).
+Commandes utiles pour l'API OMtek (Symfony).
 
-## Prérequis
+## Prerequis
 
 - PHP 8.2+
 - Composer
-- Base de données (MySQL/MariaDB ou SQLite selon config)
+- Base de donnees (MySQL/MariaDB ou SQLite selon config)
 
 ## Installation
 
@@ -15,17 +15,34 @@ cd api
 composer install
 ```
 
-## Démarrage du serveur
+## Demarrage du serveur
 
 ```bash
-# Avec Symfony CLI (recommandé en dev)
+# Avec Symfony CLI (recommande en dev)
 symfony serve
 
-# Ou avec le serveur PHP intégré
+# Ou avec le serveur PHP integre
 php -S 127.0.0.1:8000 -t public
 ```
 
-L’API est alors disponible sur `http://127.0.0.1:8000` (ou l’URL affichée par `symfony serve`).
+L'API est alors disponible sur `http://127.0.0.1:8000` (ou l'URL affichee par `symfony serve`).
+
+## Bootstrap premier admin (prod)
+
+Utiliser cette commande une seule fois au premier deploiement, quand aucun admin n'existe encore.
+
+```bash
+php bin/console app:user:bootstrap-admin \
+  --email=admin@votre-domaine.fr \
+  --password='MotDePasseFort!' \
+  --first-name=Super \
+  --last-name=Admin
+```
+
+Notes:
+- Alias retrocompatible: `app:user:create-super-admin`.
+- Si le compte admin existe deja avec le meme email, la commande retourne `SUCCESS` (idempotent).
+- Si un autre admin existe deja, la commande echoue sauf avec `--force`.
 
 ## Commandes Symfony / Doctrine
 
@@ -36,24 +53,24 @@ php bin/console cache:clear
 # Environnement production
 php bin/console cache:clear --env=prod
 
-# Migrations Doctrine (schéma BDD)
+# Migrations Doctrine (schema BDD)
 php bin/console doctrine:migrations:status
 php bin/console doctrine:migrations:migrate
 
-# Créer une nouvelle migration après modification des entités
+# Creer une nouvelle migration apres modification des entites
 php bin/console make:migration
 ```
 
-## Vérifications
+## Verifications
 
 ```bash
 # Liste des routes
 php bin/console debug:router
 
-# Vérifier la config
+# Verifier la config
 php bin/console debug:config doctrine
 ```
 
-## Variables d’environnement
+## Variables d'environnement
 
 La configuration (DB, CORS, etc.) est lue depuis `.env` et `.env.local`. Voir `doc/config-prod.md` pour la production.

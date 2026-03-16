@@ -202,6 +202,8 @@ class BillingPeriodController extends AbstractController
             'type' => $line->getType()->value,
             'description' => $line->getDescription(),
             'quantite' => $line->getQuantite(),
+            'tarifUnitaireHt' => $line->getTarifUnitaireHt(),
+            'coefficientIndexation' => $line->getCoefficientIndexation(),
             'prixUnitaireHt' => $line->getPrixUnitaireHt(),
             'montantHt' => $line->getMontantHt(),
             'interventionId' => $line->getIntervention()?->getId(),
@@ -222,6 +224,7 @@ class BillingPeriodController extends AbstractController
                 $today->setDate((int) $today->format('Y'), 1, 1),
                 $today->setDate((int) $today->format('Y'), 12, 31),
             ],
+            'SEMIANNUAL' => $this->semesterRange($today),
             'QUARTERLY' => $this->quarterRange($today),
             default => [
                 $today->modify('first day of this month'),
@@ -240,6 +243,21 @@ class BillingPeriodController extends AbstractController
         $quarterStartMonth = (int) (floor(($month - 1) / 3) * 3) + 1;
         $start = $date->setDate($year, $quarterStartMonth, 1);
         $endMonth = $quarterStartMonth + 2;
+        $end = $start->setDate($year, $endMonth, 1)->modify('last day of this month');
+
+        return [$start, $end];
+    }
+
+    /**
+     * @return array{0:\DateTimeImmutable,1:\DateTimeImmutable}
+     */
+    private function semesterRange(\DateTimeImmutable $date): array
+    {
+        $year = (int) $date->format('Y');
+        $month = (int) $date->format('n');
+        $semesterStartMonth = $month <= 6 ? 1 : 7;
+        $start = $date->setDate($year, $semesterStartMonth, 1);
+        $endMonth = $semesterStartMonth + 5;
         $end = $start->setDate($year, $endMonth, 1)->modify('last day of this month');
 
         return [$start, $end];
@@ -265,4 +283,3 @@ class BillingPeriodController extends AbstractController
         return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
     }
 }
-

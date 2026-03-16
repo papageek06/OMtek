@@ -8,6 +8,6 @@ enum ContractPeriodicity: string
 {
     case MONTHLY = 'MONTHLY';
     case QUARTERLY = 'QUARTERLY';
+    case SEMIANNUAL = 'SEMIANNUAL';
     case YEARLY = 'YEARLY';
 }
-

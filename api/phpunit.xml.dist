@@ -16,5 +16,6 @@
   <php>
     <server name="APP_ENV" value="test"/>
     <server name="APP_DEBUG" value="1"/>
+    <server name="DATABASE_URL" value="sqlite:///%kernel.project_dir%/var/omtek_test.sqlite"/>
   </php>
 </phpunit>

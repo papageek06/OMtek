@@ -303,6 +303,12 @@ class InterventionController extends AbstractController
             $data['archived'],
             $data['archivedAt'],
             $data['assignedToUserId'],
+            $data['interventionDurationMinutes'],
+            $data['interventionLaborCostHt'],
+            $data['interventionPartsCostHt'],
+            $data['interventionTravelCostHt'],
+            $data['interventionTotalCostHt'],
+            $data['interventionBillingNotes'],
             $data['approvalStatus'],
             $data['submittedAt'],
             $data['approvedAt'],
@@ -315,6 +321,8 @@ class InterventionController extends AbstractController
 
     private function applyPayload(Intervention $intervention, array $data, bool $isUpdate): ?string
     {
+        $recomputeInterventionTotal = false;
+
         if (!$isUpdate || isset($data['type'])) {
             $type = InterventionType::tryFrom((string) ($data['type'] ?? ''));
             if (!$type) {
@@ -336,6 +344,56 @@ class InterventionController extends AbstractController
         }
         if (array_key_exists('notesTech', $data)) {
             $intervention->setNotesTech(trim((string) $data['notesTech']) ?: null);
+        }
+        if (array_key_exists('interventionDurationMinutes', $data)) {
+            if ($data['interventionDurationMinutes'] === null || $data['interventionDurationMinutes'] === '') {
+                $intervention->setInterventionDurationMinutes(null);
+            } else {
+                $duration = (int) $data['interventionDurationMinutes'];
+                if ($duration < 0) {
+                    return 'interventionDurationMinutes doit etre >= 0';
+                }
+                $intervention->setInterventionDurationMinutes($duration);
+            }
+        }
+        if (array_key_exists('interventionLaborCostHt', $data)) {
+            if ($data['interventionLaborCostHt'] === null || $data['interventionLaborCostHt'] === '') {
+                $intervention->setInterventionLaborCostHt(null);
+            } else {
+                $laborCost = $this->normalizeDecimal($data['interventionLaborCostHt'], 2);
+                if ($laborCost === null || str_starts_with($laborCost, '-')) {
+                    return 'interventionLaborCostHt invalide';
+                }
+                $intervention->setInterventionLaborCostHt($laborCost);
+            }
+            $recomputeInterventionTotal = true;
+        }
+        if (array_key_exists('interventionPartsCostHt', $data)) {
+            if ($data['interventionPartsCostHt'] === null || $data['interventionPartsCostHt'] === '') {
+                $intervention->setInterventionPartsCostHt(null);
+            } else {
+                $partsCost = $this->normalizeDecimal($data['interventionPartsCostHt'], 2);
+                if ($partsCost === null || str_starts_with($partsCost, '-')) {
+                    return 'interventionPartsCostHt invalide';
+                }
+                $intervention->setInterventionPartsCostHt($partsCost);
+            }
+            $recomputeInterventionTotal = true;
+        }
+        if (array_key_exists('interventionTravelCostHt', $data)) {
+            if ($data['interventionTravelCostHt'] === null || $data['interventionTravelCostHt'] === '') {
+                $intervention->setInterventionTravelCostHt(null);
+            } else {
+                $travelCost = $this->normalizeDecimal($data['interventionTravelCostHt'], 2);
+                if ($travelCost === null || str_starts_with($travelCost, '-')) {
+                    return 'interventionTravelCostHt invalide';
+                }
+                $intervention->setInterventionTravelCostHt($travelCost);
+            }
+            $recomputeInterventionTotal = true;
+        }
+        if (array_key_exists('interventionBillingNotes', $data)) {
+            $intervention->setInterventionBillingNotes(trim((string) $data['interventionBillingNotes']) ?: null);
         }
         if (isset($data['source'])) {
             $source = InterventionSource::tryFrom((string) $data['source']);
@@ -410,6 +468,10 @@ class InterventionController extends AbstractController
             $intervention->setSourceAlerte($alerte);
         }
 
+        if ($recomputeInterventionTotal) {
+            $this->recomputeInterventionTotalCost($intervention);
+        }
+
         return null;
     }
 
@@ -443,6 +505,68 @@ class InterventionController extends AbstractController
         return null;
     }
 
+    private function recomputeInterventionTotalCost(Intervention $intervention): void
+    {
+        $labor = $intervention->getInterventionLaborCostHt();
+        $parts = $intervention->getInterventionPartsCostHt();
+        $travel = $intervention->getInterventionTravelCostHt();
+
+        if ($labor === null && $parts === null && $travel === null) {
+            $intervention->setInterventionTotalCostHt(null);
+            return;
+        }
+
+        $totalCents = $this->toCents($labor ?? '0.00')
+            + $this->toCents($parts ?? '0.00')
+            + $this->toCents($travel ?? '0.00');
+
+        $intervention->setInterventionTotalCostHt($this->fromCents($totalCents));
+    }
+
+    private function normalizeDecimal(mixed $value, int $scale): ?string
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        $raw = str_replace(',', '.', trim((string) $value));
+        if (!preg_match('/^-?\d+(?:\.\d+)?$/', $raw)) {
+            return null;
+        }
+
+        $negative = str_starts_with($raw, '-');
+        $unsigned = $negative ? substr($raw, 1) : $raw;
+        [$intPart, $decPart] = array_pad(explode('.', $unsigned, 2), 2, '');
+        $intPart = ltrim($intPart, '0');
+        if ($intPart === '') {
+            $intPart = '0';
+        }
+        $decPart = substr(str_pad($decPart, $scale, '0'), 0, $scale);
+
+        return sprintf('%s%s.%s', $negative ? '-' : '', $intPart, $decPart);
+    }
+
+    private function toCents(string $amount): int
+    {
+        $normalized = $this->normalizeDecimal($amount, 2) ?? '0.00';
+        $negative = str_starts_with($normalized, '-');
+        $unsigned = $negative ? substr($normalized, 1) : $normalized;
+        [$intPart, $decPart] = explode('.', $unsigned, 2);
+        $cents = ((int) $intPart * 100) + (int) $decPart;
+
+        return $negative ? -$cents : $cents;
+    }
+
+    private function fromCents(int $cents): string
+    {
+        $negative = $cents < 0;
+        $abs = abs($cents);
+        $units = intdiv($abs, 100);
+        $dec = $abs % 100;
+
+        return sprintf('%s%d.%02d', $negative ? '-' : '', $units, $dec);
+    }
+
     private function toArray(Intervention $intervention): array
     {
         return [
@@ -457,6 +581,12 @@ class InterventionController extends AbstractController
             'title' => $intervention->getTitle(),
             'description' => $intervention->getDescription(),
             'notesTech' => $intervention->getNotesTech(),
+            'interventionDurationMinutes' => $intervention->getInterventionDurationMinutes(),
+            'interventionLaborCostHt' => $intervention->getInterventionLaborCostHt(),
+            'interventionPartsCostHt' => $intervention->getInterventionPartsCostHt(),
+            'interventionTravelCostHt' => $intervention->getInterventionTravelCostHt(),
+            'interventionTotalCostHt' => $intervention->getInterventionTotalCostHt(),
+            'interventionBillingNotes' => $intervention->getInterventionBillingNotes(),
             'site' => [
                 'id' => $intervention->getSite()->getId(),
                 'nom' => $intervention->getSite()->getNom(),
