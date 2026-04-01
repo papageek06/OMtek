@@ -7,6 +7,7 @@ namespace App\Controller\Api;
 use App\Entity\Alerte;
 use App\Entity\Imprimante;
 use App\Entity\User;
+use App\Service\InboundTokenGuard;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -22,6 +23,7 @@ class AlerteController extends AbstractController
 
     public function __construct(
         private readonly EntityManagerInterface $em,
+        private readonly InboundTokenGuard $inboundTokenGuard,
     ) {
     }
 
@@ -126,6 +128,11 @@ class AlerteController extends AbstractController
     #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse|Response
     {
+        $inboundError = $this->validateInboundToken($request);
+        if ($inboundError !== null) {
+            return $inboundError;
+        }
+
         $data = json_decode($request->getContent(), true);
         if (!\is_array($data)) {
             return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
@@ -447,5 +454,22 @@ class AlerteController extends AbstractController
     private function alertReferenceDate(Alerte $alerte): \DateTimeImmutable
     {
         return $alerte->getRecuLe() ?? $alerte->getCreatedAt();
+    }
+
+    private function validateInboundToken(Request $request): ?JsonResponse
+    {
+        if (!$this->inboundTokenGuard->isConfigured()) {
+            return new JsonResponse(
+                ['error' => 'INBOUND_TOKEN non configure sur le serveur'],
+                Response::HTTP_SERVICE_UNAVAILABLE
+            );
+        }
+
+        $providedToken = $request->headers->get('X-Inbound-Token');
+        if (!$this->inboundTokenGuard->isValid($providedToken)) {
+            return new JsonResponse(['error' => 'Token inbound invalide'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        return null;
     }
 }

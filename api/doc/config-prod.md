@@ -19,6 +19,7 @@ En production, definir les variables via le serveur ou un fichier `.env.local` n
 | APP_ENV | Environnement | prod |
 | APP_SECRET | Cle secrete Symfony | chaine generee (bin2hex random) |
 | DATABASE_URL | Connexion BDD | Voir ci-dessous |
+| INBOUND_TOKEN | Token partage avec la VM mail-fetcher (header `X-Inbound-Token`) | chaine aleatoire forte |
 
 ### Base de donnees
 
@@ -43,11 +44,12 @@ Si le frontend est sur un autre domaine, adapter dans .env :
 1. APP_ENV=prod et APP_DEBUG=0
 2. Generer un APP_SECRET fort
 3. Configurer DATABASE_URL
-4. Migrations : `php bin/console doctrine:migrations:migrate --no-interaction`
-5. Bootstrap premier admin :
+4. Configurer INBOUND_TOKEN (meme valeur que sur la VM mail-fetcher)
+5. Migrations : `php bin/console doctrine:migrations:migrate --no-interaction`
+6. Bootstrap premier admin :
    `php bin/console app:user:bootstrap-admin --email=admin@votre-domaine.fr --password='MotDePasseFort!'`
-6. Cache : `php bin/console cache:clear --env=prod`
-7. Serveur web : racine document = api/public, redirection vers public/index.php
+7. Cache : `php bin/console cache:clear --env=prod`
+8. Serveur web : racine document = api/public, redirection vers public/index.php
 
 ## Runbook premier acces
 
@@ -59,3 +61,4 @@ Si le frontend est sur un autre domaine, adapter dans .env :
 ## Securite
 
 Ne pas commiter `.env.local` ni les secrets. En prod utiliser HTTPS et APP_DEBUG=0.
+Les endpoints `POST /api/alertes` et `POST /api/csv-backup` sont exposes en `PUBLIC_ACCESS` mais refusent toute requete sans `X-Inbound-Token` valide.

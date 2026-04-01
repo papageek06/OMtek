@@ -4,7 +4,7 @@ Commandes utiles pour l'API OMtek (Symfony).
 
 ## Prerequis
 
-- PHP 8.2+
+- PHP 8.4+
 - Composer
 - Base de donnees (MySQL/MariaDB ou SQLite selon config)
 
@@ -13,6 +13,26 @@ Commandes utiles pour l'API OMtek (Symfony).
 ```bash
 cd api
 composer install
+```
+
+### Cas OVH mutualise (SSH en PHP 8.2 par defaut)
+
+Si `php --version` retourne `8.2.x`, forcer une version compatible avant `composer install` :
+
+```bash
+alias php='/usr/local/php8.4/bin/php'
+php --version
+composer install
+```
+
+Pour la partie web, verifier aussi le `.ovhconfig` a la racine FTP :
+
+```ini
+app.engine=php
+app.engine.version=8.4
+http.firewall=none
+environment=production
+container.image=stable64
 ```
 
 ## Demarrage du serveur

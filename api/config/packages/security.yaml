@@ -25,6 +25,8 @@ security:
 
     access_control:
         - { path: ^/api/auth/(login|verify), roles: PUBLIC_ACCESS }
+        - { path: ^/api/alertes$, roles: PUBLIC_ACCESS, methods: [POST] }
+        - { path: ^/api/csv-backup$, roles: PUBLIC_ACCESS, methods: [POST] }
         - { path: ^/api/users/me, roles: ROLE_USER }
         - { path: ^/api/users, roles: [ROLE_ADMIN, ROLE_SUPER_ADMIN] }
         - { path: ^/api/auth, roles: ROLE_USER }

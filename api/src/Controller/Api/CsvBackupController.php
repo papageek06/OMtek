@@ -8,6 +8,7 @@ use App\Entity\Imprimante;
 use App\Entity\Modele;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
+use App\Service\InboundTokenGuard;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,6 +21,7 @@ class CsvBackupController extends AbstractController
 {
     public function __construct(
         private readonly EntityManagerInterface $em,
+        private readonly InboundTokenGuard $inboundTokenGuard,
     ) {
     }
 
@@ -31,6 +33,11 @@ class CsvBackupController extends AbstractController
     #[Route('', name: 'import', methods: ['POST'])]
     public function import(Request $request): JsonResponse|Response
     {
+        $inboundError = $this->validateInboundToken($request);
+        if ($inboundError !== null) {
+            return $inboundError;
+        }
+
         $data = json_decode($request->getContent(), true);
         if (!\is_array($data)) {
             return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
@@ -223,5 +230,22 @@ class CsvBackupController extends AbstractController
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function validateInboundToken(Request $request): ?JsonResponse
+    {
+        if (!$this->inboundTokenGuard->isConfigured()) {
+            return new JsonResponse(
+                ['error' => 'INBOUND_TOKEN non configure sur le serveur'],
+                Response::HTTP_SERVICE_UNAVAILABLE
+            );
+        }
+
+        $providedToken = $request->headers->get('X-Inbound-Token');
+        if (!$this->inboundTokenGuard->isValid($providedToken)) {
+            return new JsonResponse(['error' => 'Token inbound invalide'], Response::HTTP_UNAUTHORIZED);
+        }
+
+        return null;
     }
 }
