@@ -1,81 +1,65 @@
-# Resume de nos conversations: but du projet et attentes
+# Resume conversation projet
 
-Date: 2026-03-12
+Date: 2026-03-25
 
-## 1. But du projet
+## 1. Objectif principal
 
-Construire une application metier OMtek qui permet:
+Construire une V1 exploitable en conditions reelles pour:
 
-- de superviser un parc imprimantes client
-- de traiter les alertes et absences de remontee
-- de gerer les stocks avec separation stricte admin/technicien
-- de suivre les interventions terrain de bout en bout
+- superviser le parc imprimantes client
+- prioriser les actions terrain technicien
+- proteger les donnees sensibles admin/comptable
+- preparer une mise en ligne OVH pour tests reels
 
-Objectif principal: une V1 exploitable terrain, rapide sur mobile, sans fuite de donnees sensibles.
+## 2. Decisions metier confirmees
 
-## 2. Attentes metier exprimees et validees
+- technicien:
+- peut creer interventions
+- peut modifier son profil
+- peut modifier modeles
+- peut gerer stock non masque
+- voit les interventions (auteur visible) et le stock visible
+- n a pas acces comptable
+- n a pas acces aux sites masques ni a leur gestion
+- alertes:
+- logique `T` basee sur alertes mail actives
+- toner < 20% + alertes bac recup
+- alertes desactivables via case a cocher
+- ressources site:
+- NOTscan = adresse + note (pas de nom)
+- identifiants non lies a NOTscan
+- fichiers site (udf/csv/config) visualisables et modifiables rapidement
 
-Attentes confirmees dans les echanges + questionnaire:
+## 3. Realisations effectuees
 
-- un technicien voit tous les sites
-- il ne voit jamais la gestion utilisateurs
-- il peut creer et suivre des interventions
-- il doit pouvoir agir vite sur smartphone
-- aucune donnee `ADMIN_ONLY` ne doit fuiter
-- les actions sensibles (stock/intervention) doivent etre tracables
+- renforcement des droits par role (API + front)
+- masquage des emails non admin pour les listes utilisateurs/actions
+- marquage `T` site via alertes actives
+- affichage alertes actives/inactives sur detail machine
+- ameliorations UI site/detail:
+- marge desktop reduite
+- niveaux toner en ligne
+- ajout niveau bac recup en violet
+- onglets machines priorises, modele affiche sous numero de serie
+- creation utilisateur: confirmation mot de passe
+- modeles: liaison pieces existantes ou nouvelles
+- nouvel onglet `Acces & Fichiers` sur detail site:
+- CRUD NOTscan
+- CRUD identifiants chiffres + affichage + copie
+- CRUD notes
+- upload/visualisation/edition/remplacement/telechargement fichiers
 
-## 3. Ce que nous avons realise ensemble
+## 4. Etat actuel
 
-### Cadrage et architecture
+- backend et frontend fonctionnels sur les besoins valides
+- migrations appliquees jusqu a `Version20260325213000`
+- build frontend valide
+- container Symfony valide
 
-- audit architecture initial
-- schema cible data (interventions, mouvements stock, scopes)
-- documentation des decisions metier principales
+## 5. Prochaine etape validee
 
-### Backend
+Preparation et deploiement OVH pour tests technicien en situation reelle.
 
-- endpoints dashboard technicien
-- CRUD interventions
-- separation stock `TECH_VISIBLE` / `ADMIN_ONLY`
-- historique mouvements de stock (`GET/POST /stock-movements`)
-- enforcement role et restrictions sur champs admin-only
-- verification schema Doctrine et migrations appliquees
+La checklist detaillee est dans:
 
-### Frontend
-
-- ecran dashboard technicien
-- ecran interventions
-- evolution des pages sites/detail site pour usage terrain
-- affichage des derniers mouvements de stock sur detail site
-
-### Qualite
-
-- strategie de tests documentee
-- squelette `api/tests` + `phpunit.xml.dist`
-- checks techniques executes (schema, container, tsc, build)
-
-## 4. Etat actuel du projet
-
-Le coeur fonctionnel V1 est en place sur:
-
-- supervision technicien
-- interventions
-- stock scopes et historique
-
-Points encore attendus:
-
-- installation dependances tests et ecriture des tests integration/unitaires
-- ecran admin de gestion utilisateurs cote frontend
-- supervision admin plus complete
-- optimisation bundle frontend et refactor pages les plus denses
-
-## 5. Ce que tu attends explicitement maintenant
-
-Dans ton message, tu as demande:
-
-- utilisation du skill architecte/system designer pour verifier le projet
-- une documentation detaillee des fonctionnalites
-- un document audit separe
-- un resume de conversation sur le but et les attentes
-
-Ces 3 livrables correspondent a cette demande.
+- `docs/todo-prochaine-etape-ovh.md`

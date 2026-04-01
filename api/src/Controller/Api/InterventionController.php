@@ -39,6 +39,7 @@ class InterventionController extends AbstractController
         }
 
         $qb = $this->em->getRepository(Intervention::class)->createQueryBuilder('i')
+            ->leftJoin('i.site', 's')
             ->orderBy('i.createdAt', 'DESC');
 
         $status = InterventionStatus::tryFrom((string) $request->query->get('statut', ''));
@@ -68,6 +69,7 @@ class InterventionController extends AbstractController
         $archived = $this->parseBooleanFilter($request->query->get('archived'));
         if (!$this->isAdmin()) {
             $qb->andWhere('i.archived = false');
+            $qb->andWhere('s.isHidden = false');
         } elseif ($archived !== null) {
             $qb->andWhere('i.archived = :archived')
                 ->setParameter('archived', $archived);
@@ -91,6 +93,9 @@ class InterventionController extends AbstractController
 
         $site = $this->em->getRepository(Site::class)->find((int) $data['siteId']);
         if (!$site) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+        if ($site->isHidden() && !$this->isAdmin()) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
@@ -282,6 +287,10 @@ class InterventionController extends AbstractController
         }
         if ($this->isAdmin()) {
             return true;
+        }
+
+        if ($intervention->getSite()->isHidden()) {
+            return false;
         }
 
         return !$intervention->isArchived();
@@ -569,27 +578,30 @@ class InterventionController extends AbstractController
 
     private function toArray(Intervention $intervention): array
     {
+        $isAdmin = $this->isAdmin();
+
         return [
             'id' => $intervention->getId(),
             'type' => $intervention->getType()->value,
             'source' => $intervention->getSource()->value,
             'priorite' => $intervention->getPriorite()->value,
             'statut' => $intervention->getStatus()->value,
-            'billingStatus' => $intervention->getBillingStatus()->value,
+            'billingStatus' => $isAdmin ? $intervention->getBillingStatus()->value : null,
             'approvalStatus' => $intervention->getApprovalStatus()->value,
             'archived' => $intervention->isArchived(),
             'title' => $intervention->getTitle(),
             'description' => $intervention->getDescription(),
             'notesTech' => $intervention->getNotesTech(),
-            'interventionDurationMinutes' => $intervention->getInterventionDurationMinutes(),
-            'interventionLaborCostHt' => $intervention->getInterventionLaborCostHt(),
-            'interventionPartsCostHt' => $intervention->getInterventionPartsCostHt(),
-            'interventionTravelCostHt' => $intervention->getInterventionTravelCostHt(),
-            'interventionTotalCostHt' => $intervention->getInterventionTotalCostHt(),
-            'interventionBillingNotes' => $intervention->getInterventionBillingNotes(),
+            'interventionDurationMinutes' => $isAdmin ? $intervention->getInterventionDurationMinutes() : null,
+            'interventionLaborCostHt' => $isAdmin ? $intervention->getInterventionLaborCostHt() : null,
+            'interventionPartsCostHt' => $isAdmin ? $intervention->getInterventionPartsCostHt() : null,
+            'interventionTravelCostHt' => $isAdmin ? $intervention->getInterventionTravelCostHt() : null,
+            'interventionTotalCostHt' => $isAdmin ? $intervention->getInterventionTotalCostHt() : null,
+            'interventionBillingNotes' => $isAdmin ? $intervention->getInterventionBillingNotes() : null,
             'site' => [
                 'id' => $intervention->getSite()->getId(),
                 'nom' => $intervention->getSite()->getNom(),
+                'isHidden' => $isAdmin ? $intervention->getSite()->isHidden() : null,
             ],
             'imprimante' => $intervention->getImprimante() ? [
                 'id' => $intervention->getImprimante()?->getId(),
@@ -598,19 +610,19 @@ class InterventionController extends AbstractController
             ] : null,
             'createdBy' => [
                 'id' => $intervention->getCreatedBy()->getId(),
-                'email' => $intervention->getCreatedBy()->getEmail(),
+                'email' => $isAdmin ? $intervention->getCreatedBy()->getEmail() : null,
                 'firstName' => $intervention->getCreatedBy()->getFirstName(),
                 'lastName' => $intervention->getCreatedBy()->getLastName(),
             ],
             'assignedTo' => $intervention->getAssignedTo() ? [
                 'id' => $intervention->getAssignedTo()?->getId(),
-                'email' => $intervention->getAssignedTo()?->getEmail(),
+                'email' => $isAdmin ? $intervention->getAssignedTo()?->getEmail() : null,
                 'firstName' => $intervention->getAssignedTo()?->getFirstName(),
                 'lastName' => $intervention->getAssignedTo()?->getLastName(),
             ] : null,
             'approvedBy' => $intervention->getApprovedBy() ? [
                 'id' => $intervention->getApprovedBy()?->getId(),
-                'email' => $intervention->getApprovedBy()?->getEmail(),
+                'email' => $isAdmin ? $intervention->getApprovedBy()?->getEmail() : null,
                 'firstName' => $intervention->getApprovedBy()?->getFirstName(),
                 'lastName' => $intervention->getApprovedBy()?->getLastName(),
             ] : null,

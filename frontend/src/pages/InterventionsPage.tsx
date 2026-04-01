@@ -519,6 +519,7 @@ export default function InterventionsPage() {
         <div className="interventions-list">
           {interventions.map((intervention) => {
             const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
+            const billingStatus = intervention.billingStatus ?? 'NON_FACTURE'
             const canSubmitForApproval =
               !isAdmin &&
               intervention.statut === 'TERMINEE' &&
@@ -538,8 +539,8 @@ export default function InterventionsPage() {
                       {PRIORITY_LABELS[intervention.priorite] ?? intervention.priorite}
                     </span>
                     {isAdmin && (
-                      <span className={`intervention-chip intervention-chip--${statusClass(intervention.billingStatus)}`}>
-                        {BILLING_LABELS[intervention.billingStatus] ?? intervention.billingStatus}
+                      <span className={`intervention-chip intervention-chip--${statusClass(billingStatus)}`}>
+                        {BILLING_LABELS[billingStatus] ?? billingStatus}
                       </span>
                     )}
                     <span className={`intervention-chip intervention-chip--${statusClass(approvalStatus)}`}>
@@ -569,11 +570,6 @@ export default function InterventionsPage() {
                 <span>Assigne: {intervention.assignedTo ? `${intervention.assignedTo.firstName} ${intervention.assignedTo.lastName}` : 'Non assignee'}</span>
                 <span>Debut: {formatDate(intervention.startedAt)}</span>
                 <span>Cloture: {formatDate(intervention.closedAt)}</span>
-                <span>Duree (min): {intervention.interventionDurationMinutes ?? 'â€”'}</span>
-                <span>MO HT: {intervention.interventionLaborCostHt ?? 'â€”'}</span>
-                <span>Pieces HT: {intervention.interventionPartsCostHt ?? 'â€”'}</span>
-                <span>Deplacement HT: {intervention.interventionTravelCostHt ?? 'â€”'}</span>
-                <span>Total HT: {intervention.interventionTotalCostHt ?? 'â€”'}</span>
                 <span>Soumise: {formatDate(intervention.submittedAt ?? null)}</span>
                 <span>Validee: {formatDate(intervention.approvedAt ?? null)}</span>
                 {intervention.approvedBy && (
@@ -582,8 +578,17 @@ export default function InterventionsPage() {
                 {intervention.approvalNote && (
                   <span>Note validation: {intervention.approvalNote}</span>
                 )}
-                {intervention.interventionBillingNotes && (
-                  <span>Notes facturation: {intervention.interventionBillingNotes}</span>
+                {isAdmin && (
+                  <>
+                    <span>Duree (min): {intervention.interventionDurationMinutes ?? '-'}</span>
+                    <span>MO HT: {intervention.interventionLaborCostHt ?? '-'}</span>
+                    <span>Pieces HT: {intervention.interventionPartsCostHt ?? '-'}</span>
+                    <span>Deplacement HT: {intervention.interventionTravelCostHt ?? '-'}</span>
+                    <span>Total HT: {intervention.interventionTotalCostHt ?? '-'}</span>
+                    {intervention.interventionBillingNotes && (
+                      <span>Notes facturation: {intervention.interventionBillingNotes}</span>
+                    )}
+                  </>
                 )}
               </div>
 
@@ -607,7 +612,7 @@ export default function InterventionsPage() {
                   <label>
                     <span>Facturation</span>
                     <select
-                      value={intervention.billingStatus}
+                      value={billingStatus}
                       onChange={(e) => handlePatch(intervention, { billingStatus: e.target.value })}
                       disabled={submitting}
                     >

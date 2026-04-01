@@ -29,6 +29,35 @@ class PieceController extends AbstractController
     }
 
     /**
+     * GET /api/pieces : liste des pieces (optionnel ?q= pour filtrer).
+     */
+    #[Route('', name: 'list', methods: ['GET'])]
+    public function list(Request $request): JsonResponse
+    {
+        $q = trim((string) $request->query->get('q', ''));
+        $limit = min(max((int) $request->query->get('limit', 300), 1), 1000);
+
+        $qb = $this->em->getRepository(Piece::class)->createQueryBuilder('piece')
+            ->orderBy('piece.reference', 'ASC')
+            ->addOrderBy('piece.id', 'ASC')
+            ->setMaxResults($limit);
+
+        if ($q !== '') {
+            $needle = mb_strtolower($q);
+            $qb->andWhere(
+                'LOWER(piece.reference) LIKE :q
+                OR LOWER(piece.libelle) LIKE :q
+                OR LOWER(COALESCE(piece.refBis, \'\')) LIKE :q
+                OR LOWER(piece.categorie) LIKE :q'
+            )->setParameter('q', '%' . $needle . '%');
+        }
+
+        $pieces = $qb->getQuery()->getResult();
+        $data = array_map(fn (Piece $piece): array => $this->pieceToArray($piece), $pieces);
+
+        return new JsonResponse($data, Response::HTTP_OK);
+    }
+    /**
      * POST /api/pieces : créer une pièce.
      * Body: { "reference", "libelle", "categorie", "variant"?, "nature"?, "type"? }
      * Si "type" est envoyé (rétrocompat), il est mappé vers categorie.
@@ -337,3 +366,4 @@ class PieceController extends AbstractController
         ];
     }
 }
+

@@ -20,14 +20,15 @@ final class TechnicienDashboardService
 
     public function build(User $user): array
     {
+        $isAdmin = $this->isAdmin($user);
         $now = new \DateTimeImmutable();
         $threshold = $now->sub(new \DateInterval('P' . self::DAYS_WITHOUT_DATA . 'D'));
 
-        $sitesWithAlerts = $this->fetchSitesWithAlerts();
-        $sitesWithoutData = $this->fetchSitesWithoutData($threshold, $now);
-        $openInterventions = $this->fetchOpenInterventions();
-        $criticalStocks = $this->fetchCriticalStocks();
-        $latestAlertes = $this->fetchLatestAlertes();
+        $sitesWithAlerts = $this->fetchSitesWithAlerts($isAdmin);
+        $sitesWithoutData = $this->fetchSitesWithoutData($threshold, $now, $isAdmin);
+        $openInterventions = $this->fetchOpenInterventions($isAdmin);
+        $criticalStocks = $this->fetchCriticalStocks($isAdmin);
+        $latestAlertes = $this->fetchLatestAlertes($isAdmin);
 
         return [
             'generatedAt' => $now->format(\DateTimeInterface::ATOM),
@@ -56,7 +57,7 @@ final class TechnicienDashboardService
      *     lastAlertAt:?string
      * }>
      */
-    private function fetchSitesWithAlerts(): array
+    private function fetchSitesWithAlerts(bool $includeHidden): array
     {
         $sql = <<<'SQL'
 SELECT
@@ -69,6 +70,7 @@ FROM site s
 INNER JOIN imprimante i ON i.site_id = s.id
 INNER JOIN alerte a ON a.numero_serie = i.numero_serie
 WHERE a.ignorer = 0
+  AND (:include_hidden = 1 OR s.is_hidden = 0)
 GROUP BY s.id, s.nom
 ORDER BY last_alert_at DESC, s.nom ASC
 SQL;
@@ -81,7 +83,9 @@ SQL;
                 'alertCount' => (int) $row['alert_count'],
                 'lastAlertAt' => $this->normalizeDateTime($row['last_alert_at'] ?? null),
             ];
-        }, $this->connection->fetchAllAssociative($sql));
+        }, $this->connection->fetchAllAssociative($sql, [
+            'include_hidden' => $includeHidden ? 1 : 0,
+        ]));
     }
 
     /**
@@ -94,7 +98,7 @@ SQL;
      *     neverReported:bool
      * }>
      */
-    private function fetchSitesWithoutData(\DateTimeImmutable $threshold, \DateTimeImmutable $now): array
+    private function fetchSitesWithoutData(\DateTimeImmutable $threshold, \DateTimeImmutable $now, bool $includeHidden): array
     {
         $sql = <<<'SQL'
 SELECT
@@ -111,6 +115,7 @@ LEFT JOIN (
     FROM rapport_imprimante
     GROUP BY imprimante_id
 ) rr ON rr.imprimante_id = i.id
+WHERE (:include_hidden = 1 OR s.is_hidden = 0)
 GROUP BY s.id, s.nom
 HAVING MAX(rr.latest_scan) IS NULL OR MAX(rr.latest_scan) < :threshold
 ORDER BY COALESCE(MAX(rr.latest_scan), '1970-01-01 00:00:00') ASC, s.nom ASC
@@ -133,6 +138,7 @@ SQL;
             ];
         }, $this->connection->fetchAllAssociative($sql, [
             'threshold' => $threshold->format('Y-m-d H:i:s'),
+            'include_hidden' => $includeHidden ? 1 : 0,
         ]));
     }
 
@@ -150,7 +156,7 @@ SQL;
      *     startedAt:?string
      * }>
      */
-    private function fetchOpenInterventions(): array
+    private function fetchOpenInterventions(bool $includeHidden): array
     {
         $sql = <<<'SQL'
 SELECT
@@ -172,6 +178,7 @@ INNER JOIN site s ON s.id = i.site_id
 LEFT JOIN user u ON u.id = i.assigned_to_user_id
 WHERE i.archived = 0
   AND i.statut IN ('A_FAIRE', 'EN_COURS')
+  AND (:include_hidden = 1 OR s.is_hidden = 0)
 SQL;
 
         $sql .= <<<'SQL'
@@ -189,14 +196,14 @@ SQL;
     i.created_at DESC
 SQL;
 
-        return array_map(function (array $row): array {
+        return array_map(function (array $row) use ($includeHidden): array {
             return [
                 'id' => (int) $row['id'],
                 'title' => (string) $row['title'],
                 'type' => (string) $row['type'],
                 'statut' => (string) $row['statut'],
                 'priorite' => (string) $row['priorite'],
-                'billingStatus' => (string) $row['billing_status'],
+                'billingStatus' => $includeHidden ? (string) $row['billing_status'] : null,
                 'site' => [
                     'id' => (int) $row['site_id'],
                     'nom' => (string) $row['site_name'],
@@ -209,7 +216,9 @@ SQL;
                 'createdAt' => $this->normalizeDateTime($row['created_at'] ?? null),
                 'startedAt' => $this->normalizeDateTime($row['started_at'] ?? null),
             ];
-        }, $this->connection->fetchAllAssociative($sql));
+        }, $this->connection->fetchAllAssociative($sql, [
+            'include_hidden' => $includeHidden ? 1 : 0,
+        ]));
     }
 
     /**
@@ -221,7 +230,7 @@ SQL;
      *     piece:array{id:int,reference:string,refBis:?string,libelle:string,categorie:string}
      * }>
      */
-    private function fetchCriticalStocks(): array
+    private function fetchCriticalStocks(bool $includeHidden): array
     {
         $sql = <<<'SQL'
 SELECT
@@ -241,6 +250,7 @@ INNER JOIN piece p ON p.id = st.piece_id
 WHERE st.scope = 'TECH_VISIBLE'
   AND st.site_id IS NOT NULL
   AND st.quantite <= :threshold
+  AND (:include_hidden = 1 OR s.is_hidden = 0)
 ORDER BY st.quantite ASC, st.updated_at ASC, s.nom ASC
 SQL;
 
@@ -263,6 +273,7 @@ SQL;
             ];
         }, $this->connection->fetchAllAssociative($sql, [
             'threshold' => self::CRITICAL_STOCK_THRESHOLD,
+            'include_hidden' => $includeHidden ? 1 : 0,
         ]));
     }
 
@@ -277,7 +288,7 @@ SQL;
      *     recuLe:?string
      * }>
      */
-    private function fetchLatestAlertes(): array
+    private function fetchLatestAlertes(bool $includeHidden): array
     {
         $sql = <<<'SQL'
 SELECT
@@ -293,6 +304,7 @@ FROM alerte a
 LEFT JOIN imprimante i ON i.numero_serie = a.numero_serie
 LEFT JOIN site s ON s.id = i.site_id
 WHERE a.ignorer = 0
+  AND (:include_hidden = 1 OR s.is_hidden = 0 OR s.id IS NULL)
 ORDER BY COALESCE(a.recu_le, a.created_at) DESC, a.id DESC
 LIMIT 8
 SQL;
@@ -312,7 +324,9 @@ SQL;
                 'niveauPourcent' => $row['niveau_pourcent'] !== null ? (int) $row['niveau_pourcent'] : null,
                 'recuLe' => $this->normalizeDateTime($row['recu_le'] ?? null),
             ];
-        }, $this->connection->fetchAllAssociative($sql));
+        }, $this->connection->fetchAllAssociative($sql, [
+            'include_hidden' => $includeHidden ? 1 : 0,
+        ]));
     }
 
     private function normalizeDateTime(mixed $value): ?string
@@ -330,5 +344,11 @@ SQL;
         } catch (\Throwable) {
             return null;
         }
+    }
+
+    private function isAdmin(User $user): bool
+    {
+        return \in_array(User::ROLE_ADMIN, $user->getRoles(), true)
+            || \in_array(User::ROLE_SUPER_ADMIN, $user->getRoles(), true);
     }
 }

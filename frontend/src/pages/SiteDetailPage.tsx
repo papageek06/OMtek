@@ -15,6 +15,7 @@ import {
   fetchSiteStockMovements,
   fetchRapports,
   fetchAlertes,
+  updateAlerteActive,
   upsertStock,
   updatePiece,
   deletePiece,
@@ -33,6 +34,7 @@ import {
   type ModeleItem,
 } from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import SiteResourcesTab from './SiteResourcesTab'
 import './SiteDetailPage.css'
 
 function formatDate(iso: string | null): string {
@@ -56,6 +58,13 @@ function parseCounter(raw: string | null | undefined): number | null {
   if (raw == null || raw === '') return null
   const n = parseInt(String(raw).replace(/\s/g, ''), 10)
   return Number.isFinite(n) ? n : null
+}
+
+function isAlerteActive(alerte: Alerte): boolean {
+  if (typeof alerte.active === 'boolean') {
+    return alerte.active
+  }
+  return !alerte.ignorer
 }
 
 const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
@@ -160,11 +169,13 @@ export default function SiteDetailPage() {
   const [site, setSite] = useState<SiteDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<number | 'stocks' | null>('stocks')
+  const [activeTab, setActiveTab] = useState<number | 'stocks' | 'resources' | null>('stocks')
   const [showGraph, setShowGraph] = useState(false)
   const [graphImprimanteId, setGraphImprimanteId] = useState<number | null>(null)
   const [rapportsByImp, setRapportsByImp] = useState<Record<number, RapportImprimante[]>>({})
   const [alertesByImp, setAlertesByImp] = useState<Record<number, Alerte[]>>({})
+  const [showInactiveAlertsByImp, setShowInactiveAlertsByImp] = useState<Record<number, boolean>>({})
+  const [updatingAlerteIdByImp, setUpdatingAlerteIdByImp] = useState<Record<number, number | null>>({})
   const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
   const [adminStockQuantites, setAdminStockQuantites] = useState<Record<number, number>>({})
   const [stockMovements, setStockMovements] = useState<StockMovementItem[]>([])
@@ -256,20 +267,60 @@ export default function SiteDetailPage() {
     }
   }, [loading, site])
 
-  const loadImprimanteData = useCallback((impId: number, numeroSerie: string) => {
-    if (rapportsByImp[impId]) return
-    Promise.all([fetchRapports(impId, { page: 1, limit: 10 }), fetchAlertes(numeroSerie)]).then(([rapsPage, alertes]) => {
-      const sorted = [...rapsPage.items].sort((a, b) => {
-        const da = a.lastScanDate || a.createdAt
-        const db = b.lastScanDate || b.createdAt
-        const ta = da ? new Date(da).getTime() : 0
-        const tb = db ? new Date(db).getTime() : 0
-        return tb - ta
-      })
-      setRapportsByImp((prev) => ({ ...prev, [impId]: sorted }))
-      setAlertesByImp((prev) => ({ ...prev, [impId]: alertes }))
+  const loadImprimanteData = useCallback((impId: number, numeroSerie: string, includeInactive: boolean) => {
+    if (!rapportsByImp[impId]) {
+      fetchRapports(impId, { page: 1, limit: 10 })
+        .then((rapsPage) => {
+          const sorted = [...rapsPage.items].sort((a, b) => {
+            const da = a.lastScanDate || a.createdAt
+            const db = b.lastScanDate || b.createdAt
+            const ta = da ? new Date(da).getTime() : 0
+            const tb = db ? new Date(db).getTime() : 0
+            return tb - ta
+          })
+          setRapportsByImp((prev) => ({ ...prev, [impId]: sorted }))
+        })
+        .catch(() => {
+          setRapportsByImp((prev) => ({ ...prev, [impId]: [] }))
+        })
+    }
+
+    fetchAlertes({
+      numeroSerie,
+      includeInactive,
+      onlyActionable: true,
     })
+      .then((alertes) => {
+        setAlertesByImp((prev) => ({ ...prev, [impId]: alertes }))
+      })
+      .catch(() => {
+        setAlertesByImp((prev) => ({ ...prev, [impId]: [] }))
+      })
   }, [rapportsByImp])
+
+  const handleToggleShowInactiveAlerts = useCallback((impId: number, numeroSerie: string, showInactive: boolean) => {
+    setShowInactiveAlertsByImp((prev) => ({ ...prev, [impId]: showInactive }))
+    loadImprimanteData(impId, numeroSerie, showInactive)
+  }, [loadImprimanteData])
+
+  const handleToggleAlerteInactive = useCallback(async (
+    impId: number,
+    numeroSerie: string,
+    alerteId: number,
+    inactiveChecked: boolean
+  ) => {
+    const active = !inactiveChecked
+    setUpdatingAlerteIdByImp((prev) => ({ ...prev, [impId]: alerteId }))
+    try {
+      await updateAlerteActive(alerteId, active)
+      const includeInactive = showInactiveAlertsByImp[impId] ?? false
+      loadImprimanteData(impId, numeroSerie, includeInactive)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour alerte')
+    } finally {
+      setUpdatingAlerteIdByImp((prev) => ({ ...prev, [impId]: null }))
+    }
+  }, [loadImprimanteData, showInactiveAlertsByImp])
 
   const handleSearch = useCallback(() => setAppliedSearch({ ...search }), [search])
 
@@ -599,8 +650,24 @@ export default function SiteDetailPage() {
         </div>
       </header>
 
-      {/* Onglets : Stocks | Imprimante 1 | Imprimante 2 | ... */}
+      {/* Onglets : Imprimantes en priorite, puis Stocks et Acces */}
       <div className="site-detail-tabs">
+        {imprimantes.map((imp) => (
+          <button
+            key={imp.id}
+            type="button"
+            className={
+              'site-detail-tab site-detail-tab--machine' + (activeTab === imp.id ? ' site-detail-tab--active' : '')
+            }
+            onClick={() => {
+              setActiveTab(imp.id)
+              loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+            }}
+          >
+            <span className="site-detail-tab__serial">{imp.numeroSerie}</span>
+            <span className="site-detail-tab__model">{imp.modele}</span>
+          </button>
+        ))}
         <button
           type="button"
           className={'site-detail-tab' + (activeTab === 'stocks' ? ' site-detail-tab--active' : '')}
@@ -608,19 +675,13 @@ export default function SiteDetailPage() {
         >
           Stocks
         </button>
-        {imprimantes.map((imp) => (
-          <button
-            key={imp.id}
-            type="button"
-            className={'site-detail-tab' + (activeTab === imp.id ? ' site-detail-tab--active' : '')}
-            onClick={() => {
-              setActiveTab(imp.id)
-              loadImprimanteData(imp.id, imp.numeroSerie)
-            }}
-          >
-            {imp.numeroSerie}
-          </button>
-        ))}
+        <button
+          type="button"
+          className={'site-detail-tab' + (activeTab === 'resources' ? ' site-detail-tab--active' : '')}
+          onClick={() => setActiveTab('resources')}
+        >
+          Acces & Fichiers
+        </button>
       </div>
 
       {activeTab === 'stocks' && (
@@ -1247,12 +1308,28 @@ export default function SiteDetailPage() {
         </section>
       )}
 
+      {activeTab === 'resources' && Number.isFinite(siteId) && (
+        <SiteResourcesTab siteId={siteId} />
+      )}
+
       {typeof activeTab === 'number' && (
         <ImprimanteTab
           imprimante={imprimantes.find((i) => i.id === activeTab)!}
           rapports={rapportsByImp[activeTab] ?? []}
           alertes={alertesByImp[activeTab] ?? []}
-          loading={!rapportsByImp[activeTab] && !alertesByImp[activeTab]}
+          loading={!rapportsByImp[activeTab] || !alertesByImp[activeTab]}
+          showInactiveAlerts={showInactiveAlertsByImp[activeTab] ?? false}
+          updatingAlerteId={updatingAlerteIdByImp[activeTab] ?? null}
+          onToggleShowInactive={(checked) => {
+            const imp = imprimantes.find((i) => i.id === activeTab)
+            if (!imp) return
+            handleToggleShowInactiveAlerts(activeTab, imp.numeroSerie, checked)
+          }}
+          onToggleAlerteInactive={(alerteId, inactiveChecked) => {
+            const imp = imprimantes.find((i) => i.id === activeTab)
+            if (!imp) return
+            void handleToggleAlerteInactive(activeTab, imp.numeroSerie, alerteId, inactiveChecked)
+          }}
           showGraph={showGraph && graphImprimanteId === activeTab}
           onToggleGraph={() => {
             setShowGraph((v) => !v)
@@ -1269,6 +1346,10 @@ function ImprimanteTab({
   rapports,
   alertes,
   loading,
+  showInactiveAlerts,
+  updatingAlerteId,
+  onToggleShowInactive,
+  onToggleAlerteInactive,
   showGraph,
   onToggleGraph,
 }: {
@@ -1276,6 +1357,10 @@ function ImprimanteTab({
   rapports: RapportImprimante[]
   alertes: Alerte[]
   loading: boolean
+  showInactiveAlerts: boolean
+  updatingAlerteId: number | null
+  onToggleShowInactive: (checked: boolean) => void
+  onToggleAlerteInactive: (alerteId: number, inactiveChecked: boolean) => void
   showGraph: boolean
   onToggleGraph: () => void
 }) {
@@ -1372,6 +1457,14 @@ function ImprimanteTab({
       )}
 
       <h3>Alertes</h3>
+      <label className="alertes-controls">
+        <input
+          type="checkbox"
+          checked={showInactiveAlerts}
+          onChange={(e) => onToggleShowInactive(e.target.checked)}
+        />
+        <span>Voir toutes les alertes (actives + desactivees)</span>
+      </label>
       {loading ? (
         <p className="site-detail-loading">Chargement des alertes…</p>
       ) : alertes.length === 0 ? (
@@ -1379,13 +1472,25 @@ function ImprimanteTab({
       ) : (
         <ul className="alertes-list">
           {alertes.map((a) => (
-            <li key={a.id} className="alerte-item">
+            <li
+              key={a.id}
+              className={'alerte-item' + (!isAlerteActive(a) ? ' alerte-item--inactive' : '')}
+            >
               <span className="alerte-item__date">{formatDate(a.recuLe)}</span>
               <span className="alerte-item__motif">{a.motifAlerte}</span>
               <span className="alerte-item__piece">{a.piece}</span>
               {a.niveauPourcent != null && (
                 <span className="alerte-item__niveau">{a.niveauPourcent} %</span>
               )}
+              <label className="alerte-item__toggle">
+                <input
+                  type="checkbox"
+                  checked={!isAlerteActive(a)}
+                  disabled={updatingAlerteId === a.id}
+                  onChange={(e) => onToggleAlerteInactive(a.id, e.target.checked)}
+                />
+                <span>Desactiver</span>
+              </label>
             </li>
           ))}
         </ul>

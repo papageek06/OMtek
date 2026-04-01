@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
-import { fetchStocksGlobal, fetchSites, fetchModeles, fetchPiecesByModele, upsertStockGeneral, updatePiece, deletePiece, addModeleToPiece, removeModeleFromPiece, UnauthorizedError, type StockGlobalItem, type Site, type ModeleItem, type StockSearchParams, type PieceItem } from '../api/client'
+import { fetchStocksGlobal, fetchModeles, fetchPiecesByModele, upsertStockGeneral, updatePiece, deletePiece, addModeleToPiece, removeModeleFromPiece, UnauthorizedError, type StockGlobalItem, type ModeleItem, type StockSearchParams, type PieceItem } from '../api/client'
 import './StocksPage.css'
 
 const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
@@ -33,7 +33,6 @@ function pieceTypeClass(categorie?: string | null, type?: string | null): string
 
 export default function StocksPage() {
   const [stocks, setStocks] = useState<StockGlobalItem[]>([])
-  const [sites, setSites] = useState<Site[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [search, setSearch] = useState<StockSearchParams>({})
@@ -65,11 +64,10 @@ export default function StocksPage() {
   const loadData = useCallback(() => {
     setLoading(true)
     const searchParams = { ...appliedSearch, page: currentPage, limit: 30 }
-    Promise.all([fetchStocksGlobal(searchParams), fetchSites(), fetchModeles()])
-      .then(([response, sitesData, modelesData]) => {
+    Promise.all([fetchStocksGlobal(searchParams), fetchModeles()])
+      .then(([response, modelesData]) => {
         setStocks(response.data)
         setPagination(response.pagination)
-        setSites(sitesData)
         setModeles(modelesData)
       })
       .catch((e) => {

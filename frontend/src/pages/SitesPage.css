@@ -355,6 +355,21 @@
   font-weight: 600;
 }
 
+.site-card__hidden-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0.16rem 0.45rem;
+  border-radius: 999px;
+  border: 1px solid rgba(237, 66, 69, 0.35);
+  background: rgba(237, 66, 69, 0.14);
+  color: #f28b8d;
+  font-size: 0.7rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
+}
+
 .site-card__alerts {
   display: inline-flex;
   align-items: center;
@@ -403,6 +418,14 @@
   padding: 0.75rem 0 0.5rem;
 }
 
+.site-card__body-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.65rem;
+}
+
 .site-card__detail-link {
   font-size: 0.9rem;
   color: #00a8fc;
@@ -412,6 +435,29 @@
 .site-card__detail-link:hover {
   color: #58b4f0;
   text-decoration: underline;
+}
+
+.site-card__visibility-btn {
+  min-height: 2rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid #3f4147;
+  background: #313338;
+  color: #dcddde;
+  font-size: 0.82rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.site-card__visibility-btn:hover:not(:disabled) {
+  border-color: #00a8fc;
+  color: #00a8fc;
+}
+
+.site-card__visibility-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
 }
 
 .site-card__loading,
@@ -563,8 +609,9 @@
 /* Barres de niveau d'encre */
 .ink-levels {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 0.5rem 0.75rem;
   margin-top: 0.5rem;
 }
 
@@ -573,6 +620,12 @@
   align-items: center;
   gap: 0.5rem;
   font-size: 0.8rem;
+  flex: 1 1 140px;
+  min-width: 120px;
+}
+
+.ink-level--compact .ink-level__label {
+  display: none;
 }
 
 .ink-level__label {
@@ -611,6 +664,10 @@
   background: linear-gradient(90deg, #f9a825, #ffeb3b);
 }
 
+.ink-level__fill--waste {
+  background: linear-gradient(90deg, #7b1fa2, #ab47bc);
+}
+
 .ink-level__value {
   width: 2.2rem;
   text-align: right;
@@ -640,5 +697,15 @@
 
   .sites-expand-all-btn {
     margin-left: 0;
+  }
+
+  .ink-levels {
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .ink-level {
+    min-width: 0;
+    flex: 1 1 auto;
   }
 }

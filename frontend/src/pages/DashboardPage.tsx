@@ -82,6 +82,9 @@ export default function DashboardPage() {
           <Link to="/interventions" className="dashboard-home__secondary-link">
             Voir les interventions
           </Link>
+          <Link to="/modeles" className="dashboard-home__secondary-link">
+            Voir les modeles
+          </Link>
         </div>
       </header>
 

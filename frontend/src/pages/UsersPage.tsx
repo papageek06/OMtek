@@ -20,10 +20,14 @@ export default function UsersPage() {
   const [form, setForm] = useState({
     email: '',
     password: '',
+    passwordConfirmation: '',
     firstName: '',
     lastName: '',
     role: 'ROLE_TECH',
   })
+
+  const passwordsMismatch =
+    form.passwordConfirmation.length > 0 && form.password !== form.passwordConfirmation
 
   async function loadUsers(): Promise<void> {
     setLoading(true)
@@ -59,8 +63,18 @@ export default function UsersPage() {
 
   async function handleCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault()
-    if (!form.email.trim() || !form.password || !form.firstName.trim() || !form.lastName.trim()) {
+    if (
+      !form.email.trim() ||
+      !form.password ||
+      !form.passwordConfirmation ||
+      !form.firstName.trim() ||
+      !form.lastName.trim()
+    ) {
       setError('Tous les champs sont requis')
+      return
+    }
+    if (form.password !== form.passwordConfirmation) {
+      setError('Les mots de passe ne correspondent pas')
       return
     }
 
@@ -79,6 +93,7 @@ export default function UsersPage() {
       setForm({
         email: '',
         password: '',
+        passwordConfirmation: '',
         firstName: '',
         lastName: '',
         role: 'ROLE_TECH',
@@ -127,6 +142,20 @@ export default function UsersPage() {
             />
           </label>
           <label>
+            <span>Confirmer mot de passe</span>
+            <input
+              type="password"
+              value={form.passwordConfirmation}
+              onChange={(e) => setForm((prev) => ({ ...prev, passwordConfirmation: e.target.value }))}
+              required
+            />
+            {passwordsMismatch && (
+              <small className="users-form__hint users-form__hint--error">
+                Les mots de passe ne correspondent pas.
+              </small>
+            )}
+          </label>
+          <label>
             <span>Prenom</span>
             <input
               type="text"
@@ -157,7 +186,11 @@ export default function UsersPage() {
               ))}
             </select>
           </label>
-          <button type="submit" className="users-page__primary-btn" disabled={submitting}>
+          <button
+            type="submit"
+            className="users-page__primary-btn"
+            disabled={submitting || passwordsMismatch}
+          >
             {submitting ? 'Enregistrement...' : 'Creer utilisateur'}
           </button>
         </form>
@@ -185,4 +218,3 @@ export default function UsersPage() {
     </div>
   )
 }
-

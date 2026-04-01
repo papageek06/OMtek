@@ -33,11 +33,9 @@ function HeaderNav() {
           <NavLink to="/interventions" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
             Interventions
           </NavLink>
-          {isAdmin && (
-            <NavLink to="/modeles" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-              Modeles
-            </NavLink>
-          )}
+          <NavLink to="/modeles" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
+            Modeles
+          </NavLink>
           {isAdmin && (
             <NavLink to="/contracts" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
               Contrats

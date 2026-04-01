@@ -79,6 +79,16 @@
   color: #b5bac1;
 }
 
+.users-form__hint {
+  font-size: 0.78rem;
+  margin-top: 0.15rem;
+  color: #b5bac1;
+}
+
+.users-form__hint--error {
+  color: #ff6b6b;
+}
+
 .users-form input,
 .users-form select {
   border: 1px solid #3f4147;
@@ -142,4 +152,3 @@
     padding: 1rem;
   }
 }
-

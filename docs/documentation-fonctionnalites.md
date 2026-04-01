@@ -1,149 +1,169 @@
 # Documentation Fonctionnalites OMtek
 
-Date: 2026-03-12
+Date: 2026-03-25
 
 ## 1. Vision fonctionnelle
 
 OMtek sert a superviser un parc d imprimantes client a partir de:
 
-- alertes mail
+- alertes mails
 - rapports de scan
-- stocks de pieces
+- stock de pieces
 - interventions terrain
+- ressources techniques par site (NOTscan, identifiants, notes, fichiers)
 
-Le produit est centre sur 2 profils:
+Le produit reste centre sur 2 profils:
 
-- `admin`: pilotage global, securite, configuration, supervision complete
-- `technicien`: execution terrain rapide, mobile-first, sans fuite des donnees admin-only
+- `admin`: acces complet, supervision, parametrage, donnees sensibles
+- `technicien`: execution terrain, mobile-first, sans acces comptable ni fuite admin-only
 
-## 2. Matrice des droits
+## 2. Matrice des droits (etat actuel)
 
 | Fonctionnalite | Admin | Technicien |
 |---|---|---|
-| Connexion / profil | Oui | Oui |
+| Connexion / profil personnel | Oui | Oui |
 | Creation utilisateur | Oui | Non |
-| Dashboard technicien | Oui | Oui |
-| Liste des sites | Oui | Oui |
-| Detail site | Oui | Oui |
-| Voir stock visible (`TECH_VISIBLE`) | Oui | Oui |
-| Voir stock cache (`ADMIN_ONLY`) | Oui | Non |
-| Modifier stock visible | Oui | Oui |
-| Modifier stock cache | Oui | Non |
-| Voir historique stock cache | Oui | Non |
+| Liste des sites visibles | Oui | Oui |
+| Voir sites masques | Oui | Non |
+| Masquer / demasquer un site | Oui | Non |
+| Detail site | Oui | Oui (si site non masque) |
+| Voir stock `TECH_VISIBLE` | Oui | Oui |
+| Voir stock `ADMIN_ONLY` | Oui | Non |
+| Modifier stock `TECH_VISIBLE` | Oui | Oui |
+| Modifier stock `ADMIN_ONLY` | Oui | Non |
 | Creer intervention | Oui | Oui |
-| Cloturer intervention | Oui | Oui |
-| Modifier facturation / archivage intervention | Oui | Non |
+| Voir interventions et auteurs (techniciens entre eux) | Oui | Oui |
+| Acces comptable / facturation avancee | Oui | Non |
+| Onglet `Acces & Fichiers` du site | Oui | Oui (site non masque) |
 
-## 3. Parcours fonctionnels
+## 3. Alertes et logique T site
 
-### 3.1 Authentification et profil
+### 3.1 Source de verite
 
-- Connexion par token (`/api/auth/login`)
-- Session courante (`/api/auth/me`)
-- Profil utilisateur (`/api/users/me`)
-- Verification email/mot de passe via token (`/api/auth/verify`)
+La logique de signalement `T` ne depend plus du calcul direct sur les rapports dans la page.
+Elle depend des alertes mails stockees en base.
 
-### 3.2 Dashboard technicien
+### 3.2 Regles d affichage `T`
 
-Vue d action prioritaire:
+Un site est marque `T` si au moins une alerte active du site respecte:
 
-- sites en alerte
-- sites sans remontee > 10 jours
-- interventions ouvertes
-- stocks critiques visibles
-- dernieres alertes mail
+- toner < 20%
+- ou alerte bac recuperation (presque plein / plein, famille bac recup)
 
-Endpoint:
+### 3.3 Activation / desactivation des alertes
 
-- `GET /api/dashboard/technicien`
+- Le statut de visibilite est gere par `active` (compat legacy `ignorer`).
+- Defaut: alerte active (visible).
+- Cocher `Desactiver` dans l interface rend l alerte inactive.
+- Une vue permet de voir les alertes actives + inactives pour cas exceptionnels.
 
-### 3.3 Sites et parc
+### 3.4 Dedoublonnage metier attendu
 
-- Liste des sites (`GET /api/sites`)
-- Fiche detaillee site (`GET /api/sites/{id}/detail`)
-- Visualisation imprimantes, pieces compatibles, stock site, stock global
+Le systeme prend en compte les alertes de remplacement toner pour desactiver les alertes toner precedentes de meme machine / meme couleur selon la date la plus recente.
 
-Regles critiques:
+## 4. Sites, detail et navigation
 
-- technicien: aucune ligne `ADMIN_ONLY`
-- admin: vision complete avec separation visible/reserve
+### 4.1 Detail site
 
-### 3.4 Stocks
+Le detail site expose:
 
-- Vue globale stock (`GET /api/stocks`)
-- Mise a jour stock site (`PUT /api/sites/{siteId}/stocks`)
-- Mise a jour stock general (`PUT /api/stocks/general`)
-- Suppression stock (`DELETE` sur endpoints stock)
+- onglets machines en priorite dans la barre d onglets
+- onglet `Stocks`
+- onglet `Acces & Fichiers`
 
-Portee de stock:
+Dans chaque onglet machine:
 
-- `TECH_VISIBLE` (visible technicien)
-- `ADMIN_ONLY` (reserve admin)
+- ligne principale: numero de serie
+- ligne secondaire: modele de la machine
 
-Regles critiques:
+### 4.2 Sites masques
 
-- un technicien ne peut pas gerer `ADMIN_ONLY`
-- une piece ajoutee en stock site doit etre compatible avec au moins un modele du site
+- Un technicien ne voit pas les sites masques.
+- Un technicien ne peut pas masquer/demasquer un site.
+- Les API filtrent cote serveur (pas seulement front).
 
-### 3.5 Mouvements de stock
+## 5. Ressources techniques par site (nouveau)
 
-- lecture historique site: `GET /api/sites/{siteId}/stock-movements`
-- creation mouvement: `POST /api/sites/{siteId}/stock-movements`
+### 5.1 NOTscan
 
-Informations tracees:
+Modele retenu:
 
-- type mouvement (`ENTREE`, `SORTIE`, `AJUSTEMENT`, `TRANSFERT`)
-- delta / avant / apres
-- motif (`INVENTAIRE`, `LIVRAISON`, `DEPANNAGE`, etc.)
-- utilisateur
-- intervention liee (optionnel)
-- scope (`TECH_VISIBLE` ou `ADMIN_ONLY`)
+- plusieurs NOTscan par site
+- NOTscan = `adresse` (obligatoire) + `note` (optionnelle) + actif/inactif
+- pas de champ nom
 
-### 3.6 Interventions
+### 5.2 Identifiants
 
-- Liste: `GET /api/interventions`
-- Creation: `POST /api/interventions`
-- Detail: `GET /api/interventions/{id}`
-- Mise a jour: `PATCH /api/interventions/{id}`
+Modele retenu:
 
-Metier:
+- plusieurs identifiants par site
+- pas de lien obligatoire avec NOTscan (usage general: PC client, serveur, etc.)
+- champs principaux: label, utilisateur, mot de passe, note
 
-- types: livraison toner, depannage, telemaintenance, autre
-- sources: manuel, alerte mail, supervision, absence scan
-- statuts: a faire, en cours, terminee, annulee
-- facturation/archivage reserves admin
+Securite:
 
-## 4. Ecrans frontend disponibles
+- mot de passe stocke chiffre en base
+- visible uniquement via action explicite `Afficher`
+- bouton `Copier` disponible apres affichage
 
-- `DashboardPage`
-- `SitesPage`
-- `SiteDetailPage`
-- `InterventionsPage`
-- `StocksPage`
-- `ProfilePage`
-- `LoginPage`
-- `ImprimantePage`
-- `VerifyEmailPage`
+### 5.3 Notes
 
-## 5. Rappels metier non-negociables
+- notes libres liees au site
+- edition/suppression rapide depuis la meme vue
 
-- aucune fuite de stock `ADMIN_ONLY` vers technicien (liste, detail, total, API)
-- toute action sensible doit etre tracable
-- ergonomie mobile pour technicien
-- roles enforce cote API, pas seulement cote frontend
+### 5.4 Fichiers site
 
-## 6. Etat de couverture fonctionnelle (2026-03-12)
+Usage cible:
 
-### Couvert
+- carnets d adresses imprimantes (`.udf`, `.csv`)
+- fichiers de configuration (`.txt`, `.conf`, `.cfg`, `.ini`, `.json`, `.xml`, `.zip`)
 
-- dashboard technicien
-- interventions V1
-- scope de stock visible/cache
-- historique de mouvements de stock (API + affichage site)
-- verification schema Doctrine et build frontend
+Fonctions:
 
-### Partiel ou a completer
+- ajout
+- visualisation rapide
+- edition du contenu texte (si fichier texte)
+- remplacement de fichier
+- telechargement
 
-- ecran admin de gestion utilisateurs (frontend)
-- workflows admin avances (supervision globale, reporting)
-- tests automatises executables (runner PHPUnit non installe)
+## 6. Endpoints API principaux ajoutes
+
+Base route:
+
+- `/api/sites/{siteId}/resources`
+
+NOTscan:
+
+- `POST /api/sites/{siteId}/notscans`
+- `PATCH /api/sites/{siteId}/notscans/{notscanId}`
+- `DELETE /api/sites/{siteId}/notscans/{notscanId}`
+
+Identifiants:
+
+- `POST /api/sites/{siteId}/credentials`
+- `PATCH /api/sites/{siteId}/credentials/{credentialId}`
+- `DELETE /api/sites/{siteId}/credentials/{credentialId}`
+- `GET /api/sites/{siteId}/credentials/{credentialId}/secret`
+
+Notes:
+
+- `POST /api/sites/{siteId}/notes`
+- `PATCH /api/sites/{siteId}/notes/{noteId}`
+- `DELETE /api/sites/{siteId}/notes/{noteId}`
+
+Fichiers:
+
+- `POST /api/sites/{siteId}/files`
+- `PATCH /api/sites/{siteId}/files/{fileId}`
+- `DELETE /api/sites/{siteId}/files/{fileId}`
+- `GET /api/sites/{siteId}/files/{fileId}/download`
+- `GET /api/sites/{siteId}/files/{fileId}/content`
+
+## 7. Rappels metier non-negociables
+
+- aucune fuite de stock `ADMIN_ONLY` vers technicien
+- aucune fuite de site masque vers technicien
+- aucune fuite comptable vers technicien
+- regles de role enforce cote API
+- actions sensibles tracables
+- ergonomie terrain mobile et desktop

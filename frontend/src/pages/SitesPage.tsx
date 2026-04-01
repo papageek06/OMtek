@@ -3,10 +3,12 @@ import { useNavigate, Link } from 'react-router-dom'
 import {
   fetchSites,
   fetchImprimantes,
+  updateSiteVisibility,
   UnauthorizedError,
   type Site as SiteType,
   type Imprimante,
 } from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import './SitesPage.css'
 
 function formatDate(iso: string | null): string {
@@ -22,7 +24,6 @@ function formatDate(iso: string | null): string {
 }
 
 const JOURS_ALERTE_SCAN = 10
-const SEUIL_ALERTE_ENCRE_POURCENT = 20
 
 function parseLevelPercent(raw: string | null | undefined): number | null {
   if (raw == null || raw === '') return null
@@ -40,20 +41,6 @@ function isLastScanOld(lastScanDate: string | null | undefined): boolean {
   const scan = new Date(lastScanDate).getTime()
   const limit = Date.now() - JOURS_ALERTE_SCAN * 24 * 60 * 60 * 1000
   return scan < limit
-}
-
-function hasInkLevelAlert(imp: Imprimante): boolean {
-  const report = imp.lastReport
-  if (!report) return false
-
-  const levels = [
-    parseLevelPercent(report.blackLevel),
-    parseLevelPercent(report.cyanLevel),
-    parseLevelPercent(report.magentaLevel),
-    parseLevelPercent(report.yellowLevel),
-  ]
-
-  return levels.some((level) => level !== null && level <= SEUIL_ALERTE_ENCRE_POURCENT)
 }
 
 function AlertBadge({
@@ -80,22 +67,25 @@ function InkLevelBar({
   label,
   raw,
   fillClass,
+  compact = false,
 }: {
   label: string
   raw: string | null | undefined
   fillClass: string
+  compact?: boolean
 }) {
   const pct = parseLevelPercent(raw)
   if (pct === null) return null
 
   return (
-    <div className="ink-level">
-      <span className="ink-level__label">{label}</span>
+    <div className={'ink-level' + (compact ? ' ink-level--compact' : '')} title={`${label}: ${pct}%`}>
+      {!compact && <span className="ink-level__label">{label}</span>}
       <div className="ink-level__track">
         <div
           className={`ink-level__fill ${fillClass}`}
           style={{ width: `${pct}%` }}
           role="progressbar"
+          aria-label={label}
           aria-valuenow={pct}
           aria-valuemin={0}
           aria-valuemax={100}
@@ -120,7 +110,9 @@ function buildImprimantesBySite(imprimantes: Imprimante[]): Record<number, Impri
 }
 
 export default function SitesPage() {
+  const { user } = useAuth()
   const navigate = useNavigate()
+  const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
   const [sites, setSites] = useState<SiteType[]>([])
   const [imprimantesBySite, setImprimantesBySite] = useState<Record<number, Imprimante[]>>({})
   const [loading, setLoading] = useState(true)
@@ -129,6 +121,7 @@ export default function SitesPage() {
   const [filterScanAlert, setFilterScanAlert] = useState(false)
   const [filterTonerAlert, setFilterTonerAlert] = useState(false)
   const [expandedSiteIds, setExpandedSiteIds] = useState<Set<number>>(new Set())
+  const [visibilityUpdatingSiteId, setVisibilityUpdatingSiteId] = useState<number | null>(null)
 
   useEffect(() => {
     let cancelled = false
@@ -162,15 +155,15 @@ export default function SitesPage() {
 
   const q = searchQuery.trim().toLowerCase()
 
-  const getSiteAlerts = (siteId: number): { scan: boolean; ink: boolean } => {
+  const getSiteAlerts = (siteId: number): { scan: boolean; toner: boolean } => {
     const list = imprimantesBySite[siteId] ?? []
     const scan =
       list.length > 0 &&
       list.every((imp) =>
         isLastScanOld(imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null)
       )
-    const ink = list.some((imp) => hasInkLevelAlert(imp))
-    return { scan, ink }
+    const toner = !!sites.find((site) => site.id === siteId)?.hasTAlert
+    return { scan, toner }
   }
 
   const alertCounts = useMemo(() => {
@@ -187,7 +180,7 @@ export default function SitesPage() {
       ) {
         scan += 1
       }
-      if (list.some((imp) => hasInkLevelAlert(imp))) {
+      if (site.hasTAlert) {
         toner += 1
       }
     }
@@ -211,9 +204,9 @@ export default function SitesPage() {
     if (filterScanAlert || filterTonerAlert) {
       list = list.filter((site) => {
         const alerts = getSiteAlerts(site.id)
-        if (filterScanAlert && filterTonerAlert) return alerts.scan || alerts.ink
+        if (filterScanAlert && filterTonerAlert) return alerts.scan || alerts.toner
         if (filterScanAlert) return alerts.scan
-        if (filterTonerAlert) return alerts.ink
+        if (filterTonerAlert) return alerts.toner
         return true
       })
     }
@@ -252,6 +245,23 @@ export default function SitesPage() {
 
   const handleImprimanteClick = (imprimanteId: number) => {
     navigate('/imprimantes/' + imprimanteId)
+  }
+
+  const handleToggleSiteVisibility = async (site: SiteType) => {
+    if (!isAdmin || visibilityUpdatingSiteId !== null) {
+      return
+    }
+
+    setVisibilityUpdatingSiteId(site.id)
+    setError(null)
+    try {
+      const updated = await updateSiteVisibility(site.id, !site.isHidden)
+      setSites((prev) => prev.map((item) => (item.id === site.id ? { ...item, isHidden: updated.isHidden } : item)))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour visibilite site')
+    } finally {
+      setVisibilityUpdatingSiteId(null)
+    }
   }
 
   return (
@@ -353,7 +363,10 @@ export default function SitesPage() {
                 >
                   <span className="site-card__title-row">
                     <span className="site-card__nom">{site.nom}</span>
-                    {(alerts.scan || alerts.ink) && (
+                    {site.isHidden && (
+                      <span className="site-card__hidden-badge">Masque</span>
+                    )}
+                    {(alerts.scan || alerts.toner) && (
                       <span className="site-card__alerts" aria-label="Alertes">
                         {alerts.scan && (
                           <AlertBadge
@@ -362,11 +375,11 @@ export default function SitesPage() {
                             title="Toutes les imprimantes du site ont un dernier scan de plus de 10 jours"
                           />
                         )}
-                        {alerts.ink && (
+                        {alerts.toner && (
                           <AlertBadge
                             letter="T"
                             type="toner"
-                            title="Niveau d'encre <= 20% sur au moins une imprimante"
+                            title="Alerte toner/bac recup active sur le site"
                           />
                         )}
                       </span>
@@ -380,9 +393,25 @@ export default function SitesPage() {
                 {isExpanded && (
                   <div className="site-card__body">
                     <div className="site-card__body-header">
-                      <Link to={'/sites/' + site.id} className="site-card__detail-link">
-                        Voir details (stocks, graphiques) -&gt;
-                      </Link>
+                      <div className="site-card__body-actions">
+                        <Link to={'/sites/' + site.id} className="site-card__detail-link">
+                          Voir details (stocks, graphiques) -&gt;
+                        </Link>
+                        {isAdmin && (
+                          <button
+                            type="button"
+                            className="site-card__visibility-btn"
+                            onClick={() => void handleToggleSiteVisibility(site)}
+                            disabled={visibilityUpdatingSiteId === site.id}
+                          >
+                            {visibilityUpdatingSiteId === site.id
+                              ? 'Mise a jour...'
+                              : site.isHidden
+                                ? 'Demasquer'
+                                : 'Masquer'}
+                          </button>
+                        )}
+                      </div>
                     </div>
 
                     {!getImprimantesForSite(site.id).length ? (
@@ -397,8 +426,7 @@ export default function SitesPage() {
                           const scanAlert = isLastScanOld(
                             imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
                           )
-                          const inkAlert = hasInkLevelAlert(imp)
-                          const hasAlert = scanAlert || inkAlert
+                          const hasAlert = scanAlert
 
                           return (
                             <li key={imp.id} className="imprimante-item">
@@ -412,20 +440,13 @@ export default function SitesPage() {
                               >
                                 <div className="imprimante-item__top">
                                   <span className="imprimante-item__serie">{imp.numeroSerie}</span>
-                                  {(scanAlert || inkAlert) && (
+                                  {scanAlert && (
                                     <span className="imprimante-item__alerts" aria-label="Alertes">
                                       {scanAlert && (
                                         <AlertBadge
                                           letter="S"
                                           type="scan"
                                           title="Dernier scan de plus de 10 jours"
-                                        />
-                                      )}
-                                      {inkAlert && (
-                                        <AlertBadge
-                                          letter="T"
-                                          type="toner"
-                                          title="Niveau d'encre <= 20%"
                                         />
                                       )}
                                     </span>
@@ -462,12 +483,14 @@ export default function SitesPage() {
                                   (imp.lastReport.blackLevel ||
                                     imp.lastReport.cyanLevel ||
                                     imp.lastReport.magentaLevel ||
-                                    imp.lastReport.yellowLevel) && (
+                                    imp.lastReport.yellowLevel ||
+                                    imp.lastReport.wasteLevel) && (
                                     <div className="ink-levels">
                                       <InkLevelBar
                                         label="Noir"
                                         raw={imp.lastReport.blackLevel}
                                         fillClass="ink-level__fill--black"
+                                        compact
                                       />
                                       {imp.color && (
                                         <>
@@ -475,19 +498,28 @@ export default function SitesPage() {
                                             label="Cyan"
                                             raw={imp.lastReport.cyanLevel}
                                             fillClass="ink-level__fill--cyan"
+                                            compact
                                           />
                                           <InkLevelBar
                                             label="Magenta"
                                             raw={imp.lastReport.magentaLevel}
                                             fillClass="ink-level__fill--magenta"
+                                            compact
                                           />
                                           <InkLevelBar
                                             label="Jaune"
                                             raw={imp.lastReport.yellowLevel}
                                             fillClass="ink-level__fill--yellow"
+                                            compact
                                           />
                                         </>
                                       )}
+                                      <InkLevelBar
+                                        label="Bac recup"
+                                        raw={imp.lastReport.wasteLevel}
+                                        fillClass="ink-level__fill--waste"
+                                        compact
+                                      />
                                     </div>
                                   )}
                               </button>

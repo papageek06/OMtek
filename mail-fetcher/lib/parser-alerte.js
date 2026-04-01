@@ -1,62 +1,87 @@
 /**
- * Parse le corps d'un mail "Smart Alert" pour en extraire :
- * - site (sans "SITE PRINCIPAL")
- * - modèle imprimante, numéro de série
- * - motif de l'alerte et état
- * Les mails "CSV BACKUP" ne sont pas parsés (retourne []).
+ * Parse un mail Smart Alert pour extraire :
+ * - site
+ * - modele imprimante + numero de serie
+ * - motifs d'alerte + piece + niveau
  */
 
+const CONSTRUCTEURS = ['RICOH', 'LEXMARK', 'XEROX', 'CANON', 'HP', 'KYOCERA'];
+
 /**
- * Détecte si le mail est une alerte Smart Alert (à parser) ou un CSV BACKUP (à ignorer ici).
+ * Detecte si le mail est une alerte Smart Alert (et non CSV BACKUP).
  */
 export function estAlerteSmart(corpsTexte, sujet = '') {
   if (!corpsTexte || typeof corpsTexte !== 'string') return false;
-  const s = (corpsTexte + ' ' + sujet).toLowerCase();
+  const s = `${corpsTexte} ${sujet}`.toLowerCase();
   if (s.includes('csv backup') || s.includes('the report titled "csv backup"')) return false;
   return s.includes('smart alert pour') && s.includes('site principal');
 }
 
 /**
- * Extrait le nom du site depuis "SMART ALERT POUR ... / SITE PRINCIPAL" (on ignore " / SITE PRINCIPAL").
+ * Extrait le nom du site depuis "Smart Alert pour ... / Site principal".
  */
 function extraireSite(corps) {
-  const match = corps.match(/SMART\s+ALERT\s+POUR\s+([^/]+?)\s*\/\s*SITE\s+PRINCIPAL/i);
+  const match = corps.match(/Smart\s+Alert\s+pour\s+([^/]+?)\s*\/\s*Site\s+principal/i);
   if (!match) return '';
   return match[1].replace(/\s+/g, ' ').trim();
 }
 
 /**
- * Extrait les blocs "modèle + numéro de série".
- * Format observé : "RICOH IM C5500 ... -Site principal 3131M710286 192.168..."
- * On cherche "principal" suivi du numéro de série, et le modèle RICOH/LEXMARK juste avant.
+ * Extrait les imprimantes (modele + serie), de preference depuis les colonnes tabulees.
  */
 function extraireDevices(corps) {
   const devices = [];
-  const block = corps.includes('ALERTES PÉRIPHÉRIQUE') ? corps.split('ALERTES PÉRIPHÉRIQUE')[1] || '' : corps;
-  // Série = 8 à 20 caractères alphanumériques après "principal" (ex. 3131M710286 ou 752922724LZCG)
-  const serieRegex = /(?:Site\s+)?principal\s+([A-Z0-9]{8,20})\s+/gi;
-  // Modèle = RICOH/LEXMARK suivi de 2 à 3 tokens (ex. IM C5500, MP C307, MP C4504ex)
-  const modelRegex = /(RICOH|LEXMARK|XEROX|CANON|HP|KYOCERA)\s+([A-Z0-9]+\s+[A-Z0-9]+(?:\s+[A-Z0-9]+)?)\s+/gi;
-  const series = [];
-  const models = [];
-  let m;
-  while ((m = serieRegex.exec(block)) !== null) series.push(m[1]);
-  while ((m = modelRegex.exec(block)) !== null) {
-    const modele = (m[1] + ' ' + m[2].replace(/\s+/g, ' ').trim()).trim();
-    models.push(modele);
+  const dejaVus = new Set();
+
+  const sections = corps.split(/Alertes\s+P.riph.rique/i);
+  const block = sections.length > 1 ? sections.slice(1).join('\n') : corps;
+  const lignes = block.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+
+  for (const ligneBrute of lignes) {
+    const ligne = ligneBrute.replace(/\u00A0/g, ' ').trim();
+    let numeroSerie = '';
+    let modeleImprimante = '';
+
+    // Cas tabule: Fabricant | Nom machine | Client-site | Serie | IP | Emplacement
+    if (ligne.includes('\t')) {
+      const colonnes = ligne.split(/\t+/).map((c) => c.trim()).filter(Boolean);
+      const serieCol = colonnes.find((c) => /^[A-Z0-9]{8,20}$/.test(c));
+      if (serieCol) {
+        numeroSerie = serieCol;
+        const fabricant = colonnes[0] || '';
+        const modele = colonnes[1] || '';
+        modeleImprimante = [fabricant, modele].join(' ').replace(/\s+/g, ' ').trim();
+      }
+    }
+
+    // Fallback texte libre
+    if (!numeroSerie) {
+      const serieMatch = ligne.match(/\b([A-Z0-9]{8,20})\b/);
+      if (!serieMatch) continue;
+      numeroSerie = serieMatch[1];
+
+      const avantSerie = ligne.slice(0, serieMatch.index).replace(/\s+/g, ' ').trim();
+      const constructeurPattern = CONSTRUCTEURS.join('|');
+      const modeleRegex = new RegExp(
+        `\\b(${constructeurPattern})\\b\\s+([A-Z0-9]+(?:\\s+[A-Z0-9-]+){1,2})`,
+        'i'
+      );
+      const modelMatch = avantSerie.match(modeleRegex);
+      if (modelMatch) {
+        modeleImprimante = `${modelMatch[1].toUpperCase()} ${modelMatch[2]}`.replace(/\s+/g, ' ').trim();
+      }
+    }
+
+    if (!numeroSerie || dejaVus.has(numeroSerie)) continue;
+    dejaVus.add(numeroSerie);
+    devices.push({ modeleImprimante, numeroSerie });
   }
-  for (let i = 0; i < series.length; i++) {
-    const modeleImprimante = i < models.length ? models[i] : (models[0] || '');
-    devices.push({ modeleImprimante, numeroSerie: series[i] });
-  }
+
   return devices;
 }
 
 /**
- * Normalise le motif brut pour en tirer :
- * - motifAlerte : type unique (Toner bas, Toner vide, Gaspillage de toner, Changement de cartouche, Reservation)
- * - piece : composant concerné (Toner noir, Toner cyan, Cyan Cartridge, etc.)
- * - niveauPourcent : valeur numérique qui précède "%" (ex. 20, 0, 100), null si absent
+ * Normalise un motif brut en motifAlerte + piece + niveauPourcent.
  */
 function normaliserMotifEtPiece(motifBrut) {
   const m = (motifBrut || '').trim();
@@ -64,7 +89,6 @@ function normaliserMotifEtPiece(motifBrut) {
   let piece = '';
   let niveauPourcent = null;
 
-  // "Toner bas - Toner noir, 20 % restants." ou "Toner bas - Toner noir, 20 % restants"
   let match = m.match(/^Toner bas\s*-\s*(.+?),\s*(\d+)\s*%\s*restants/i);
   if (match) {
     motifAlerte = 'Toner bas';
@@ -72,7 +96,7 @@ function normaliserMotifEtPiece(motifBrut) {
     niveauPourcent = parseInt(match[2], 10);
     return { motifAlerte, piece, niveauPourcent };
   }
-  // "Toner bas - Toner cyan, Bas" (sans %)
+
   match = m.match(/^Toner bas\s*-\s*(.+?),?\s*Bas\s*\.?$/i);
   if (match) {
     motifAlerte = 'Toner bas';
@@ -80,7 +104,6 @@ function normaliserMotifEtPiece(motifBrut) {
     return { motifAlerte, piece, niveauPourcent };
   }
 
-  // "Toner vide - Toner jaune, 0 % restants."
   match = m.match(/^Toner vide\s*-\s*(.+?),\s*(\d+)\s*%\s*restants/i);
   if (match) {
     motifAlerte = 'Toner vide';
@@ -89,7 +112,6 @@ function normaliserMotifEtPiece(motifBrut) {
     return { motifAlerte, piece, niveauPourcent };
   }
 
-  // "Gaspillage de toner - Toner noir, 20 % restants."
   match = m.match(/^Gaspillage de toner\s*-\s*(.+?),\s*(\d+)\s*%\s*restants/i);
   if (match) {
     motifAlerte = 'Gaspillage de toner';
@@ -98,8 +120,7 @@ function normaliserMotifEtPiece(motifBrut) {
     return { motifAlerte, piece, niveauPourcent };
   }
 
-  // "Changement de cartouche détecté: niveau de toner Toner jaune changé de Bas(se) à 100%." ou "de 20% à 100%." ou "de 0% à 100%."
-  match = m.match(/Changement de cartouche[^:]*:\s*niveau de toner\s+(.+?)\s+changé\s+de\s+.+?\s+à\s*(\d+)\s*%/i);
+  match = m.match(/Changement de cartouche[^:]*:\s*niveau de toner\s+(.+?)\s+ch\S*\s+de\s+.+?\s+[^0-9]*(\d+)\s*%/i);
   if (match) {
     motifAlerte = 'Changement de cartouche';
     piece = match[1].trim();
@@ -107,39 +128,54 @@ function normaliserMotifEtPiece(motifBrut) {
     return { motifAlerte, piece, niveauPourcent };
   }
 
-  // "Reservation" seul ou suivi d'autre texte
   if (/^Reservation\b/i.test(m)) {
     motifAlerte = 'Reservation';
     return { motifAlerte, piece: '', niveauPourcent };
   }
 
-  // Fallback : toute valeur avant "%" pour niveauPourcent, premier segment pour type
   const percentMatch = m.match(/(\d+)\s*%/);
   if (percentMatch) niveauPourcent = parseInt(percentMatch[1], 10);
   motifAlerte = m.split('-')[0].trim().slice(0, 100) || m.slice(0, 100);
   const pieceMatch = m.match(/-\s*(.+?)(?:,\s*\d+\s*%|,\s*Bas|$)/);
   if (pieceMatch) piece = pieceMatch[1].trim().slice(0, 255);
+
   return { motifAlerte, piece, niveauPourcent };
 }
 
 /**
  * Extrait toutes les lignes "Nouvelle alerte : (date): motif".
- * Retourne pour chaque : { motifAlerte, piece, niveauPourcent } (normalisés).
  */
 function extraireMotifs(corps) {
   const resultats = [];
-  const regex = /Nouvelle alerte\s*:\s*\([^)]+\)+\s*:\s*([^[\n]+?)(?=\s*\[https|Nouvelle alerte|$)/gi;
-  let m;
-  while ((m = regex.exec(corps)) !== null) {
-    const motifBrut = m[1].replace(/\s+/g, ' ').trim();
-    if (motifBrut) resultats.push(normaliserMotifEtPiece(motifBrut));
+  const lignes = corps.split(/\r?\n/);
+
+  for (const ligne of lignes) {
+    const propre = ligne.replace(/\s+/g, ' ').trim();
+    if (!/^Nouvelle alerte\s*:/i.test(propre)) continue;
+
+    let motifBrut = propre.replace(/^Nouvelle alerte\s*:\s*/i, '').trim();
+
+    // Coupe le prefixe date "(...) :"
+    if (motifBrut.startsWith('(')) {
+      const finDate = motifBrut.indexOf('):');
+      if (finDate !== -1) {
+        motifBrut = motifBrut.slice(finDate + 2).trim();
+      }
+    }
+    if (motifBrut.startsWith('(')) {
+      motifBrut = motifBrut.replace(/^\([^)]*\)\s*:\s*/, '').trim();
+    }
+
+    if (motifBrut) {
+      resultats.push(normaliserMotifEtPiece(motifBrut));
+    }
   }
+
   return resultats;
 }
 
 /**
- * Parse le corps et retourne un tableau d'alertes (une par motif, avec site + device).
- * Chaque élément : { site, modeleImprimante, numeroSerie, motifAlerte, piece, niveauPourcent }.
+ * Parse le corps et retourne un tableau d'alertes.
  */
 export function parserAlertes(corpsTexte) {
   if (!corpsTexte || typeof corpsTexte !== 'string') return [];

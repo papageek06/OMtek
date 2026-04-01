@@ -11,6 +11,7 @@
 - Documentation fonctionnalites : `docs/documentation-fonctionnalites.md`
 - Resume des echanges projet : `docs/resume-conversation-projet.md`
 - Etude faisabilite comptable : `docs/etude-faisabilite-comptable-2026-03-12.md`
+- TODO prochaine etape OVH : `docs/todo-prochaine-etape-ovh.md`
 
 ## Structure
 
@@ -59,15 +60,17 @@ Le socle actuel couvre deja :
 - stocks
 - alertes
 - rapports
+- interventions
+- ressources techniques par site (NOTscan, identifiants, notes, fichiers)
+- logique T site basee sur alertes actives (toner/bac recup)
+- separation renforcee admin/technicien (sites masques, stock admin-only)
 
 Les chantiers prioritaires restants sont :
 
-- interventions
-- separation forte admin / technicien
-- dashboard technicien mobile-first
-- historique des mouvements de stock
-- supervision de non-remontee cote serveur
-- stock cache admin-only par site
+- tests automatises (API + front)
+- deploiement OVH preprod/prod
+- supervision globale admin et reporting
+- durcissement exploitation (backup, monitoring, rollback)
 
 ## Tests
 

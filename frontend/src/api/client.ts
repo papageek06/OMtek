@@ -227,6 +227,8 @@ export interface Item {
 export interface Site {
   id: number
   nom: string
+  isHidden?: boolean
+  hasTAlert?: boolean
   createdAt: string
 }
 
@@ -248,6 +250,7 @@ export interface Imprimante {
     cyanLevel: string | null
     magentaLevel: string | null
     yellowLevel: string | null
+    wasteLevel: string | null
   } | null
   createdAt: string
   updatedAt: string
@@ -277,8 +280,10 @@ export interface Alerte {
   motifAlerte: string
   piece: string
   niveauPourcent: number | null
-  /** true = alerte ignorée (non réelle), on gérera le changement d'état plus tard */
-  ignorer: boolean
+  /** true = visible dans les vues terrain */
+  active?: boolean
+  /** compat API historique */
+  ignorer?: boolean
   createdAt: string
 }
 
@@ -305,7 +310,7 @@ export interface DashboardTechnicienIntervention {
   type: string
   statut: string
   priorite: string
-  billingStatus: string
+  billingStatus: string | null
   site: {
     id: number
     nom: string
@@ -346,6 +351,7 @@ export interface DashboardTechnicienAlerteMail {
   motifAlerte: string
   piece: string
   niveauPourcent: number | null
+  active: boolean
   recuLe: string | null
 }
 
@@ -372,7 +378,7 @@ export interface InterventionItem {
   source: string
   priorite: string
   statut: string
-  billingStatus: string
+  billingStatus: string | null
   approvalStatus?: string
   archived: boolean
   title: string
@@ -387,6 +393,7 @@ export interface InterventionItem {
   site: {
     id: number
     nom: string
+    isHidden?: boolean | null
   }
   imprimante: {
     id: number
@@ -395,13 +402,13 @@ export interface InterventionItem {
   } | null
   createdBy: {
     id: number
-    email: string
+    email: string | null
     firstName: string
     lastName: string
   }
   assignedTo: {
     id: number
-    email: string
+    email: string | null
     firstName: string
     lastName: string
   } | null
@@ -412,7 +419,7 @@ export interface InterventionItem {
   approvedAt?: string | null
   approvedBy?: {
     id: number
-    email: string
+    email: string | null
     firstName: string
     lastName: string
   } | null
@@ -466,6 +473,19 @@ export async function fetchSites(): Promise<Site[]> {
   const res = await apiFetch(`${API_BASE}/sites`)
   if (!res.ok) throw new Error('Erreur chargement des sites')
   return res.json()
+}
+
+export async function updateSiteVisibility(siteId: number, isHidden: boolean): Promise<Site> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/visibility`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ isHidden }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour visibilite du site')
+  }
+  return body
 }
 
 export async function fetchDashboardTechnicien(): Promise<DashboardTechnicien> {
@@ -866,6 +886,7 @@ export interface PieceAvecStocks {
 export interface SiteDetail {
   id: number
   nom: string
+  hasTAlert?: boolean
   createdAt: string
   imprimantes: Imprimante[]
   stocks: StockItem[]
@@ -907,7 +928,7 @@ export interface StockMovementItem {
   }
   user: {
     id: number
-    email: string
+    email: string | null
     firstName: string
     lastName: string
   }
@@ -1069,6 +1090,286 @@ export async function fetchSiteDetail(id: number, params?: StockSearchParams): P
   return data
 }
 
+export interface SiteNotscanItem {
+  id: number
+  address: string
+  notes: string | null
+  isActive: boolean
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SiteCredentialItem {
+  id: number
+  label: string
+  username: string | null
+  notes: string | null
+  hasSecret: boolean
+  secretMasked: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SiteNoteItem {
+  id: number
+  content: string
+  authorName: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SiteFileItem {
+  id: number
+  label: string
+  originalName: string
+  category: 'ADDRESS_BOOK' | 'CONFIG' | 'OTHER'
+  mimeType: string | null
+  extension: string | null
+  sizeBytes: number
+  downloadUrl: string | null
+  contentUrl: string | null
+  createdAt: string
+  updatedAt: string
+}
+
+export interface SiteFileContent {
+  encoding: 'utf-8' | 'base64'
+  editable: boolean
+  truncated: boolean
+  content: string
+}
+
+export interface SiteResources {
+  siteId: number
+  hasNotscan: boolean
+  activeNotscanCount: number
+  notscans: SiteNotscanItem[]
+  credentials: SiteCredentialItem[]
+  notes: SiteNoteItem[]
+  files: SiteFileItem[]
+}
+
+export async function fetchSiteResources(siteId: number): Promise<SiteResources> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/resources`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement ressources site')
+  }
+  return body
+}
+
+export async function createSiteNotscan(
+  siteId: number,
+  data: { address: string; notes?: string | null; isActive?: boolean }
+): Promise<SiteNotscanItem> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/notscans`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur creation NOTscan')
+  return body
+}
+
+export async function updateSiteNotscan(
+  siteId: number,
+  notscanId: number,
+  data: Partial<{ address: string; notes: string | null; isActive: boolean }>
+): Promise<SiteNotscanItem> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/notscans/${notscanId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur mise a jour NOTscan')
+  return body
+}
+
+export async function deleteSiteNotscan(siteId: number, notscanId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/notscans/${notscanId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression NOTscan')
+  }
+}
+
+export async function createSiteCredential(
+  siteId: number,
+  data: { label: string; username?: string | null; secret: string; notes?: string | null }
+): Promise<SiteCredentialItem> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/credentials`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur creation identifiant')
+  return body
+}
+
+export async function updateSiteCredential(
+  siteId: number,
+  credentialId: number,
+  data: Partial<{ label: string; username: string | null; secret: string; notes: string | null }>
+): Promise<SiteCredentialItem> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/credentials/${credentialId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur mise a jour identifiant')
+  return body
+}
+
+export async function deleteSiteCredential(siteId: number, credentialId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/credentials/${credentialId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression identifiant')
+  }
+}
+
+export async function revealSiteCredentialSecret(siteId: number, credentialId: number): Promise<string> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/credentials/${credentialId}/secret`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur lecture secret')
+  return String(body?.secret ?? '')
+}
+
+export async function createSiteNote(siteId: number, content: string): Promise<SiteNoteItem> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/notes`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur creation note')
+  return body
+}
+
+export async function updateSiteNote(siteId: number, noteId: number, content: string): Promise<SiteNoteItem> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/notes/${noteId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ content }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur mise a jour note')
+  return body
+}
+
+export async function deleteSiteNote(siteId: number, noteId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/notes/${noteId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression note')
+  }
+}
+
+export async function createSiteFile(
+  siteId: number,
+  data: { file: File; label?: string; category?: 'ADDRESS_BOOK' | 'CONFIG' | 'OTHER' }
+): Promise<SiteFileItem> {
+  const formData = new FormData()
+  formData.append('file', data.file)
+  if (data.label) formData.append('label', data.label)
+  if (data.category) formData.append('category', data.category)
+
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/files`, {
+    method: 'POST',
+    body: formData,
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur upload fichier')
+  return body
+}
+
+export async function updateSiteFile(
+  siteId: number,
+  fileId: number,
+  data: {
+    label?: string
+    category?: 'ADDRESS_BOOK' | 'CONFIG' | 'OTHER'
+    replacementFile?: File
+    content?: string
+  }
+): Promise<SiteFileItem> {
+  let response: Response
+
+  if (data.replacementFile) {
+    const formData = new FormData()
+    formData.append('file', data.replacementFile)
+    if (data.label != null) formData.append('label', data.label)
+    if (data.category != null) formData.append('category', data.category)
+    response = await apiFetch(`${API_BASE}/sites/${siteId}/files/${fileId}`, {
+      method: 'PATCH',
+      body: formData,
+    })
+  } else {
+    response = await apiFetch(`${API_BASE}/sites/${siteId}/files/${fileId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        label: data.label,
+        category: data.category,
+        content: data.content,
+      }),
+    })
+  }
+
+  const body = await response.json().catch(() => ({}))
+  if (!response.ok) throw new Error((body?.error as string) || 'Erreur mise a jour fichier')
+  return body
+}
+
+export async function deleteSiteFile(siteId: number, fileId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/files/${fileId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression fichier')
+  }
+}
+
+export async function fetchSiteFileContent(siteId: number, fileId: number): Promise<SiteFileContent> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/files/${fileId}/content`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur lecture fichier')
+  return body
+}
+
+export async function downloadSiteFile(siteId: number, fileId: number, fallbackFileName: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/files/${fileId}/download`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur telechargement fichier')
+  }
+
+  const blob = await res.blob()
+  const disposition = res.headers.get('Content-Disposition') || ''
+  const filenameMatch = disposition.match(/filename="?([^"]+)"?/i)
+  const fileName = filenameMatch?.[1] || fallbackFileName
+
+  const url = URL.createObjectURL(blob)
+  const anchor = document.createElement('a')
+  anchor.href = url
+  anchor.download = fileName
+  document.body.appendChild(anchor)
+  anchor.click()
+  anchor.remove()
+  URL.revokeObjectURL(url)
+}
+
 export async function fetchSiteStockMovements(
   siteId: number,
   params?: StockMovementSearchParams
@@ -1118,6 +1419,29 @@ export interface PieceUpdate {
   variant?: string | null
   nature?: string | null
   categorie?: string
+}
+
+export interface PieceCreate {
+  reference: string
+  libelle: string
+  refBis?: string | null
+  categorie: string
+  variant?: string | null
+  nature?: string | null
+}
+
+export async function createPiece(data: PieceCreate): Promise<PieceItem> {
+  const res = await apiFetch(`${API_BASE}/pieces`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    const err = (body?.error as string) || (body?.errors ? JSON.stringify(body.errors) : 'Erreur creation piece')
+    throw new Error(err)
+  }
+  return body
 }
 
 export async function updatePiece(pieceId: number, update: PieceUpdate): Promise<PieceItem> {
@@ -1232,6 +1556,17 @@ export interface PieceItem {
   modeles?: ModeleItemSimple[]
 }
 
+export async function fetchPieces(params?: { q?: string; limit?: number }): Promise<PieceItem[]> {
+  const sp = new URLSearchParams()
+  if (params?.q) sp.set('q', params.q)
+  if (params?.limit != null) sp.set('limit', String(params.limit))
+  const qs = sp.toString()
+  const url = `${API_BASE}/pieces` + (qs ? `?${qs}` : '')
+  const res = await apiFetch(url)
+  if (!res.ok) throw new Error('Erreur chargement des pieces')
+  return res.json()
+}
+
 export async function fetchPiecesByModele(modeleId: number): Promise<PieceItem[]> {
   const res = await apiFetch(`${API_BASE}/modeles/${modeleId}/pieces`)
   if (!res.ok) throw new Error('Erreur chargement des pièces')
@@ -1277,14 +1612,47 @@ export async function fetchRapports(
   return data
 }
 
-export async function fetchAlertes(numeroSerie?: string): Promise<Alerte[]> {
-  const url =
-    numeroSerie != null && numeroSerie !== ''
-      ? `${API_BASE}/alertes?numeroSerie=${encodeURIComponent(numeroSerie)}`
-      : `${API_BASE}/alertes`
+export interface AlertesQuery {
+  numeroSerie?: string
+  siteId?: number
+  includeInactive?: boolean
+  onlyActionable?: boolean
+  limit?: number
+  offset?: number
+}
+
+export async function fetchAlertes(numeroSerieOrQuery?: string | AlertesQuery): Promise<Alerte[]> {
+  const query: AlertesQuery =
+    typeof numeroSerieOrQuery === 'string'
+      ? { numeroSerie: numeroSerieOrQuery }
+      : (numeroSerieOrQuery ?? {})
+
+  const sp = new URLSearchParams()
+  if (query.numeroSerie) sp.set('numeroSerie', query.numeroSerie)
+  if (query.siteId != null) sp.set('siteId', String(query.siteId))
+  if (query.includeInactive) sp.set('includeInactive', 'true')
+  if (query.onlyActionable) sp.set('onlyActionable', 'true')
+  if (query.limit != null) sp.set('limit', String(query.limit))
+  if (query.offset != null) sp.set('offset', String(query.offset))
+
+  const qs = sp.toString()
+  const url = `${API_BASE}/alertes` + (qs ? `?${qs}` : '')
   const res = await apiFetch(url)
   if (!res.ok) throw new Error('Erreur chargement des alertes')
   return res.json()
+}
+
+export async function updateAlerteActive(id: number, active: boolean): Promise<Alerte> {
+  const res = await apiFetch(`${API_BASE}/alertes/${id}/active`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ active }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour alerte')
+  }
+  return body
 }
 
 export async function fetchItems(): Promise<Item[]> {

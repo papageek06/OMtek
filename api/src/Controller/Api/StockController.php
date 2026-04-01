@@ -120,6 +120,9 @@ class StockController extends AbstractController
         if (!$site) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
+        if (!$this->canAccessSite($site)) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
 
         $body = json_decode($request->getContent(), true);
         if (!\is_array($body) || !isset($body['pieceId']) || !array_key_exists('quantite', $body)) {
@@ -159,6 +162,9 @@ class StockController extends AbstractController
     {
         $site = $this->em->getRepository(Site::class)->find($siteId);
         if (!$site) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccessSite($site)) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
@@ -219,6 +225,9 @@ class StockController extends AbstractController
 
         $site = $this->em->getRepository(Site::class)->find($siteId);
         if (!$site) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccessSite($site)) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
@@ -354,6 +363,9 @@ class StockController extends AbstractController
         if (!$site) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
+        if (!$this->canAccessSite($site)) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
 
         $piece = $this->em->getRepository(Piece::class)->find($pieceId);
         if (!$piece) {
@@ -431,6 +443,7 @@ class StockController extends AbstractController
         $piece = $movement->getPiece();
         $user = $movement->getUser();
         $intervention = $movement->getIntervention();
+        $isAdmin = $this->isAdmin();
 
         return [
             'id' => $movement->getId(),
@@ -451,7 +464,7 @@ class StockController extends AbstractController
             ],
             'user' => [
                 'id' => $user->getId(),
-                'email' => $user->getEmail(),
+                'email' => $isAdmin ? $user->getEmail() : null,
                 'firstName' => $user->getFirstName(),
                 'lastName' => $user->getLastName(),
             ],
@@ -472,9 +485,15 @@ class StockController extends AbstractController
             return $this->em->getRepository(Stock::class)->findBy([], ['id' => 'ASC']);
         }
 
-        return $this->em->getRepository(Stock::class)->findBy([
-            'scope' => StockScope::TECH_VISIBLE,
-        ], ['id' => 'ASC']);
+        return $this->em->getRepository(Stock::class)
+            ->createQueryBuilder('stock')
+            ->leftJoin('stock.site', 'site')
+            ->andWhere('stock.scope = :scope')
+            ->andWhere('site.id IS NULL OR site.isHidden = false')
+            ->setParameter('scope', StockScope::TECH_VISIBLE)
+            ->orderBy('stock.id', 'ASC')
+            ->getQuery()
+            ->getResult();
     }
 
     private function resolveScopeFromRequest(array $body): StockScope
@@ -547,5 +566,14 @@ class StockController extends AbstractController
     private function isAdmin(): bool
     {
         return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+    }
+
+    private function canAccessSite(Site $site): bool
+    {
+        if ($site->isHidden() && !$this->isAdmin()) {
+            return false;
+        }
+
+        return true;
     }
 }

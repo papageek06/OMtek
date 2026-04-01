@@ -9,6 +9,7 @@ use App\Entity\Imprimante;
 use App\Entity\LigneContrat;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
+use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -31,15 +32,24 @@ class ImprimanteController extends AbstractController
     public function list(Request $request): JsonResponse
     {
         $siteId = $request->query->get('siteId');
-        $criteria = [];
+        $qb = $this->em->getRepository(Imprimante::class)->createQueryBuilder('imprimante')
+            ->leftJoin('imprimante.site', 'site')
+            ->orderBy('imprimante.numeroSerie', 'ASC');
+
         if ($siteId !== null && $siteId !== '') {
             $site = $this->em->getRepository(Site::class)->find((int) $siteId);
-            if (!$site) {
+            if (!$site || (!$this->isAdmin() && $site->isHidden())) {
                 return new JsonResponse([], Response::HTTP_OK);
             }
-            $criteria['site'] = $site;
+            $qb->andWhere('imprimante.site = :site')
+                ->setParameter('site', $site);
         }
-        $imprimantes = $this->em->getRepository(Imprimante::class)->findBy($criteria, ['numeroSerie' => 'ASC']);
+
+        if (!$this->isAdmin()) {
+            $qb->andWhere('site.id IS NULL OR site.isHidden = false');
+        }
+
+        $imprimantes = $qb->getQuery()->getResult();
         $data = array_map([$this, 'imprimanteToArray'], $imprimantes);
         return new JsonResponse($data, Response::HTTP_OK);
     }
@@ -54,6 +64,9 @@ class ImprimanteController extends AbstractController
         $imprimante = $this->em->getRepository(Imprimante::class)->find($id);
         if (!$imprimante) {
             return new JsonResponse(['error' => 'Imprimante non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccessImprimante($imprimante)) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
         }
 
         $page = max(1, (int) $request->query->get('page', 1));
@@ -92,6 +105,9 @@ class ImprimanteController extends AbstractController
         if (!$imprimante) {
             return new JsonResponse(['error' => 'Imprimante non trouvée'], Response::HTTP_NOT_FOUND);
         }
+        if (!$this->canAccessImprimante($imprimante)) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
+        }
         return new JsonResponse($this->imprimanteToArray($imprimante), Response::HTTP_OK);
     }
 
@@ -106,6 +122,9 @@ class ImprimanteController extends AbstractController
         $imprimante = $this->em->getRepository(Imprimante::class)->find($id);
         if (!$imprimante) {
             return new JsonResponse(['error' => 'Imprimante non trouvée'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccessImprimante($imprimante)) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
         }
 
         $body = json_decode($request->getContent(), true);
@@ -130,6 +149,9 @@ class ImprimanteController extends AbstractController
                 $site = $this->em->getRepository(Site::class)->find((int) $siteId);
                 if (!$site) {
                     return new JsonResponse(['error' => 'Site non trouvé'], Response::HTTP_NOT_FOUND);
+                }
+                if ($site->isHidden() && !$this->isAdmin()) {
+                    return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
                 }
                 $imprimante->setSite($site);
             }
@@ -173,6 +195,7 @@ class ImprimanteController extends AbstractController
                 'cyanLevel' => $lastRapport->getCyanLevel(),
                 'magentaLevel' => $lastRapport->getMagentaLevel(),
                 'yellowLevel' => $lastRapport->getYellowLevel(),
+                'wasteLevel' => $lastRapport->getWasteLevel(),
             ] : null,
             'createdAt' => $imprimante->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'updatedAt' => $imprimante->getUpdatedAt()->format(\DateTimeInterface::ATOM),
@@ -229,4 +252,22 @@ class ImprimanteController extends AbstractController
 
         return $count > 0;
     }
+
+    private function isAdmin(): bool
+    {
+        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+    }
+
+    private function canAccessImprimante(Imprimante $imprimante): bool
+    {
+        $site = $imprimante->getSite();
+        if ($site && $site->isHidden() && !$this->isAdmin()) {
+            return false;
+        }
+
+        return true;
+    }
 }
+
+
+
