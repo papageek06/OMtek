@@ -2,6 +2,9 @@
 
 Variables et fichiers a adapter pour deployer l'API en production.
 
+Ce document couvre uniquement le deploiement de l'API.
+Le point d'entree utilisateur peut rester le frontend (React), y compris en production.
+
 ## Fichiers d'environnement
 
 - `.env` : valeurs par defaut (peut etre versionne sans secrets).
@@ -49,7 +52,18 @@ Si le frontend est sur un autre domaine, adapter dans .env :
 6. Bootstrap premier admin :
    `php bin/console app:user:bootstrap-admin --email=admin@votre-domaine.fr --password='MotDePasseFort!'`
 7. Cache : `php bin/console cache:clear --env=prod`
-8. Serveur web : racine document = api/public, redirection vers public/index.php
+8. Serveur web (hote API uniquement) : racine document = api/public, redirection vers public/index.php
+
+## Point d'entree en production
+
+- En local, l'entree principale est bien le frontend (`vite`) qui appelle l'API via `/api` (proxy dev).
+- En production, deux schemas valides :
+  - Frontend et API sur le meme domaine : l'utilisateur entre sur le frontend, et le serveur proxyfie `/api` vers Symfony.
+  - Frontend et API sur des sous-domaines distincts : l'utilisateur entre sur le frontend, qui appelle l'API via `VITE_API_URL`.
+- Le fait d'exposer `api/public` concerne le serveur de l'API, pas la page d'entree utilisateur.
+- Le dossier `frontend/public` n'est pas le point d'entree prod : il sert de source statique pour le build Vite.
+- En production frontend, publier `frontend/dist` (avec `index.html` comme entree).
+- Le frontend utilise `BrowserRouter` : le serveur frontend doit renvoyer `index.html` pour les routes applicatives (`/sites`, `/stocks`, etc.), sinon 404 au rafraichissement direct.
 
 ## Runbook premier acces
 
