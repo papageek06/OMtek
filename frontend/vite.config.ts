@@ -6,7 +6,12 @@ const frontendHost = process.env.VITE_HOST ?? true
 const frontendPort = Number(process.env.VITE_PORT ?? '5173')
 
 export default defineConfig({
+  base: '/dist/',
   plugins: [react()],
+  build: {
+    outDir: '../api/public/dist',
+    emptyOutDir: true,
+  },
   server: {
     host: frontendHost,
     port: frontendPort,
