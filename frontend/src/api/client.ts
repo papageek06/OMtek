@@ -99,17 +99,57 @@ export interface LoginResponse {
 }
 
 export async function login(email: string, password: string): Promise<LoginResponse> {
-  const res = await fetch(`${API_BASE}/auth/login`, {
+  const loginUrl = `${API_BASE}/auth/login`
+  const res = await fetch(loginUrl, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ email: email.trim(), password }),
   })
-  const data = await res.json().catch(() => null)
-  if (!res.ok) {
-    const fallback = res.status === 401 ? 'Identifiants invalides' : `Erreur API login (${res.status})`
-    throw new Error((data as { error?: string } | null)?.error || fallback)
+  const rawBody = await res.text()
+  let data: unknown = null
+
+  if (rawBody) {
+    try {
+      data = JSON.parse(rawBody)
+    } catch {
+      data = null
+    }
   }
-  return data
+
+  if (!res.ok) {
+    const apiError = typeof (data as { error?: unknown } | null)?.error === 'string'
+      ? ((data as { error: string }).error).trim()
+      : ''
+
+    if (apiError) {
+      throw new Error(apiError)
+    }
+
+    if (res.status === 404) {
+      throw new Error(`Endpoint login introuvable (POST ${loginUrl}). Verifiez le routage /api vers Symfony.`)
+    }
+
+    if (rawBody) {
+      const compactBody = rawBody
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim()
+      if (compactBody) {
+        throw new Error(`Erreur API login (${res.status}): ${compactBody.slice(0, 220)}`)
+      }
+    }
+
+    const fallback = res.status === 401
+      ? 'Identifiants invalides'
+      : `Erreur API login (${res.status}${res.statusText ? ` ${res.statusText}` : ''})`
+    throw new Error(fallback)
+  }
+
+  if (!data || typeof data !== 'object') {
+    throw new Error('Reponse login invalide (payload JSON attendu)')
+  }
+
+  return data as LoginResponse
 }
 
 export async function logout(): Promise<void> {
