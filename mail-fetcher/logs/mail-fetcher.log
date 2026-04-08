@@ -169,3 +169,609 @@ UID=535 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=797 | att=1
 OK uid=535 alertes créées=0 + archivé → Archive
 Error processing uid=544 undefined Command failed
 [08/04/2026 21:33:21,32] END OK
+[08/04/2026 21:44:58,06] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Found 294 unseen, processing 10.
+UID=499 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=967 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=499 alertes creees=1 + supprime
+UID=500 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=780 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=500 alertes creees=1 + supprime
+UID=501 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=1051 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=501 alertes creees=1 + supprime
+UID=502 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281180,
+    type: 'text/csv',
+    sha256: 'deaa3d288208ec5816261f9102b6e0a69974901213d3971e58035d0f2ff0dda0'
+  }
+]
+OK uid=502 CSV import + supprime: sites=0 imprimantes=0/445 rapports=445 skipped=0
+UID=503 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=778 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=503 alertes creees=0 + supprime
+UID=505 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=925 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=505 alertes creees=1 + supprime
+UID=510 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=761 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=510 alertes creees=0 + supprime
+UID=512 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=807 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=512 alertes creees=0 + supprime
+UID=518 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=935 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=518 alertes creees=0 + supprime
+Error processing uid=529 undefined Command failed
+[08/04/2026 21:45:03,38] END OK
+[08/04/2026 21:45:20,06] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Found 286 unseen, processing 10.
+UID=491 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=967 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=491 alertes creees=0 + supprime
+UID=492 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=780 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=492 alertes creees=0 + supprime
+UID=493 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=1051 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=493 alertes creees=0 + supprime
+UID=494 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281180,
+    type: 'text/csv',
+    sha256: 'deaa3d288208ec5816261f9102b6e0a69974901213d3971e58035d0f2ff0dda0'
+  }
+]
+OK uid=494 CSV import + supprime: sites=0 imprimantes=0/445 rapports=445 skipped=0
+UID=495 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=778 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=495 alertes creees=0 + supprime
+UID=497 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=925 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=497 alertes creees=0 + supprime
+UID=502 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=761 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=502 alertes creees=0 + supprime
+UID=504 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=735 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=504 alertes creees=1 + supprime
+UID=510 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=935 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=510 alertes creees=0 + supprime
+Error processing uid=521 undefined Command failed
+[08/04/2026 21:45:25,32] END OK
+[08/04/2026 21:45:47,04] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Found 279 unseen, processing 10.
+UID=484 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=967 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=484 alertes creees=0 + supprime
+UID=485 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=780 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=485 alertes creees=0 + supprime
+UID=486 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=1051 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=486 alertes creees=0 + supprime
+UID=487 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281180,
+    type: 'text/csv',
+    sha256: 'deaa3d288208ec5816261f9102b6e0a69974901213d3971e58035d0f2ff0dda0'
+  }
+]
+OK uid=487 CSV import + supprime: sites=0 imprimantes=0/445 rapports=445 skipped=0
+UID=488 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=778 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=488 alertes creees=0 + supprime
+UID=490 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=925 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=490 alertes creees=0 + supprime
+UID=495 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=761 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=495 alertes creees=0 + supprime
+UID=497 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=735 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=497 alertes creees=0 + supprime
+UID=503 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=930 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=503 alertes creees=0 + supprime
+Error processing uid=514 undefined Command failed
+[08/04/2026 21:45:52,26] END OK
+[08/04/2026 21:46:40,17] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Found 273 unseen, processing 10.
+UID=478 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=967 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=478 alertes creees=0 + supprime
+UID=479 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=780 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=479 alertes creees=0 + supprime
+UID=480 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=1051 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=480 alertes creees=0 + supprime
+UID=481 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281180,
+    type: 'text/csv',
+    sha256: 'deaa3d288208ec5816261f9102b6e0a69974901213d3971e58035d0f2ff0dda0'
+  }
+]
+OK uid=481 CSV import + supprime: sites=0 imprimantes=0/445 rapports=445 skipped=0
+UID=482 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=778 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=482 alertes creees=0 + supprime
+UID=484 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=925 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=484 alertes creees=0 + supprime
+UID=489 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=714 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=489 alertes creees=0 + supprime
+UID=491 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=735 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=491 alertes creees=0 + supprime
+UID=497 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=930 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=497 alertes creees=0 + supprime
+Error processing uid=508 undefined Command failed
+[08/04/2026 21:46:45,52] END OK
+[08/04/2026 21:51:48,93] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Found 256 unseen, processing 10.
+UID=509 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=800 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=509 alertes creees=1 + supprime
+UID=514 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=735 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=514 alertes creees=1 + supprime
+UID=516 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=741 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=516 alertes creees=1 + supprime
+UID=520 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=956 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=520 alertes creees=1 + supprime
+UID=526 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=978 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=526 alertes creees=1 + supprime
+UID=528 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=967 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=528 alertes creees=0 + supprime
+UID=530 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=778 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=530 alertes creees=1 + supprime
+UID=532 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=780 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=532 alertes creees=0 + supprime
+UID=540 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=915 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=540 alertes creees=1 + supprime
+UID=542 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=1051 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=542 alertes creees=0 + supprime
+[08/04/2026 21:51:53,50] END OK
+[08/04/2026 21:54:00,24] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Found 206 unseen, processing 10.
+UID=427 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=968 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=427 alertes creees=1 + supprime
+UID=428 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=756 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=428 alertes creees=1 + supprime
+UID=429 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281823,
+    type: 'text/csv',
+    sha256: '86519063279c5645ef3c9ca1857e9ea4216239bc295f5ce6fa0308e89684b150'
+  }
+]
+OK uid=429 CSV import + supprime: sites=0 imprimantes=0/447 rapports=447 skipped=0
+UID=430 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281823,
+    type: 'text/csv',
+    sha256: 'e6a6495755509f8fa969ca22f33dac047bf6d8c89c979a8cc4d839705dfa5914'
+  }
+]
+OK uid=430 CSV import + supprime: sites=0 imprimantes=0/447 rapports=447 skipped=0
+UID=431 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=743 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=431 alertes creees=1 + supprime
+UID=432 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=956 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=432 alertes creees=1 + supprime
+UID=433 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=970 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=433 alertes creees=1 + supprime
+UID=434 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=751 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=434 alertes creees=1 + supprime
+UID=435 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=800 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=435 alertes creees=1 + supprime
+UID=436 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=731 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=436 alertes creees=1 + supprime
+[08/04/2026 21:54:06,66] END OK

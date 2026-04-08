@@ -159,7 +159,9 @@ async function main() {
   const lock = await client.getMailboxLock(process.env.MAIL_MAILBOX || 'INBOX');
 
   try {
-    const unseenUids = await client.search({ seen: false });
+    // Important: utiliser les UID (stables), pas les numéros de séquence (instables après suppression).
+    const unseenUidsResult = await client.search({ seen: false }, { uid: true });
+    const unseenUids = Array.isArray(unseenUidsResult) ? unseenUidsResult : [];
 
     if (!unseenUids.length) {
       console.log('No UNSEEN emails.');
@@ -171,7 +173,10 @@ async function main() {
 
     for (const uid of targetUids) {
       try {
-        const msg = await client.fetchOne(uid, { source: true });
+        const msg = await client.fetchOne(uid, { source: true }, { uid: true });
+        if (!msg || !msg.source) {
+          throw new Error('Message introuvable ou source vide');
+        }
         const parsed = await simpleParser(msg.source);
 
         const messageId = parsed.messageId || null;
