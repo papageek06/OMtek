@@ -29,6 +29,9 @@ security:
         - { path: ^/api/csv-backup$, roles: PUBLIC_ACCESS, methods: [POST] }
         - { path: ^/api/users/me, roles: ROLE_USER }
         - { path: ^/api/users, roles: [ROLE_ADMIN, ROLE_SUPER_ADMIN] }
+        - { path: ^/api/pieces, roles: [ROLE_TECH, ROLE_ADMIN, ROLE_SUPER_ADMIN] }
+        - { path: ^/api/modeles, roles: [ROLE_TECH, ROLE_ADMIN, ROLE_SUPER_ADMIN] }
+        - { path: ^/api/items, roles: [ROLE_TECH, ROLE_ADMIN, ROLE_SUPER_ADMIN] }
         - { path: ^/api/auth, roles: ROLE_USER }
         - { path: ^/api, roles: IS_AUTHENTICATED_FULLY }
 

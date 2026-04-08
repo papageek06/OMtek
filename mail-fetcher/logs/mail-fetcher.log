@@ -1,0 +1,72 @@
+[08/04/2026 20:38:41,43] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Dossier d'archive "Archive" créé ou déjà existant.
+Found 353 unseen, processing 10.
+UID=558 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=881 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=558 alertes créées=1 + archivé → Archive
+UID=559 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=930 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=559 alertes créées=1 + archivé → Archive
+UID=560 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=719 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=560 alertes créées=1 + archivé → Archive
+UID=561 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=797 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=561 alertes créées=1 + archivé → Archive
+UID=562 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=902 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=562 alertes créées=1 + archivé → Archive
+UID=563 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=777 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=563 alertes créées=0 + archivé → Archive
+Error processing uid=564 undefined Command failed
+Error processing uid=565 undefined Command failed
+Error processing uid=566 undefined Command failed
+Error processing uid=567 undefined Command failed
+[08/04/2026 20:38:46,08] END OK

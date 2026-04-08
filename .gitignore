@@ -1,0 +1,6 @@
+# Secrets: never commit environment files from any folder
+.env
+.env.local
+.env.*
+!.env.example
+!.env.*.example

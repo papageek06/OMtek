@@ -8,7 +8,8 @@
     "reception:principale": "node fetch.js",
     "reception:secondaire": "node controleur-reception-secondaire.js",
     "alertes:20": "node traiter-alertes-20.js",
-    "csv:import": "node importer-csv-local.js"
+    "csv:import": "node importer-csv-local.js",
+    "smoke:test": "node smoke-test.js"
   },
   "keywords": [],
   "author": "",

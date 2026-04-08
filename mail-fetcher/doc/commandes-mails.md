@@ -22,6 +22,9 @@ npm run alertes:20
 
 # Import CSV local vers l’API (sites, imprimantes, rapports)
 npm run csv:import
+
+# Smoke test non destructif (IMAP + auth inbound API)
+npm run smoke:test
 ```
 
 ## Commandes node directes
@@ -38,3 +41,10 @@ node importer-csv-local.js [chemin/vers/fichier.csv]
 ## Variables d’environnement
 
 Les commandes s’appuient sur le fichier `.env` à la racine. Voir `doc/config-prod.md` pour la configuration en production.
+
+## Validation rapide avant mise en service
+
+- `npm run smoke:test` doit afficher :
+- `IMAP: OK ...`
+- puis `API /api/alertes: OK` et `API /api/csv-backup: OK`
+- En cas de `authentification inbound KO`, verifier la coherence `INBOUND_TOKEN` entre API Symfony et mail-fetcher.

@@ -22,10 +22,10 @@ Remplacer les URLs locales par l’URL de l’API en production (HTTPS recommand
 
 | Variable | Description | Exemple prod |
 |----------|-------------|--------------|
-| `INBOUND_API_URL` | URL d’envoi des mails reçus (inbound) | `https://api.votredomaine.fr/api/inbound/mail/alert` |
+| `INBOUND_API_URL` | URL d’envoi des mails reçus (inbound) | `https://om.professionaldev.fr/api/inbound/mail/alert` |
 | `INBOUND_TOKEN` | Token d’authentification inbound (secret) | à générer et garder confidentiel |
-| `API_ALERTES_URL` | URL d’enregistrement des alertes | `https://api.votredomaine.fr/api/alertes` |
-| `API_CSV_BACKUP_URL` | URL d’import CSV backup | `https://api.votredomaine.fr/api/csv-backup` |
+| `API_ALERTES_URL` | URL d’enregistrement des alertes | `https://om.professionaldev.fr/api/alertes` |
+| `API_CSV_BACKUP_URL` | URL d’import CSV backup | `https://om.professionaldev.fr/api/csv-backup` |
 
 ### Archivage des mails traités
 
@@ -61,3 +61,4 @@ Exemples pour exécuter les commandes régulièrement :
 ```
 
 Adapter les chemins et la fréquence selon vos besoins.
+
