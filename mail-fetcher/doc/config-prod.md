@@ -27,13 +27,10 @@ Remplacer les URLs locales par l’URL de l’API en production (HTTPS recommand
 | `API_ALERTES_URL` | URL d’enregistrement des alertes | `https://om.professionaldev.fr/api/alertes` |
 | `API_CSV_BACKUP_URL` | URL d’import CSV backup | `https://om.professionaldev.fr/api/csv-backup` |
 
-### Archivage des mails traités
+### Traitement des mails lus
 
-| Variable | Description | Défaut |
-|----------|-------------|--------|
-| `MAIL_ARCHIVE_FOLDER` | Dossier IMAP dans lequel déplacer les mails **déjà traités avec succès** (réception principale). Si vide ou non défini, les mails sont seulement marqués lus (\\Seen), sans déplacement. | non défini (pas d’archivage) |
-
-Exemple : `MAIL_ARCHIVE_FOLDER=Archive` ou `MAIL_ARCHIVE_FOLDER=Processed`. Le dossier est créé automatiquement s’il n’existe pas.
+La reception principale supprime le mail de la boite IMAP uniquement si l'appel API est confirme (ok: true).
+En cas d'echec API, le mail n'est pas supprime.
 
 ### Optionnel
 
@@ -61,4 +58,5 @@ Exemples pour exécuter les commandes régulièrement :
 ```
 
 Adapter les chemins et la fréquence selon vos besoins.
+
 

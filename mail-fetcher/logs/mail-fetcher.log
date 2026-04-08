@@ -70,3 +70,102 @@ Error processing uid=565 undefined Command failed
 Error processing uid=566 undefined Command failed
 Error processing uid=567 undefined Command failed
 [08/04/2026 20:38:46,08] END OK
+[08/04/2026 21:33:15,50] START reception:principale LIMIT=10
+
+> mail-fetcher@1.0.0 reception:principale
+> node fetch.js
+
+Dossier d'archive "Archive" créé ou déjà existant.
+Found 317 unseen, processing 10.
+UID=522 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=778 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=522 alertes créées=1 + archivé → Archive
+UID=523 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=775 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=523 alertes créées=1 + archivé → Archive
+UID=524 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=738 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=524 alertes créées=0 + archivé → Archive
+UID=525 | subject="CSV BACKUP" | from="noreply@kdfm.katun.com" | bodyLen=59 | att=1
+ -> attachments: [
+  {
+    name: 'CSV BACKUP.csv',
+    size: 281108,
+    type: 'text/csv',
+    sha256: '4e5cac9b20bad51840732a25929f2320cee9b8748a7cc2b2ec39bc8088336792'
+  }
+]
+OK uid=525 CSV import + archivé → Archive: sites=0 imprimantes=0/445 rapports=445 skipped=0
+UID=527 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=761 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=527 alertes créées=1 + archivé → Archive
+UID=529 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=807 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=529 alertes créées=0 + archivé → Archive
+UID=531 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=881 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=531 alertes créées=0 + archivé → Archive
+UID=533 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=935 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=533 alertes créées=0 + archivé → Archive
+UID=535 | subject="alert" | from="noreply@kdfm.katun.com" | bodyLen=797 | att=1
+ -> attachments: [
+  {
+    name: undefined,
+    size: 6602,
+    type: 'application/octet-stream',
+    sha256: '9542e215f10071a93e1e5c43ce067bcdabba287d2e59d71ac964e632591c80bf'
+  }
+]
+OK uid=535 alertes créées=0 + archivé → Archive
+Error processing uid=544 undefined Command failed
+[08/04/2026 21:33:21,32] END OK

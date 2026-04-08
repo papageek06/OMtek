@@ -11,7 +11,7 @@ Commandes pour la réception des mails, le traitement des alertes et l’import 
 
 ```bash
 # Réception principale : récupère les mails non lus, envoie vers l'API (inbound / CSV),
-# puis archive les mails traités avec succès dans le dossier MAIL_ARCHIVE_FOLDER (si défini)
+# puis supprime les mails traités avec succès
 npm run reception:principale
 
 # Réception secondaire

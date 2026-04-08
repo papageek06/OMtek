@@ -16,6 +16,11 @@ const axiosCsv = API_CSV_BACKUP && /^https:\/\/(127\.0\.0\.1|localhost)/.test(AP
   ? axios.create({ httpsAgent: new https.Agent({ rejectUnauthorized: false }) })
   : axios;
 
+const API_ALERTES = process.env.API_ALERTES_URL || '';
+const axiosAlertes = API_ALERTES && /^https:\/\/(127\.0\.0\.1|localhost)/.test(API_ALERTES)
+  ? axios.create({ httpsAgent: new https.Agent({ rejectUnauthorized: false }) })
+  : axios;
+
 function toIso(date) {
   try {
     return date ? new Date(date).toISOString() : null;
@@ -39,7 +44,6 @@ function buildBody(parsed) {
       wordwrap: 120,
       selectors: [
         { selector: 'a', options: { hideLinkHrefIfSameAsText: true } },
-        // tu peux personnaliser si besoin
       ],
     }).trim();
 
@@ -48,11 +52,6 @@ function buildBody(parsed) {
 
   return '';
 }
-
-const API_ALERTES = process.env.API_ALERTES_URL || '';
-const axiosAlertes = API_ALERTES && /^https:\/\/(127\.0\.0\.1|localhost)/.test(API_ALERTES)
-  ? axios.create({ httpsAgent: new https.Agent({ rejectUnauthorized: false }) })
-  : axios;
 
 /**
  * Parse le corps du mail, construit le tableau { alertes } attendu par POST /api/alertes.
@@ -90,7 +89,7 @@ async function postAlertes(payload) {
       site: 'Inconnu',
       modeleImprimante: sujet || 'Inconnu',
       numeroSerie: 'N/A',
-      motifAlerte: motif || 'Mail reçu (non parsé)',
+      motifAlerte: motif || 'Mail recu (non parse)',
       piece: '',
       niveauPourcent: null,
     });
@@ -123,6 +122,18 @@ function detectSeverity(subject, body) {
   return 'info';
 }
 
+/**
+ * Commit cote mailbox:
+ * le mail est supprime uniquement apres un OK API.
+ */
+async function deleteMailAfterApiSuccess(client, uid) {
+  try {
+    await client.messageDelete(uid, { uid: true });
+  } catch (e) {
+    throw new Error(`API OK mais suppression du mail impossible (uid=${uid}): ${e?.message || e}`);
+  }
+}
+
 async function main() {
   const limit = parseInt(process.env.LIMIT || '20', 10);
 
@@ -145,20 +156,9 @@ async function main() {
   });
 
   await client.connect();
-
-  const archiveFolder = process.env.MAIL_ARCHIVE_FOLDER || '';
   const lock = await client.getMailboxLock(process.env.MAIL_MAILBOX || 'INBOX');
+
   try {
-    if (archiveFolder.trim()) {
-      try {
-        await client.mailboxCreate(archiveFolder.trim());
-        console.log(`Dossier d'archive "${archiveFolder}" créé ou déjà existant.`);
-      } catch (e) {
-        if (!/Already exists|exists/i.test(e?.message || '')) {
-          console.warn('Impossible de créer le dossier d\'archive:', e?.message || e);
-        }
-      }
-    }
     const unseenUids = await client.search({ seen: false });
 
     if (!unseenUids.length) {
@@ -182,7 +182,6 @@ async function main() {
         const body = buildBody(parsed);
         const severity = detectSeverity(subject, body);
 
-        // Payload attendu par Symfony : messageId, subject, from, receivedAt, severity, body (buildBody), tags
         const payload = {
           messageId,
           subject,
@@ -193,7 +192,7 @@ async function main() {
           tags: ['email', 'ovh'],
         };
 
-        const attachments = (parsed.attachments || []).map(a => ({
+        const attachments = (parsed.attachments || []).map((a) => ({
           filename: a.filename,
           contentType: a.contentType,
           content: a.content,
@@ -203,14 +202,16 @@ async function main() {
 
         console.log(`UID=${uid} | subject="${subject}" | from="${fromEmail}" | bodyLen=${body.length} | att=${attachments.length}`);
         if (attachments.length) {
-          console.log(' -> attachments:', attachments.map(x => ({ name: x.filename, size: x.size, type: x.contentType, sha256: x.sha256 })));
+          console.log(' -> attachments:', attachments.map((x) => ({ name: x.filename, size: x.size, type: x.contentType, sha256: x.sha256 })));
         }
 
         let apiResult;
 
-        // CSV BACKUP : envoi des lignes vers le contrôleur dédié /api/csv-backup
+        // CSV BACKUP: envoi des lignes vers /api/csv-backup
         if (estMailCsvBackup(subject, attachments) && process.env.API_CSV_BACKUP_URL) {
-          const csvAtt = attachments.find((a) => (a.filename || '').toLowerCase().endsWith('.csv') || (a.contentType || '').toLowerCase().includes('csv'));
+          const csvAtt = attachments.find((a) => (a.filename || '').toLowerCase().endsWith('.csv')
+            || (a.contentType || '').toLowerCase().includes('csv'));
+
           if (csvAtt?.content) {
             try {
               const { rows } = parseCsvBackup(csvAtt.content);
@@ -222,20 +223,16 @@ async function main() {
                 timeout: 120000,
                 maxBodyLength: Infinity,
               });
+
               apiResult = res.data;
               if (apiResult?.ok) {
-                await client.messageFlagsAdd(uid, ['\\Seen']);
-                if (archiveFolder.trim()) {
-                  try {
-                    await client.messageMove(uid, archiveFolder.trim(), { uid: true });
-                    console.log(`OK uid=${uid} CSV import + archivé → ${archiveFolder}: sites=${apiResult.sitesCreated} imprimantes=${apiResult.imprimantesCreated}/${apiResult.imprimantesUpdated} rapports=${apiResult.rapportsCreated} skipped=${apiResult.skipped}`);
-                  } catch (moveErr) {
-                    console.warn(`uid=${uid} CSV import OK mais archivage échoué:`, moveErr?.message || moveErr);
-                    console.log(`OK uid=${uid} CSV import: sites=${apiResult.sitesCreated} imprimantes=${apiResult.imprimantesCreated}/${apiResult.imprimantesUpdated} rapports=${apiResult.rapportsCreated} skipped=${apiResult.skipped}`);
-                  }
-                } else {
-                  console.log(`OK uid=${uid} CSV import: sites=${apiResult.sitesCreated} imprimantes=${apiResult.imprimantesCreated}/${apiResult.imprimantesUpdated} rapports=${apiResult.rapportsCreated} skipped=${apiResult.skipped}`);
-                }
+                await deleteMailAfterApiSuccess(client, uid);
+                console.log(
+                  `OK uid=${uid} CSV import + supprime: `
+                  + `sites=${apiResult.sitesCreated} `
+                  + `imprimantes=${apiResult.imprimantesCreated}/${apiResult.imprimantesUpdated} `
+                  + `rapports=${apiResult.rapportsCreated} skipped=${apiResult.skipped}`,
+                );
               }
             } catch (e) {
               console.error(`Error CSV import uid=${uid}`, e?.response?.data ?? e?.message ?? e);
@@ -247,19 +244,9 @@ async function main() {
           apiResult = await postAlertes(payload);
 
           if (apiResult?.ok) {
-            await client.messageFlagsAdd(uid, ['\\Seen']);
+            await deleteMailAfterApiSuccess(client, uid);
             const created = apiResult.created ?? 0;
-            if (archiveFolder.trim()) {
-              try {
-                await client.messageMove(uid, archiveFolder.trim(), { uid: true });
-                console.log(`OK uid=${uid} alertes créées=${created} + archivé → ${archiveFolder}`);
-              } catch (moveErr) {
-                console.warn(`uid=${uid} alertes OK mais archivage échoué:`, moveErr?.message || moveErr);
-                console.log(`OK uid=${uid} alertes créées=${created}`);
-              }
-            } else {
-              console.log(`OK uid=${uid} alertes créées=${created}`);
-            }
+            console.log(`OK uid=${uid} alertes creees=${created} + supprime`);
           } else {
             console.error(`API not ok for uid=${uid}`, apiResult);
           }
@@ -277,7 +264,7 @@ async function main() {
   }
 }
 
-main().catch(err => {
+main().catch((err) => {
   console.error(err);
   process.exit(1);
 });
