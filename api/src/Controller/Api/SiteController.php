@@ -366,7 +366,7 @@ class SiteController extends AbstractController
         $rows = $this->em->getRepository(Alerte::class)
             ->createQueryBuilder('alerte')
             ->select('DISTINCT site.id AS siteId')
-            ->innerJoin(Imprimante::class, 'imprimante', 'WITH', 'imprimante.numeroSerie = alerte.numeroSerie')
+            ->innerJoin('alerte.imprimante', 'imprimante')
             ->innerJoin('imprimante.site', 'site')
             ->andWhere('site.id IN (:siteIds)')
             ->andWhere('alerte.ignorer = false')

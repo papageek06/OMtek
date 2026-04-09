@@ -9,6 +9,7 @@ use App\Entity\Imprimante;
 use App\Entity\LigneContrat;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
+use App\Entity\TonerReplacementEvent;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -93,6 +94,63 @@ class ImprimanteController extends AbstractController
             'limit' => $limit,
             'totalPages' => $totalPages,
         ], Response::HTTP_OK);
+    }
+
+    /**
+     * GET /api/imprimantes/{id}/toner-replacements : historique des remplacements toner detectes.
+     */
+    #[Route('/{id}/toner-replacements', name: 'toner_replacements', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function listTonerReplacements(int $id, Request $request): JsonResponse|Response
+    {
+        $imprimante = $this->em->getRepository(Imprimante::class)->find($id);
+        if (!$imprimante) {
+            return new JsonResponse(['error' => 'Imprimante non trouvÃ©e'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccessImprimante($imprimante)) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+
+        $limit = max(1, min(200, (int) $request->query->get('limit', 50)));
+        $events = $this->em->getRepository(TonerReplacementEvent::class)
+            ->createQueryBuilder('event')
+            ->leftJoin('event.piece', 'piece')
+            ->leftJoin('event.stockMovement', 'movement')
+            ->leftJoin('event.sourceAlerte', 'sourceAlerte')
+            ->leftJoin('event.sourceRapport', 'sourceRapport')
+            ->andWhere('event.imprimante = :imprimante')
+            ->setParameter('imprimante', $imprimante)
+            ->orderBy('event.detectedAt', 'DESC')
+            ->addOrderBy('event.id', 'DESC')
+            ->setMaxResults($limit)
+            ->getQuery()
+            ->getResult();
+
+        $data = array_map(static function (TonerReplacementEvent $event): array {
+            $piece = $event->getPiece();
+            return [
+                'id' => $event->getId(),
+                'color' => $event->getColorKey(),
+                'sourceType' => $event->getSourceType(),
+                'detectedAt' => $event->getDetectedAt()->format(\DateTimeInterface::ATOM),
+                'levelBefore' => $event->getLevelBefore(),
+                'levelAfter' => $event->getLevelAfter(),
+                'counterValue' => $event->getCounterValue(),
+                'previousCounterValue' => $event->getPreviousCounterValue(),
+                'copiesSincePrevious' => $event->getCopiesSincePrevious(),
+                'piece' => $piece ? [
+                    'id' => $piece->getId(),
+                    'reference' => $piece->getReference(),
+                    'libelle' => $piece->getLibelle(),
+                    'categorie' => $piece->getCategorie()->value,
+                    'variant' => $piece->getVariant()?->value,
+                ] : null,
+                'stockMovementId' => $event->getStockMovement()?->getId(),
+                'sourceAlerteId' => $event->getSourceAlerte()?->getId(),
+                'sourceRapportId' => $event->getSourceRapport()?->getId(),
+            ];
+        }, $events);
+
+        return new JsonResponse($data, Response::HTTP_OK);
     }
 
     /**

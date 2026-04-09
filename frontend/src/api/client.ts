@@ -224,10 +224,16 @@ export async function updateProfile(patch: ProfileUpdate): Promise<User> {
 
 export interface UserCreatePayload {
   email: string
-  password: string
+  password?: string
   firstName: string
   lastName: string
   roles: string[]
+}
+
+export interface CreateUserResponse {
+  user: User
+  mailSent: boolean
+  warning: string | null
 }
 
 export async function fetchUsers(): Promise<User[]> {
@@ -239,7 +245,7 @@ export async function fetchUsers(): Promise<User[]> {
   return body
 }
 
-export async function createUser(data: UserCreatePayload): Promise<User> {
+export async function createUser(data: UserCreatePayload): Promise<CreateUserResponse> {
   const res = await apiFetch(`${API_BASE}/users`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -250,7 +256,40 @@ export async function createUser(data: UserCreatePayload): Promise<User> {
     const err = (body?.error as string) || (body?.errors ? JSON.stringify(body.errors) : 'Erreur creation utilisateur')
     throw new Error(err)
   }
-  return body
+
+  if (body && typeof body === 'object') {
+    const mailSent = (body as { mailSent?: boolean }).mailSent !== false
+    const warning = typeof (body as { warning?: unknown }).warning === 'string'
+      ? (body as { warning: string }).warning
+      : null
+
+    if ('user' in body) {
+      return {
+        user: (body as { user: User }).user,
+        mailSent,
+        warning,
+      }
+    }
+
+    return {
+      user: body as User,
+      mailSent,
+      warning,
+    }
+  }
+
+  return { user: body as User, mailSent: true, warning: null }
+}
+
+export async function deleteUser(userId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/users/${userId}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    const err = (body?.error as string) || 'Erreur suppression utilisateur'
+    throw new Error(err)
+  }
 }
 
 // --- Items (legacy, pour compat) ---
@@ -309,8 +348,121 @@ export interface RapportImprimante {
   createdAt: string
 }
 
+export interface TonerReplacementEvent {
+  id: number
+  color: string
+  sourceType: string
+  detectedAt: string
+  levelBefore: number | null
+  levelAfter: number | null
+  counterValue: number | null
+  previousCounterValue: number | null
+  copiesSincePrevious: number | null
+  piece: {
+    id: number | null
+    reference: string
+    libelle: string
+    categorie: string
+    variant: string | null
+  } | null
+  stockMovementId: number | null
+  sourceAlerteId: number | null
+  sourceRapportId: number | null
+}
+
+export interface TonerAnalyticsOverview {
+  totalCycles: number
+  printersWithCycles: number
+  cyclesWithCounter: number
+  counterCoveragePercent: number
+  averageCopiesPerCycle: number | null
+  medianCopiesPerCycle: number | null
+  periodLabel: string
+}
+
+export interface TonerAnalyticsPrinterYield {
+  printerId: number
+  numeroSerie: string
+  modele: string
+  site: {
+    id: number | null
+    nom: string | null
+  }
+  cycles: number
+  averageCopiesPerCycle: number | null
+  minCopiesPerCycle: number | null
+  maxCopiesPerCycle: number | null
+  cyclesWithCounter: number
+  withoutStockMovement: number
+  lastReplacementAt: string | null
+}
+
+export interface TonerAnalyticsColorYield {
+  color: string
+  cycles: number
+  cyclesWithCounter: number
+  averageCopiesPerCycle: number | null
+  minCopiesPerCycle: number | null
+  maxCopiesPerCycle: number | null
+}
+
+export interface TonerAnalyticsDetectionQuality {
+  totalCycles: number
+  sourceBreakdown: Array<{
+    sourceType: string
+    count: number
+    sharePercent: number
+  }>
+  counterCoveragePercent: number
+  cyclesWithoutStockMovement: number
+}
+
+export interface TonerAnalyticsRiskSignals {
+  activeTonerAlerts: Array<{
+    id: number
+    alertAt: string | null
+    numeroSerie: string
+    modele: string
+    site: { id: number | null; nom: string | null }
+    motifAlerte: string
+    piece: string
+    niveauPourcent: number | null
+    printerId: number | null
+  }>
+  lowSiteTonerStocks: Array<{
+    stockId: number
+    quantite: number
+    scope: string
+    updatedAt: string | null
+    site: { id: number; nom: string }
+    piece: { id: number; reference: string; libelle: string; variant: string | null }
+  }>
+}
+
+export interface TonerAnalyticsMonthlyPoint {
+  month: string
+  cycles: number
+  cyclesWithCounter: number
+  averageCopiesPerCycle: number | null
+}
+
+export interface TonerAnalyticsPayload {
+  generatedAt: string
+  window: {
+    days: number
+    since: string
+  }
+  overview: TonerAnalyticsOverview
+  yieldByPrinter: TonerAnalyticsPrinterYield[]
+  yieldByColor: TonerAnalyticsColorYield[]
+  detectionQuality: TonerAnalyticsDetectionQuality
+  riskSignals: TonerAnalyticsRiskSignals
+  monthlyTrend: TonerAnalyticsMonthlyPoint[]
+}
+
 export interface Alerte {
   id: number
+  messageId?: string | null
   sujet: string
   expediteur: string
   recuLe: string | null
@@ -324,6 +476,14 @@ export interface Alerte {
   active?: boolean
   /** compat API historique */
   ignorer?: boolean
+  imprimante?: {
+    id: number | null
+    numeroSerie: string
+    site: {
+      id: number
+      nom: string
+    } | null
+  } | null
   createdAt: string
 }
 
@@ -1650,6 +1810,28 @@ export async function fetchRapports(
     return { items: data, total: data.length, page: 1, limit: data.length, totalPages: 1 }
   }
   return data
+}
+
+export async function fetchTonerReplacements(
+  imprimanteId: number,
+  opts?: { limit?: number }
+): Promise<TonerReplacementEvent[]> {
+  const params = new URLSearchParams()
+  params.set('limit', String(opts?.limit ?? 50))
+  const url = `${API_BASE}/imprimantes/${imprimanteId}/toner-replacements?${params}`
+  const res = await apiFetch(url)
+  if (!res.ok) throw new Error('Erreur chargement des remplacements toner')
+  return res.json()
+}
+
+export async function fetchTonerAnalytics(days?: number): Promise<TonerAnalyticsPayload> {
+  const params = new URLSearchParams()
+  if (days != null) params.set('days', String(days))
+  const qs = params.toString()
+  const url = `${API_BASE}/analytics/toner` + (qs ? `?${qs}` : '')
+  const res = await apiFetch(url)
+  if (!res.ok) throw new Error('Erreur chargement des analyses toner')
+  return res.json()
 }
 
 export interface AlertesQuery {

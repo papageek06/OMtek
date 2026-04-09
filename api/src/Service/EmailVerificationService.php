@@ -24,11 +24,7 @@ final class EmailVerificationService
 
     public function sendEmailChangeVerification(User $user, string $newEmail): void
     {
-        $token = bin2hex(random_bytes(32));
-        $user->setEmailVerificationToken($token);
-        $user->setEmailVerificationTokenExpiresAt(new \DateTimeImmutable(self::TOKEN_TTL));
-        $user->setUpdatedAt(new \DateTimeImmutable());
-        $this->userRepository->getEntityManager()->flush();
+        $token = $this->issueVerificationToken($user);
 
         $verifyUrl = $this->appUrl . '/verify-email?token=' . $token . '&type=email&value=' . urlencode($newEmail);
         $body = "Bonjour,\n\nCliquez sur le lien suivant pour valider le changement d'adresse email :\n" . $verifyUrl . "\n\nCe lien expire dans 24 heures.";
@@ -43,11 +39,7 @@ final class EmailVerificationService
 
     public function sendPasswordChangeVerification(User $user): void
     {
-        $token = bin2hex(random_bytes(32));
-        $user->setEmailVerificationToken($token);
-        $user->setEmailVerificationTokenExpiresAt(new \DateTimeImmutable(self::TOKEN_TTL));
-        $user->setUpdatedAt(new \DateTimeImmutable());
-        $this->userRepository->getEntityManager()->flush();
+        $token = $this->issueVerificationToken($user);
 
         $verifyUrl = $this->appUrl . '/verify-email?token=' . $token . '&type=password';
         $body = "Bonjour,\n\nCliquez sur le lien suivant pour valider le changement de mot de passe :\n" . $verifyUrl . "\n\nCe lien expire dans 24 heures.";
@@ -56,6 +48,38 @@ final class EmailVerificationService
             ->from(new Address('noreply@omtek.local', 'OMtek'))
             ->to($user->getEmail())
             ->subject('Vérification changement de mot de passe - OMtek')
+            ->text($body);
+        $this->mailer->send($email);
+    }
+
+    /**
+     * Envoi apres creation d'un compte par un admin.
+     * Le destinataire definit lui-meme son mot de passe via un lien securise.
+     */
+    public function sendNewAccountPasswordSetup(User $user): void
+    {
+        $token = $this->issueVerificationToken($user);
+        $verifyUrl = $this->appUrl . '/verify-email?token=' . $token . '&type=password';
+
+        $roles = array_values(array_filter(
+            $user->getRoles(),
+            static fn (string $role): bool => $role !== 'ROLE_USER'
+        ));
+        $rolesText = $roles !== [] ? implode(', ', $roles) : User::ROLE_TECH;
+
+        $body = "Bonjour,\n\n"
+            . "Un compte OMtek vient d'etre cree pour vous.\n\n"
+            . "Email de connexion : " . $user->getEmail() . "\n"
+            . "Role : " . $rolesText . "\n\n"
+            . "Definissez votre mot de passe en cliquant sur le lien suivant :\n"
+            . $verifyUrl . "\n\n"
+            . "Ce lien expire dans 24 heures.\n"
+            . "Si vous n'etes pas concerne, ignorez cet email.";
+
+        $email = (new Email())
+            ->from(new Address('noreply@omtek.local', 'OMtek'))
+            ->to($user->getEmail())
+            ->subject('Activation de votre compte OMtek')
             ->text($body);
         $this->mailer->send($email);
     }
@@ -104,5 +128,16 @@ final class EmailVerificationService
         $user->setEmailVerificationTokenExpiresAt(null);
         $user->setUpdatedAt(new \DateTimeImmutable());
         $this->userRepository->getEntityManager()->flush();
+    }
+
+    private function issueVerificationToken(User $user): string
+    {
+        $token = bin2hex(random_bytes(32));
+        $user->setEmailVerificationToken($token);
+        $user->setEmailVerificationTokenExpiresAt(new \DateTimeImmutable(self::TOKEN_TTL));
+        $user->setUpdatedAt(new \DateTimeImmutable());
+        $this->userRepository->getEntityManager()->flush();
+
+        return $token;
     }
 }

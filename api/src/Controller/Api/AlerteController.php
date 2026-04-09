@@ -8,6 +8,7 @@ use App\Entity\Alerte;
 use App\Entity\Imprimante;
 use App\Entity\User;
 use App\Service\InboundTokenGuard;
+use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -24,6 +25,7 @@ class AlerteController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly InboundTokenGuard $inboundTokenGuard,
+        private readonly TonerReplacementService $tonerReplacementService,
     ) {
     }
 
@@ -41,7 +43,7 @@ class AlerteController extends AbstractController
         $onlyActionable = $this->parseBoolean($request->query->get('onlyActionable'), false);
 
         $qb = $this->em->getRepository(Alerte::class)->createQueryBuilder('alerte')
-            ->leftJoin(Imprimante::class, 'imprimante', 'WITH', 'imprimante.numeroSerie = alerte.numeroSerie')
+            ->leftJoin('alerte.imprimante', 'imprimante')
             ->leftJoin('imprimante.site', 'site')
             ->orderBy('alerte.recuLe', 'DESC')
             ->addOrderBy('alerte.id', 'DESC')
@@ -144,8 +146,23 @@ class AlerteController extends AbstractController
 
         $entities = [];
         $skipped = 0;
+        $skippedUnlinked = 0;
+        $imprimanteRepo = $this->em->getRepository(Imprimante::class);
         foreach ($alertesData as $a) {
-            if (!\is_array($a) || empty($a['site'] ?? '') || empty($a['modeleImprimante'] ?? '') || empty($a['numeroSerie'] ?? '') || empty($a['motifAlerte'] ?? '')) {
+            if (!\is_array($a) || empty($a['numeroSerie'] ?? '') || empty($a['motifAlerte'] ?? '')) {
+                continue;
+            }
+
+            $incomingNumeroSerie = trim((string) ($a['numeroSerie'] ?? ''));
+            if ($incomingNumeroSerie === '') {
+                $skipped++;
+                continue;
+            }
+
+            $imprimante = $imprimanteRepo->findOneBy(['numeroSerie' => $incomingNumeroSerie]);
+            if (!$imprimante instanceof Imprimante) {
+                $skipped++;
+                $skippedUnlinked++;
                 continue;
             }
 
@@ -160,9 +177,10 @@ class AlerteController extends AbstractController
                     // garde null
                 }
             }
-            $alerte->setSite((string) $a['site']);
-            $alerte->setModeleImprimante((string) $a['modeleImprimante']);
-            $alerte->setNumeroSerie((string) $a['numeroSerie']);
+            $alerte->setImprimante($imprimante);
+            $alerte->setSite($imprimante->getSite()?->getNom() ?? (string) $a['site']);
+            $alerte->setModeleImprimante($imprimante->getModeleNom() !== '' ? $imprimante->getModeleNom() : (string) $a['modeleImprimante']);
+            $alerte->setNumeroSerie($imprimante->getNumeroSerie());
             $alerte->setMotifAlerte((string) $a['motifAlerte']);
             $alerte->setPiece(isset($a['piece']) ? (string) $a['piece'] : '');
             $alerte->setNiveauPourcent(
@@ -183,6 +201,11 @@ class AlerteController extends AbstractController
 
         $this->em->flush();
 
+        foreach ($entities as $entity) {
+            $this->tonerReplacementService->registerFromAlerte($entity);
+        }
+        $this->em->flush();
+
         $hasAutoUpdates = false;
         foreach ($entities as $entity) {
             if ($this->deactivateOlderActionableAlerts($entity)) {
@@ -201,6 +224,7 @@ class AlerteController extends AbstractController
             'ok' => true,
             'created' => count($entities),
             'skipped' => $skipped,
+            'skippedUnlinked' => $skippedUnlinked,
             'ids' => $ids,
         ], Response::HTTP_CREATED);
     }
@@ -212,9 +236,12 @@ class AlerteController extends AbstractController
 
     private function isAlerteOnHiddenSite(Alerte $alerte): bool
     {
-        $imprimante = $this->em->getRepository(Imprimante::class)->findOneBy([
-            'numeroSerie' => $alerte->getNumeroSerie(),
-        ]);
+        $imprimante = $alerte->getImprimante();
+        if (!$imprimante instanceof Imprimante && $alerte->getNumeroSerie() !== '') {
+            $imprimante = $this->em->getRepository(Imprimante::class)->findOneBy([
+                'numeroSerie' => $alerte->getNumeroSerie(),
+            ]);
+        }
 
         $site = $imprimante?->getSite();
         if ($site === null) {
@@ -240,6 +267,14 @@ class AlerteController extends AbstractController
             'niveauPourcent' => $alerte->getNiveauPourcent(),
             'active' => !$alerte->isIgnorer(),
             'ignorer' => $alerte->isIgnorer(),
+            'imprimante' => $alerte->getImprimante() ? [
+                'id' => $alerte->getImprimante()?->getId(),
+                'numeroSerie' => $alerte->getImprimante()?->getNumeroSerie(),
+                'site' => $alerte->getImprimante()?->getSite() ? [
+                    'id' => $alerte->getImprimante()?->getSite()?->getId(),
+                    'nom' => $alerte->getImprimante()?->getSite()?->getNom(),
+                ] : null,
+            ] : null,
             'createdAt' => $alerte->getCreatedAt()->format(\DateTimeInterface::ATOM),
         ];
     }
@@ -284,6 +319,8 @@ class AlerteController extends AbstractController
             $byMessageId = $repo->findOneBy([
                 'messageId' => $alerte->getMessageId(),
                 'numeroSerie' => $alerte->getNumeroSerie(),
+                'motifAlerte' => $alerte->getMotifAlerte(),
+                'piece' => $alerte->getPiece(),
             ]);
             if ($byMessageId !== null) {
                 return true;

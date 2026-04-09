@@ -109,6 +109,7 @@ const STOCK_MOVEMENT_REASON_LABELS: Record<string, string> = {
   INVENTAIRE: 'Inventaire',
   LIVRAISON: 'Livraison',
   DEPANNAGE: 'Depannage',
+  AUTO_TONER_REPLACEMENT: 'Remplacement toner auto',
   REAPPRO: 'Reappro',
   CORRECTION: 'Correction',
   TRANSFERT_SITE: 'Transfert site',
@@ -288,7 +289,6 @@ export default function SiteDetailPage() {
     fetchAlertes({
       numeroSerie,
       includeInactive,
-      onlyActionable: true,
     })
       .then((alertes) => {
         setAlertesByImp((prev) => ({ ...prev, [impId]: alertes }))

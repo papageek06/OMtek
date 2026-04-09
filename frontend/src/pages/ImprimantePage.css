@@ -72,6 +72,110 @@
   color: #f2f3f5;
 }
 
+.imprimante-analytics-tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  margin-bottom: 0.9rem;
+}
+
+.imprimante-analytics-tabs button {
+  border: 1px solid #3f4147;
+  background: #2b2d31;
+  color: #b5bac1;
+  border-radius: 999px;
+  padding: 0.35rem 0.8rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.imprimante-analytics-tabs button.active {
+  color: #f2f3f5;
+  border-color: #00a8fc;
+  background: rgba(0, 168, 252, 0.15);
+}
+
+.imprimante-kpis {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.7rem;
+  margin-bottom: 0.9rem;
+}
+
+.imprimante-kpis article {
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  background: #313338;
+  padding: 0.65rem 0.75rem;
+}
+
+.imprimante-kpis span {
+  display: block;
+  color: #b5bac1;
+  font-size: 0.82rem;
+}
+
+.imprimante-kpis strong {
+  display: block;
+  margin-top: 0.25rem;
+  color: #f2f3f5;
+  font-size: 1.05rem;
+}
+
+.imprimante-analytics-table-wrap {
+  overflow-x: auto;
+  border-radius: 10px;
+  border: 1px solid #3f4147;
+  background: #2b2d31;
+}
+
+.imprimante-analytics-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.88rem;
+}
+
+.imprimante-analytics-table th,
+.imprimante-analytics-table td {
+  padding: 0.55rem 0.7rem;
+  border-bottom: 1px solid #3f4147;
+  text-align: left;
+  color: #dcddde;
+}
+
+.imprimante-analytics-table th {
+  background: #313338;
+  color: #b5bac1;
+}
+
+.imprimante-source-breakdown {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.7rem;
+}
+
+.imprimante-source-breakdown li {
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  background: #313338;
+  padding: 0.65rem 0.75rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+.imprimante-source-breakdown li span {
+  color: #b5bac1;
+  font-size: 0.86rem;
+}
+
+.imprimante-source-breakdown li strong {
+  color: #f2f3f5;
+}
+
 .imprimante-rapports-info {
   margin: 0 0 0.75rem;
   color: #80848e;

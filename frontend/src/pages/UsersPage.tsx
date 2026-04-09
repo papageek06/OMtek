@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { createUser, fetchUsers, UnauthorizedError, type User } from '../api/client'
+import { createUser, deleteUser, fetchUsers, UnauthorizedError, type User } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import './UsersPage.css'
 
@@ -11,23 +11,21 @@ const ROLE_OPTIONS = [
 
 export default function UsersPage() {
   const { user } = useAuth()
+  const currentUserId = user?.id ?? null
   const isAdmin = useMemo(() => !!user?.roles?.some((r) => r === 'ROLE_ADMIN' || r === 'ROLE_SUPER_ADMIN'), [user])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
+  const [deletingUserId, setDeletingUserId] = useState<number | null>(null)
+  const [userToDelete, setUserToDelete] = useState<User | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [form, setForm] = useState({
     email: '',
-    password: '',
-    passwordConfirmation: '',
     firstName: '',
     lastName: '',
     role: 'ROLE_TECH',
   })
-
-  const passwordsMismatch =
-    form.passwordConfirmation.length > 0 && form.password !== form.passwordConfirmation
 
   async function loadUsers(): Promise<void> {
     setLoading(true)
@@ -54,6 +52,19 @@ export default function UsersPage() {
     }
   }, [isAdmin])
 
+  useEffect(() => {
+    if (!userToDelete) return
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && deletingUserId === null) {
+        setUserToDelete(null)
+      }
+    }
+
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [userToDelete, deletingUserId])
+
   if (!user) {
     return <Navigate to="/login" replace />
   }
@@ -65,16 +76,10 @@ export default function UsersPage() {
     e.preventDefault()
     if (
       !form.email.trim() ||
-      !form.password ||
-      !form.passwordConfirmation ||
       !form.firstName.trim() ||
       !form.lastName.trim()
     ) {
       setError('Tous les champs sont requis')
-      return
-    }
-    if (form.password !== form.passwordConfirmation) {
-      setError('Les mots de passe ne correspondent pas')
       return
     }
 
@@ -82,18 +87,21 @@ export default function UsersPage() {
     setError(null)
     setMessage(null)
     try {
-      await createUser({
+      const result = await createUser({
         email: form.email.trim(),
-        password: form.password,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         roles: [form.role],
       })
-      setMessage('Utilisateur cree')
+
+      if (result.mailSent) {
+        setMessage('Utilisateur cree. Un email de configuration du mot de passe a ete envoye.')
+      } else {
+        setMessage(result.warning ?? 'Utilisateur cree, mais email non envoye.')
+      }
+
       setForm({
         email: '',
-        password: '',
-        passwordConfirmation: '',
         firstName: '',
         lastName: '',
         role: 'ROLE_TECH',
@@ -103,6 +111,34 @@ export default function UsersPage() {
       setError(e instanceof Error ? e.message : 'Erreur creation utilisateur')
     } finally {
       setSubmitting(false)
+    }
+  }
+
+  function requestDelete(item: User): void {
+    if (currentUserId != null && item.id === currentUserId) {
+      setError('Suppression de votre propre compte interdite')
+      return
+    }
+
+    setUserToDelete(item)
+  }
+
+  async function confirmDelete(): Promise<void> {
+    if (!userToDelete) return
+
+    setDeletingUserId(userToDelete.id)
+    setError(null)
+    setMessage(null)
+
+    try {
+      await deleteUser(userToDelete.id)
+      setUsers((prev) => prev.filter((u) => u.id !== userToDelete.id))
+      setUserToDelete(null)
+      setMessage('Utilisateur supprime')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur suppression utilisateur')
+    } finally {
+      setDeletingUserId(null)
     }
   }
 
@@ -134,26 +170,9 @@ export default function UsersPage() {
           </label>
           <label>
             <span>Mot de passe</span>
-            <input
-              type="password"
-              value={form.password}
-              onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
-              required
-            />
-          </label>
-          <label>
-            <span>Confirmer mot de passe</span>
-            <input
-              type="password"
-              value={form.passwordConfirmation}
-              onChange={(e) => setForm((prev) => ({ ...prev, passwordConfirmation: e.target.value }))}
-              required
-            />
-            {passwordsMismatch && (
-              <small className="users-form__hint users-form__hint--error">
-                Les mots de passe ne correspondent pas.
-              </small>
-            )}
+            <small className="users-form__hint">
+              Le mot de passe est defini par l'utilisateur via le lien recu par email.
+            </small>
           </label>
           <label>
             <span>Prenom</span>
@@ -189,7 +208,7 @@ export default function UsersPage() {
           <button
             type="submit"
             className="users-page__primary-btn"
-            disabled={submitting || passwordsMismatch}
+            disabled={submitting}
           >
             {submitting ? 'Enregistrement...' : 'Creer utilisateur'}
           </button>
@@ -210,11 +229,71 @@ export default function UsersPage() {
                 <span>{item.email}</span>
                 <span>{item.roles.join(', ')}</span>
                 <span>{item.emailVerified ? 'Email verifie' : 'Email non verifie'}</span>
+                <div className="users-list__actions">
+                  <button
+                    type="button"
+                    className="users-page__danger-btn"
+                    onClick={() => { requestDelete(item) }}
+                    disabled={deletingUserId === item.id || item.id === currentUserId}
+                  >
+                    {deletingUserId === item.id
+                      ? 'Suppression...'
+                      : item.id === currentUserId
+                        ? 'Compte courant'
+                        : 'Supprimer'}
+                  </button>
+                </div>
               </li>
             ))}
           </ul>
         )}
       </section>
+
+      {userToDelete && (
+        <div
+          className="users-modal__backdrop"
+          role="presentation"
+          onClick={() => {
+            if (deletingUserId === null) setUserToDelete(null)
+          }}
+        >
+          <div
+            className="users-modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="users-delete-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 id="users-delete-title" className="users-modal__title">Confirmer la suppression</h3>
+            <p className="users-modal__text">
+              Voulez-vous vraiment supprimer{' '}
+              <strong>{`${userToDelete.firstName} ${userToDelete.lastName}`.trim() || userToDelete.email}</strong>{' '}
+              ({userToDelete.email}) ?
+            </p>
+            <p className="users-modal__text users-modal__text--warning">
+              Cette action est irreversible.
+            </p>
+            <div className="users-modal__actions">
+              <button
+                type="button"
+                className="users-modal__cancel-btn"
+                onClick={() => setUserToDelete(null)}
+                disabled={deletingUserId !== null}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="users-modal__confirm-btn"
+                onClick={() => { void confirmDelete() }}
+                disabled={deletingUserId !== null}
+              >
+                {deletingUserId === userToDelete.id ? 'Suppression...' : 'Supprimer'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }

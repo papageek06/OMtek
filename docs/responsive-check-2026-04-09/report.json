@@ -1,0 +1,290 @@
+[
+  {
+    "viewport": "mobile-360x800",
+    "route": "/",
+    "overflowBefore": false,
+    "menuVisible": true,
+    "overflowMenuOpen": false,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__home.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/login",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__login.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/sites",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__sites.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/stocks",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__stocks.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/alertes",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__alertes.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/interventions",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__interventions.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/modeles",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__modeles.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/contracts",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__contracts.png"
+  },
+  {
+    "viewport": "mobile-360x800",
+    "route": "/users",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-360x800__users.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/",
+    "overflowBefore": false,
+    "menuVisible": true,
+    "overflowMenuOpen": false,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__home.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/login",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__login.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/sites",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__sites.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/stocks",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__stocks.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/alertes",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__alertes.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/interventions",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__interventions.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/modeles",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__modeles.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/contracts",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__contracts.png"
+  },
+  {
+    "viewport": "mobile-390x844",
+    "route": "/users",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\mobile-390x844__users.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/",
+    "overflowBefore": false,
+    "menuVisible": true,
+    "overflowMenuOpen": false,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__home.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/login",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__login.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/sites",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__sites.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/stocks",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__stocks.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/alertes",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__alertes.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/interventions",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__interventions.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/modeles",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__modeles.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/contracts",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__contracts.png"
+  },
+  {
+    "viewport": "tablet-768x1024",
+    "route": "/users",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\tablet-768x1024__users.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__home.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/login",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__login.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/sites",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__sites.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/stocks",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__stocks.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/alertes",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__alertes.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/interventions",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__interventions.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/modeles",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__modeles.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/contracts",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__contracts.png"
+  },
+  {
+    "viewport": "desktop-1366x768",
+    "route": "/users",
+    "overflowBefore": false,
+    "menuVisible": false,
+    "overflowMenuOpen": null,
+    "screenshot": "c:\\Users\\marcl\\Desktop\\projet en cour\\OMtek\\docs\\responsive-check-2026-04-09\\desktop-1366x768__users.png"
+  }
+]

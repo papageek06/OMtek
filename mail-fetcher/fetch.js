@@ -78,21 +78,6 @@ async function postAlertes(payload) {
         niveauPourcent: a.niveauPourcent ?? null,
       });
     }
-  } else {
-    const sujet = (payload.subject || '').slice(0, 255);
-    const motif = (body || '').slice(0, 255);
-    alertes.push({
-      messageId: payload.messageId || null,
-      sujet: payload.subject || '',
-      expediteur: payload.from || '',
-      recuLe: payload.receivedAt || null,
-      site: 'Inconnu',
-      modeleImprimante: sujet || 'Inconnu',
-      numeroSerie: 'N/A',
-      motifAlerte: motif || 'Mail recu (non parse)',
-      piece: '',
-      niveauPourcent: null,
-    });
   }
 
   if (alertes.length === 0) {

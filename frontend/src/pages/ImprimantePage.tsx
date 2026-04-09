@@ -1,14 +1,16 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   fetchImprimante,
   fetchRapports,
   fetchAlertes,
+  fetchTonerReplacements,
   updateAlerteActive,
   UnauthorizedError,
   type Imprimante,
   type RapportImprimante,
   type Alerte,
+  type TonerReplacementEvent,
 } from '../api/client'
 import './ImprimantePage.css'
 
@@ -47,6 +49,34 @@ function isAlerteActive(alerte: Alerte): boolean {
   return !alerte.ignorer
 }
 
+function colorLabel(color: string): string {
+  switch (color) {
+    case 'black':
+      return 'Noir'
+    case 'cyan':
+      return 'Cyan'
+    case 'magenta':
+      return 'Magenta'
+    case 'yellow':
+      return 'Jaune'
+    default:
+      return color
+  }
+}
+
+function sourceLabel(sourceType: string): string {
+  switch (sourceType) {
+    case 'ALERTE':
+      return 'Alerte mail'
+    case 'REPORT_LEVEL_ASC':
+      return 'Niveau ascendant'
+    default:
+      return sourceType
+  }
+}
+
+type PrinterAnalyticsTab = 'CYCLES' | 'YIELD' | 'QUALITY'
+
 export default function ImprimantePage() {
   const { id } = useParams<{ id: string }>()
   const [imprimante, setImprimante] = useState<Imprimante | null>(null)
@@ -60,6 +90,10 @@ export default function ImprimantePage() {
   const [alertesError, setAlertesError] = useState<string | null>(null)
   const [showInactiveAlerts, setShowInactiveAlerts] = useState(false)
   const [updatingAlerteId, setUpdatingAlerteId] = useState<number | null>(null)
+  const [tonerEvents, setTonerEvents] = useState<TonerReplacementEvent[]>([])
+  const [tonerEventsLoading, setTonerEventsLoading] = useState(false)
+  const [tonerEventsError, setTonerEventsError] = useState<string | null>(null)
+  const [analyticsTab, setAnalyticsTab] = useState<PrinterAnalyticsTab>('CYCLES')
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
 
@@ -112,7 +146,6 @@ export default function ImprimantePage() {
     fetchAlertes({
       numeroSerie: imprimante.numeroSerie,
       includeInactive: showInactiveAlerts,
-      onlyActionable: true,
     })
       .then((alts) => {
         if (!cancelled) {
@@ -163,6 +196,93 @@ export default function ImprimantePage() {
       cancelled = true
     }
   }, [imprimanteId, rapportsPage])
+
+  useEffect(() => {
+    if (!Number.isFinite(imprimanteId)) return
+
+    let cancelled = false
+    setTonerEventsLoading(true)
+    setTonerEventsError(null)
+
+    fetchTonerReplacements(imprimanteId, { limit: 200 })
+      .then((events) => {
+        if (!cancelled) {
+          setTonerEvents(Array.isArray(events) ? events : [])
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setTonerEvents([])
+          setTonerEventsError(e instanceof Error ? e.message : 'Erreur chargement analyses toner')
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setTonerEventsLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [imprimanteId])
+
+  const copiesValues = useMemo(
+    () => tonerEvents.map((event) => event.copiesSincePrevious).filter((value): value is number => value != null),
+    [tonerEvents]
+  )
+
+  const averageCopies = useMemo(() => {
+    if (copiesValues.length === 0) return null
+    return Math.round(copiesValues.reduce((sum, value) => sum + value, 0) / copiesValues.length)
+  }, [copiesValues])
+
+  const minCopies = useMemo(() => {
+    if (copiesValues.length === 0) return null
+    return Math.min(...copiesValues)
+  }, [copiesValues])
+
+  const maxCopies = useMemo(() => {
+    if (copiesValues.length === 0) return null
+    return Math.max(...copiesValues)
+  }, [copiesValues])
+
+  const sourceBreakdown = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const event of tonerEvents) {
+      counts[event.sourceType] = (counts[event.sourceType] ?? 0) + 1
+    }
+    return Object.entries(counts)
+      .map(([sourceType, count]) => ({
+        sourceType,
+        count,
+        sharePercent: tonerEvents.length > 0 ? Math.round((count * 100) / tonerEvents.length) : 0,
+      }))
+      .sort((a, b) => b.count - a.count)
+  }, [tonerEvents])
+
+  const yieldByColor = useMemo(() => {
+    const byColor: Record<string, { cycles: number; values: number[] }> = {}
+    for (const event of tonerEvents) {
+      if (!byColor[event.color]) {
+        byColor[event.color] = { cycles: 0, values: [] }
+      }
+      byColor[event.color].cycles += 1
+      if (event.copiesSincePrevious != null) {
+        byColor[event.color].values.push(event.copiesSincePrevious)
+      }
+    }
+    return Object.entries(byColor)
+      .map(([color, data]) => ({
+        color,
+        cycles: data.cycles,
+        cyclesWithCounter: data.values.length,
+        averageCopies: data.values.length > 0
+          ? Math.round(data.values.reduce((sum, value) => sum + value, 0) / data.values.length)
+          : null,
+        minCopies: data.values.length > 0 ? Math.min(...data.values) : null,
+        maxCopies: data.values.length > 0 ? Math.max(...data.values) : null,
+      }))
+      .sort((a, b) => b.cycles - a.cycles)
+  }, [tonerEvents])
 
   const handleToggleAlerteInactive = async (alerte: Alerte, inactiveChecked: boolean) => {
     const targetActive = !inactiveChecked
@@ -222,6 +342,152 @@ export default function ImprimantePage() {
         )}
         <p className="imprimante-header__last">Dernier scan : {formatDate(lastScan)}</p>
       </header>
+
+      <section className="imprimante-section">
+        <h2>Analyses imprimante</h2>
+        <nav className="imprimante-analytics-tabs">
+          <button
+            type="button"
+            className={analyticsTab === 'CYCLES' ? 'active' : ''}
+            onClick={() => setAnalyticsTab('CYCLES')}
+          >
+            Cycles
+          </button>
+          <button
+            type="button"
+            className={analyticsTab === 'YIELD' ? 'active' : ''}
+            onClick={() => setAnalyticsTab('YIELD')}
+          >
+            Rendement
+          </button>
+          <button
+            type="button"
+            className={analyticsTab === 'QUALITY' ? 'active' : ''}
+            onClick={() => setAnalyticsTab('QUALITY')}
+          >
+            Qualité détection
+          </button>
+        </nav>
+
+        {tonerEventsLoading && <p className="imprimante-loading">Chargement des cycles toner...</p>}
+        {!tonerEventsLoading && tonerEventsError && <p className="imprimante-alertes-error">{tonerEventsError}</p>}
+        {!tonerEventsLoading && !tonerEventsError && tonerEvents.length === 0 && (
+          <p className="imprimante-empty">Aucun cycle de remplacement toner détecté sur la période disponible.</p>
+        )}
+        {!tonerEventsLoading && !tonerEventsError && tonerEvents.length > 0 && (
+          <>
+            {analyticsTab === 'CYCLES' && (
+              <div className="imprimante-analytics-table-wrap">
+                <table className="imprimante-analytics-table">
+                  <thead>
+                    <tr>
+                      <th>Date</th>
+                      <th>Couleur</th>
+                      <th>Source</th>
+                      <th>Niveau avant</th>
+                      <th>Niveau après</th>
+                      <th>Compteur</th>
+                      <th>Copie depuis cycle précédent</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {tonerEvents.map((event) => (
+                      <tr key={event.id}>
+                        <td>{formatDate(event.detectedAt)}</td>
+                        <td>{colorLabel(event.color)}</td>
+                        <td>{sourceLabel(event.sourceType)}</td>
+                        <td>{event.levelBefore != null ? `${event.levelBefore} %` : '-'}</td>
+                        <td>{event.levelAfter != null ? `${event.levelAfter} %` : '-'}</td>
+                        <td>{event.counterValue != null ? event.counterValue.toLocaleString('fr-FR') : '-'}</td>
+                        <td>{event.copiesSincePrevious != null ? event.copiesSincePrevious.toLocaleString('fr-FR') : '-'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {analyticsTab === 'YIELD' && (
+              <>
+                <div className="imprimante-kpis">
+                  <article>
+                    <span>Cycles détectés</span>
+                    <strong>{tonerEvents.length}</strong>
+                  </article>
+                  <article>
+                    <span>Moyenne copies/cycle</span>
+                    <strong>{averageCopies != null ? averageCopies.toLocaleString('fr-FR') : '-'}</strong>
+                  </article>
+                  <article>
+                    <span>Min copies/cycle</span>
+                    <strong>{minCopies != null ? minCopies.toLocaleString('fr-FR') : '-'}</strong>
+                  </article>
+                  <article>
+                    <span>Max copies/cycle</span>
+                    <strong>{maxCopies != null ? maxCopies.toLocaleString('fr-FR') : '-'}</strong>
+                  </article>
+                </div>
+
+                <div className="imprimante-analytics-table-wrap">
+                  <table className="imprimante-analytics-table">
+                    <thead>
+                      <tr>
+                        <th>Couleur</th>
+                        <th>Cycles</th>
+                        <th>Cycles avec compteur</th>
+                        <th>Moyenne</th>
+                        <th>Min</th>
+                        <th>Max</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {yieldByColor.map((row) => (
+                        <tr key={row.color}>
+                          <td>{colorLabel(row.color)}</td>
+                          <td>{row.cycles}</td>
+                          <td>{row.cyclesWithCounter}</td>
+                          <td>{row.averageCopies != null ? row.averageCopies.toLocaleString('fr-FR') : '-'}</td>
+                          <td>{row.minCopies != null ? row.minCopies.toLocaleString('fr-FR') : '-'}</td>
+                          <td>{row.maxCopies != null ? row.maxCopies.toLocaleString('fr-FR') : '-'}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </>
+            )}
+
+            {analyticsTab === 'QUALITY' && (
+              <>
+                <div className="imprimante-kpis">
+                  <article>
+                    <span>Couverture compteur</span>
+                    <strong>{Math.round((copiesValues.length * 100) / tonerEvents.length)} %</strong>
+                  </article>
+                  <article>
+                    <span>Cycles sans décrément stock</span>
+                    <strong>{tonerEvents.filter((event) => event.stockMovementId == null).length}</strong>
+                  </article>
+                  <article>
+                    <span>Dernier cycle</span>
+                    <strong>{formatDate(tonerEvents[0]?.detectedAt ?? null)}</strong>
+                  </article>
+                </div>
+
+                <ul className="imprimante-source-breakdown">
+                  {sourceBreakdown.map((source) => (
+                    <li key={source.sourceType}>
+                      <span>{sourceLabel(source.sourceType)}</span>
+                      <strong>{source.count} cycle(s)</strong>
+                      <span>{source.sharePercent} %</span>
+                    </li>
+                  ))}
+                </ul>
+              </>
+            )}
+          </>
+        )}
+      </section>
 
       <section className="imprimante-section">
         <h2>Rapports</h2>

@@ -9,6 +9,7 @@ use App\Entity\Modele;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Service\InboundTokenGuard;
+use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -22,6 +23,7 @@ class CsvBackupController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly InboundTokenGuard $inboundTokenGuard,
+        private readonly TonerReplacementService $tonerReplacementService,
     ) {
     }
 
@@ -168,6 +170,7 @@ class CsvBackupController extends AbstractController
             $rapport->setMagentaImpressionRemaining($this->nullIfEmpty($this->trunc((string) ($row['MAGENTA_IMPRESSION_REMAINING'] ?? ''), 50)));
             $rapport->setYellowImpressionRemaining($this->nullIfEmpty($this->trunc((string) ($row['YELLOW_IMPRESSION_REMAINING'] ?? ''), 50)));
             $this->em->persist($rapport);
+            $this->tonerReplacementService->registerFromRapport($rapport);
             $rapportsCreated++;
         }
 

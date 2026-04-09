@@ -9,6 +9,7 @@ enum StockMovementReason: string
     case INVENTAIRE = 'INVENTAIRE';
     case LIVRAISON = 'LIVRAISON';
     case DEPANNAGE = 'DEPANNAGE';
+    case AUTO_TONER_REPLACEMENT = 'AUTO_TONER_REPLACEMENT';
     case REAPPRO = 'REAPPRO';
     case CORRECTION = 'CORRECTION';
     case TRANSFERT_SITE = 'TRANSFERT_SITE';

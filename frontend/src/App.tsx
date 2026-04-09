@@ -1,4 +1,5 @@
-import { BrowserRouter, Routes, Route, Link, NavLink, Navigate } from 'react-router-dom'
+﻿import { useEffect, useState } from 'react'
+import { BrowserRouter, Routes, Route, Link, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { AuthProvider, useAuth } from './context/AuthContext'
 import DashboardPage from './pages/DashboardPage'
 import SitesPage from './pages/SitesPage'
@@ -12,53 +13,92 @@ import InterventionsPage from './pages/InterventionsPage'
 import VerifyEmailPage from './pages/VerifyEmailPage'
 import ContractsPage from './pages/ContractsPage'
 import UsersPage from './pages/UsersPage'
+import AlertesPage from './pages/AlertesPage'
+import AnalyticsPage from './pages/AnalyticsPage'
 import './App.css'
 
 function HeaderNav() {
   const { user, logout } = useAuth()
+  const location = useLocation()
+  const [isMenuOpen, setIsMenuOpen] = useState(false)
   const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
+
+  useEffect(() => {
+    setIsMenuOpen(false)
+  }, [location.pathname])
+
+  const navLinkClass = ({ isActive }: { isActive: boolean }) =>
+    'header__nav-link' + (isActive ? ' header__nav-link--active' : '')
+
+  const closeMenu = () => {
+    setIsMenuOpen(false)
+  }
+
+  const handleLogout = () => {
+    setIsMenuOpen(false)
+    logout()
+  }
+
   return (
-    <nav className="header__nav">
-      <NavLink to="/" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')} end>
-        Accueil
-      </NavLink>
-      <NavLink to="/sites" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-        Sites
-      </NavLink>
-      <NavLink to="/stocks" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-        Stocks
-      </NavLink>
-      {user ? (
-        <>
-          <NavLink to="/interventions" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-            Interventions
-          </NavLink>
-          <NavLink to="/modeles" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-            Modeles
-          </NavLink>
-          {isAdmin && (
-            <NavLink to="/contracts" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-              Contrats
-            </NavLink>
-          )}
-          {isAdmin && (
-            <NavLink to="/users" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-              Utilisateurs
-            </NavLink>
-          )}
-          <NavLink to="/profil" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-            Profil
-          </NavLink>
-          <button type="button" className="header__nav-link header__nav-btn" onClick={() => logout()}>
-            Déconnexion
-          </button>
-        </>
-      ) : (
-        <NavLink to="/login" className={({ isActive }) => 'header__nav-link' + (isActive ? ' header__nav-link--active' : '')}>
-          Connexion
+    <div className="header__nav-container">
+      <button
+        type="button"
+        className="header__menu-btn"
+        aria-expanded={isMenuOpen}
+        aria-controls="main-navigation"
+        onClick={() => setIsMenuOpen((prev) => !prev)}
+      >
+        {isMenuOpen ? 'Fermer' : 'Menu'}
+      </button>
+
+      <nav id="main-navigation" className={'header__nav' + (isMenuOpen ? ' header__nav--open' : '')}>
+        <NavLink to="/" className={navLinkClass} end onClick={closeMenu}>
+          Accueil
         </NavLink>
-      )}
-    </nav>
+        <NavLink to="/sites" className={navLinkClass} onClick={closeMenu}>
+          Sites
+        </NavLink>
+        <NavLink to="/stocks" className={navLinkClass} onClick={closeMenu}>
+          Stocks
+        </NavLink>
+        <NavLink to="/alertes" className={navLinkClass} onClick={closeMenu}>
+          Alertes
+        </NavLink>
+        <NavLink to="/analyses" className={navLinkClass} onClick={closeMenu}>
+          Analyses
+        </NavLink>
+        {user ? (
+          <>
+            <NavLink to="/interventions" className={navLinkClass} onClick={closeMenu}>
+              Interventions
+            </NavLink>
+            <NavLink to="/modeles" className={navLinkClass} onClick={closeMenu}>
+              Modeles
+            </NavLink>
+            {isAdmin && (
+              <NavLink to="/contracts" className={navLinkClass} onClick={closeMenu}>
+                Contrats
+              </NavLink>
+            )}
+            {isAdmin && (
+              <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
+                Utilisateurs
+              </NavLink>
+            )}
+            <NavLink to="/profil" className={navLinkClass} onClick={closeMenu}>
+              Profil
+            </NavLink>
+            <button type="button" className="header__nav-link header__nav-btn" onClick={handleLogout}>
+              Deconnexion
+            </button>
+          </>
+        ) : (
+          <NavLink to="/login" className={navLinkClass} onClick={closeMenu}>
+            Connexion
+          </NavLink>
+        )}
+      </nav>
+    </div>
   )
 }
 
@@ -78,6 +118,8 @@ function App() {
               <Route path="/" element={<DashboardPage />} />
               <Route path="/sites" element={<SitesPage />} />
               <Route path="/stocks" element={<StocksPage />} />
+              <Route path="/alertes" element={<AlertesPage />} />
+              <Route path="/analyses" element={<AnalyticsPage />} />
               <Route path="/interventions" element={<InterventionsPage />} />
               <Route path="/contracts" element={<ContractsPage />} />
               <Route path="/users" element={<UsersPage />} />

@@ -12,6 +12,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(columns: ['site'], name: 'idx_alerte_site')]
 #[ORM\Index(columns: ['numero_serie'], name: 'idx_alerte_numero_serie')]
 #[ORM\Index(columns: ['recu_le'], name: 'idx_alerte_recu_le')]
+#[ORM\Index(columns: ['imprimante_id'], name: 'idx_alerte_imprimante')]
 class Alerte
 {
     #[ORM\Id]
@@ -44,6 +45,10 @@ class Alerte
     /** Numéro de série de l'imprimante. */
     #[ORM\Column(type: Types::STRING, length: 100)]
     private string $numeroSerie = '';
+
+    #[ORM\ManyToOne(targetEntity: Imprimante::class)]
+    #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
+    private ?Imprimante $imprimante = null;
 
     /** Type de motif unique (ex. "Toner bas", "Changement de cartouche", "Gaspillage de toner"). */
     #[ORM\Column(type: Types::TEXT)]
@@ -149,6 +154,17 @@ class Alerte
     public function setNumeroSerie(string $numeroSerie): static
     {
         $this->numeroSerie = $numeroSerie;
+        return $this;
+    }
+
+    public function getImprimante(): ?Imprimante
+    {
+        return $this->imprimante;
+    }
+
+    public function setImprimante(?Imprimante $imprimante): static
+    {
+        $this->imprimante = $imprimante;
         return $this;
     }
 

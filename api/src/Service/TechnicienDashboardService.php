@@ -68,7 +68,7 @@ SELECT
     MAX(a.recu_le) AS last_alert_at
 FROM site s
 INNER JOIN imprimante i ON i.site_id = s.id
-INNER JOIN alerte a ON a.numero_serie = i.numero_serie
+INNER JOIN alerte a ON a.imprimante_id = i.id
 WHERE a.ignorer = 0
   AND (:include_hidden = 1 OR s.is_hidden = 0)
 GROUP BY s.id, s.nom
@@ -301,7 +301,7 @@ SELECT
     s.id AS site_id,
     COALESCE(s.nom, a.site) AS site_name
 FROM alerte a
-LEFT JOIN imprimante i ON i.numero_serie = a.numero_serie
+LEFT JOIN imprimante i ON i.id = a.imprimante_id
 LEFT JOIN site s ON s.id = i.site_id
 WHERE a.ignorer = 0
   AND (:include_hidden = 1 OR s.is_hidden = 0 OR s.id IS NULL)

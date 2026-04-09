@@ -12,6 +12,7 @@ use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
 use Symfony\Component\HttpFoundation\Response;
+use Symfony\Component\Mailer\Exception\TransportExceptionInterface;
 use Symfony\Component\PasswordHasher\Hasher\UserPasswordHasherInterface;
 use Symfony\Component\Routing\Attribute\Route;
 use Symfony\Component\Validator\Validator\ValidatorInterface;
@@ -56,8 +57,8 @@ class UserController extends AbstractController
         $this->denyAccessUnlessGranted('ROLE_ADMIN');
 
         $data = json_decode($request->getContent(), true);
-        if (!\is_array($data) || empty($data['email']) || empty($data['password'])) {
-            return new JsonResponse(['error' => 'Email et mot de passe requis'], Response::HTTP_BAD_REQUEST);
+        if (!\is_array($data) || empty($data['email'])) {
+            return new JsonResponse(['error' => 'Email requis'], Response::HTTP_BAD_REQUEST);
         }
 
         $email = trim((string) $data['email']);
@@ -67,7 +68,12 @@ class UserController extends AbstractController
 
         $user = new User();
         $user->setEmail($email);
-        $user->setPassword($this->passwordHasher->hashPassword($user, (string) $data['password']));
+        $plainPassword = trim((string) ($data['password'] ?? ''));
+        if ($plainPassword === '') {
+            // Mot de passe provisoire inutilisable cote admin : l'utilisateur doit passer par le lien email.
+            $plainPassword = bin2hex(random_bytes(16));
+        }
+        $user->setPassword($this->passwordHasher->hashPassword($user, $plainPassword));
         $user->setFirstName(trim((string) ($data['firstName'] ?? '')));
         $user->setLastName(trim((string) ($data['lastName'] ?? '')));
         $requestedRoles = $data['roles'] ?? [User::ROLE_TECH];
@@ -109,7 +115,45 @@ class UserController extends AbstractController
         $this->em->persist($user);
         $this->em->flush();
 
-        return new JsonResponse($this->userToArray($user), Response::HTTP_CREATED);
+        $mailSent = true;
+        $warning = null;
+        try {
+            $this->emailVerification->sendNewAccountPasswordSetup($user);
+        } catch (TransportExceptionInterface) {
+            $mailSent = false;
+            $warning = 'Utilisateur cree, mais email non envoye (erreur SMTP).';
+        }
+
+        $response = $this->userToArray($user);
+        $response['mailSent'] = $mailSent;
+        $response['warning'] = $warning;
+
+        return new JsonResponse($response, Response::HTTP_CREATED);
+    }
+
+    #[Route('/{id}', name: 'delete', methods: ['DELETE'])]
+    public function delete(int $id): JsonResponse|Response
+    {
+        $this->denyAccessUnlessGranted('ROLE_ADMIN');
+
+        $targetUser = $this->userRepository->find($id);
+        if (!$targetUser instanceof User) {
+            return new JsonResponse(['error' => 'Utilisateur introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $currentUser = $this->getUser();
+        if ($currentUser instanceof User && $currentUser->getId() === $targetUser->getId()) {
+            return new JsonResponse(['error' => 'Suppression de votre propre compte interdite'], Response::HTTP_BAD_REQUEST);
+        }
+
+        if ($targetUser->isSuperAdmin()) {
+            return new JsonResponse(['error' => 'Suppression de ROLE_SUPER_ADMIN interdite'], Response::HTTP_FORBIDDEN);
+        }
+
+        $this->em->remove($targetUser);
+        $this->em->flush();
+
+        return new JsonResponse(['ok' => true], Response::HTTP_OK);
     }
 
     /**
