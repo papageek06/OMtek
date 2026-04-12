@@ -217,18 +217,42 @@ class CsvBackupController extends AbstractController
             return null;
         }
         $s = trim((string) $v);
-        if ($s === '' || str_starts_with($s, '01/01/0001')) {
+        if ($s === '' || str_starts_with($s, '01/01/0001') || str_starts_with($s, '0001-01-01')) {
             return null;
         }
+        $knownFormats = [
+            'd/m/Y H:i:s',
+            'd/m/Y H:i',
+            'd/m/Y',
+            'Y-m-d H:i:s',
+            'Y-m-d H:i',
+            \DateTimeInterface::ATOM,
+            'Y-m-d\TH:i:s',
+            'Y-m-d',
+        ];
+
+        foreach ($knownFormats as $format) {
+            $d = \DateTimeImmutable::createFromFormat($format, $s);
+            if ($d === false) {
+                continue;
+            }
+            $errors = \DateTimeImmutable::getLastErrors();
+            if (
+                \is_array($errors)
+                && (($errors['warning_count'] ?? 0) > 0 || ($errors['error_count'] ?? 0) > 0)
+            ) {
+                continue;
+            }
+
+            return $d;
+        }
+
+        // Fallback natif reserve aux formats ISO pour eviter les inversions jour/mois.
+        if (preg_match('/^\d{4}-\d{2}-\d{2}/', $s) !== 1) {
+            return null;
+        }
+
         try {
-            $d = \DateTimeImmutable::createFromFormat('d/m/Y H:i', $s);
-            if ($d !== false) {
-                return $d;
-            }
-            $d = \DateTimeImmutable::createFromFormat('d/m/Y', $s);
-            if ($d !== false) {
-                return $d;
-            }
             return new \DateTimeImmutable($s);
         } catch (\Throwable) {
             return null;

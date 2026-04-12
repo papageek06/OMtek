@@ -119,8 +119,41 @@ async function deleteMailAfterApiSuccess(client, uid) {
   }
 }
 
+function parseFetchScope(rawScope) {
+  const normalized = String(rawScope || 'unseen').trim().toLowerCase();
+
+  if (normalized === 'unseen' || normalized === 'seen' || normalized === 'all') {
+    return normalized;
+  }
+
+  console.warn(`[WARN] MAIL_FETCH_SCOPE="${rawScope}" invalide, fallback sur "unseen".`);
+  return 'unseen';
+}
+
+function buildSearchCriteria(scope) {
+  if (scope === 'seen') return { seen: true };
+  if (scope === 'all') return {};
+  return { seen: false };
+}
+
+function parseDeleteAfterSuccess(rawValue) {
+  const normalized = String(rawValue || 'true').trim().toLowerCase();
+  return normalized !== 'false' && normalized !== '0' && normalized !== 'no';
+}
+
+async function finalizeMessageAfterApiSuccess(client, uid, deleteAfterSuccess) {
+  if (!deleteAfterSuccess) {
+    return 'conserve';
+  }
+
+  await deleteMailAfterApiSuccess(client, uid);
+  return 'supprime';
+}
+
 async function main() {
   const limit = parseInt(process.env.LIMIT || '20', 10);
+  const fetchScope = parseFetchScope(process.env.MAIL_FETCH_SCOPE);
+  const deleteAfterSuccess = parseDeleteAfterSuccess(process.env.MAIL_DELETE_AFTER_SUCCESS);
 
   if (!process.env.MAIL_HOST || !process.env.MAIL_USER || !process.env.MAIL_PASS) {
     throw new Error('Missing MAIL_* env vars. Check .env (MAIL_HOST, MAIL_USER, MAIL_PASS).');
@@ -145,16 +178,19 @@ async function main() {
 
   try {
     // Important: utiliser les UID (stables), pas les numéros de séquence (instables après suppression).
-    const unseenUidsResult = await client.search({ seen: false }, { uid: true });
-    const unseenUids = Array.isArray(unseenUidsResult) ? unseenUidsResult : [];
+    const matchingUidsResult = await client.search(buildSearchCriteria(fetchScope), { uid: true });
+    const matchingUids = Array.isArray(matchingUidsResult) ? matchingUidsResult : [];
 
-    if (!unseenUids.length) {
-      console.log('No UNSEEN emails.');
+    if (!matchingUids.length) {
+      console.log(`No emails for scope="${fetchScope}".`);
       return;
     }
 
-    const targetUids = unseenUids.slice(-limit);
-    console.log(`Found ${unseenUids.length} unseen, processing ${targetUids.length}.`);
+    const targetUids = matchingUids.slice(-limit);
+    console.log(
+      `Found ${matchingUids.length} emails for scope="${fetchScope}", `
+      + `processing ${targetUids.length}, deleteAfterSuccess=${deleteAfterSuccess}.`,
+    );
 
     for (const uid of targetUids) {
       try {
@@ -216,9 +252,9 @@ async function main() {
 
               apiResult = res.data;
               if (apiResult?.ok) {
-                await deleteMailAfterApiSuccess(client, uid);
+                const mailState = await finalizeMessageAfterApiSuccess(client, uid, deleteAfterSuccess);
                 console.log(
-                  `OK uid=${uid} CSV import + supprime: `
+                  `OK uid=${uid} CSV import + ${mailState}: `
                   + `sites=${apiResult.sitesCreated} `
                   + `imprimantes=${apiResult.imprimantesCreated}/${apiResult.imprimantesUpdated} `
                   + `rapports=${apiResult.rapportsCreated} skipped=${apiResult.skipped}`,
@@ -234,9 +270,9 @@ async function main() {
           apiResult = await postAlertes(payload);
 
           if (apiResult?.ok) {
-            await deleteMailAfterApiSuccess(client, uid);
+            const mailState = await finalizeMessageAfterApiSuccess(client, uid, deleteAfterSuccess);
             const created = apiResult.created ?? 0;
-            console.log(`OK uid=${uid} alertes creees=${created} + supprime`);
+            console.log(`OK uid=${uid} alertes creees=${created} + ${mailState}`);
           } else {
             console.error(`API not ok for uid=${uid}`, apiResult);
           }

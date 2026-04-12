@@ -96,6 +96,27 @@ class AlerteController extends AbstractController
     }
 
     /**
+     * DELETE /api/alertes/{id}
+     */
+    #[Route('/{id}', name: 'delete', requirements: ['id' => '\\d+'], methods: ['DELETE'])]
+    public function delete(int $id): Response
+    {
+        $alerte = $this->em->getRepository(Alerte::class)->find($id);
+        if (!$alerte) {
+            return new JsonResponse(['error' => 'Alerte non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+
+        if (!$this->isAdmin() && $this->isAlerteOnHiddenSite($alerte)) {
+            return new JsonResponse(['error' => 'Alerte non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+
+        $this->em->remove($alerte);
+        $this->em->flush();
+
+        return new Response(null, Response::HTTP_NO_CONTENT);
+    }
+
+    /**
      * PATCH /api/alertes/{id}/active
      * Body: { "active": boolean }
      */

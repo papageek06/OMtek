@@ -167,6 +167,27 @@
   color: #9ad9ff;
 }
 
+.site-detail-tab--alert {
+  color: #f6b1b2;
+  background: rgba(237, 66, 69, 0.12);
+  border-color: rgba(237, 66, 69, 0.55);
+}
+
+.site-detail-tab--alert .site-detail-tab__model {
+  color: #f09b9d;
+}
+
+.site-detail-tab--alert:hover,
+.site-detail-tab--active.site-detail-tab--alert {
+  color: #ffd2d3;
+  background: rgba(237, 66, 69, 0.2);
+  border-color: #ed4245;
+}
+
+.site-detail-tab--active.site-detail-tab--alert .site-detail-tab__model {
+  color: #ffd2d3;
+}
+
 .site-detail-section {
   margin-bottom: 2rem;
 }

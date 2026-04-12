@@ -8,13 +8,32 @@
 const CONSTRUCTEURS = ['RICOH', 'LEXMARK', 'XEROX', 'CANON', 'HP', 'KYOCERA'];
 
 /**
+ * Normalise le corps pour limiter les effets de compactage HTML
+ * (sections collees sur une seule ligne, espaces non standards, etc.).
+ */
+function normaliserCorps(corpsTexte) {
+  if (!corpsTexte || typeof corpsTexte !== 'string') return '';
+
+  return corpsTexte
+    .replace(/\u00A0/g, ' ')
+    .replace(/\r\n/g, '\n')
+    .replace(/\r/g, '\n')
+    .replace(/\b(SMART\s+ALERT\s+POUR)\b/gi, '\n$1')
+    .replace(/\b(ALERTES\s+P.RIPH.RIQUE)\b/gi, '\n$1')
+    .replace(/\b(Nouvelle\s+alert(?:e)?)\s*:/gi, '\n$1 :')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
+/**
  * Detecte si le mail est une alerte Smart Alert (et non CSV BACKUP).
  */
 export function estAlerteSmart(corpsTexte, sujet = '') {
   if (!corpsTexte || typeof corpsTexte !== 'string') return false;
   const s = `${corpsTexte} ${sujet}`.toLowerCase();
   if (s.includes('csv backup') || s.includes('the report titled "csv backup"')) return false;
-  return s.includes('smart alert pour') && s.includes('site principal');
+  return /smart\s+alert\s+pour/.test(s) && /site\s+principal(?:e)?/.test(s);
 }
 
 /**
@@ -62,13 +81,27 @@ function extraireDevices(corps) {
 
       const avantSerie = ligne.slice(0, serieMatch.index).replace(/\s+/g, ' ').trim();
       const constructeurPattern = CONSTRUCTEURS.join('|');
-      const modeleRegex = new RegExp(
-        `\\b(${constructeurPattern})\\b\\s+([A-Z0-9]+(?:\\s+[A-Z0-9-]+){1,2})`,
+      const modeleDeuxTokens = new RegExp(
+        `\\b(${constructeurPattern})\\b\\s+([A-Za-z]{1,15})\\s+([A-Za-z0-9-]*\\d[A-Za-z0-9-]*)`,
         'i'
       );
-      const modelMatch = avantSerie.match(modeleRegex);
-      if (modelMatch) {
-        modeleImprimante = `${modelMatch[1].toUpperCase()} ${modelMatch[2]}`.replace(/\s+/g, ' ').trim();
+      const modeleUnToken = new RegExp(
+        `\\b(${constructeurPattern})\\b\\s+([A-Za-z0-9-]*\\d[A-Za-z0-9-]*)`,
+        'i'
+      );
+
+      const modelMatchDeuxTokens = avantSerie.match(modeleDeuxTokens);
+      if (modelMatchDeuxTokens) {
+        modeleImprimante = `${modelMatchDeuxTokens[1].toUpperCase()} ${modelMatchDeuxTokens[2]} ${modelMatchDeuxTokens[3]}`
+          .replace(/\s+/g, ' ')
+          .trim();
+      } else {
+        const modelMatchUnToken = avantSerie.match(modeleUnToken);
+        if (modelMatchUnToken) {
+          modeleImprimante = `${modelMatchUnToken[1].toUpperCase()} ${modelMatchUnToken[2]}`
+            .replace(/\s+/g, ' ')
+            .trim();
+        }
       }
     }
 
@@ -147,13 +180,27 @@ function normaliserMotifEtPiece(motifBrut) {
  */
 function extraireMotifs(corps) {
   const resultats = [];
+  const motifRegex = /Nouvelle\s+alert(?:e)?\s*:\s*(?:\([^)]*\)\s*:\s*)?(.+?)(?=(?:\s+Nouvelle\s+alert(?:e)?\s*:|[\r\n]|$))/gi;
+  let match;
+
+  while ((match = motifRegex.exec(corps)) !== null) {
+    const motifBrut = (match[1] || '').replace(/\s+/g, ' ').trim();
+    if (motifBrut) {
+      resultats.push(normaliserMotifEtPiece(motifBrut));
+    }
+  }
+
+  if (resultats.length > 0) {
+    return resultats;
+  }
+
   const lignes = corps.split(/\r?\n/);
 
   for (const ligne of lignes) {
     const propre = ligne.replace(/\s+/g, ' ').trim();
-    if (!/^Nouvelle alerte\s*:/i.test(propre)) continue;
+    if (!/^Nouvelle\s+alert(?:e)?\s*:/i.test(propre)) continue;
 
-    let motifBrut = propre.replace(/^Nouvelle alerte\s*:\s*/i, '').trim();
+    let motifBrut = propre.replace(/^Nouvelle\s+alert(?:e)?\s*:\s*/i, '').trim();
 
     // Coupe le prefixe date "(...) :"
     if (motifBrut.startsWith('(')) {
@@ -179,11 +226,12 @@ function extraireMotifs(corps) {
  */
 export function parserAlertes(corpsTexte) {
   if (!corpsTexte || typeof corpsTexte !== 'string') return [];
-  if (!estAlerteSmart(corpsTexte)) return [];
+  const corps = normaliserCorps(corpsTexte);
+  if (!estAlerteSmart(corps)) return [];
 
-  const site = extraireSite(corpsTexte);
-  const devices = extraireDevices(corpsTexte);
-  const motifs = extraireMotifs(corpsTexte);
+  const site = extraireSite(corps);
+  const devices = extraireDevices(corps);
+  const motifs = extraireMotifs(corps);
 
   if (motifs.length === 0) return [];
 

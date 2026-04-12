@@ -9,6 +9,7 @@ use App\Entity\Enum\NaturePiece;
 use App\Entity\Enum\StockScope;
 use App\Entity\Imprimante;
 use App\Entity\Piece;
+use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Entity\Stock;
 use App\Entity\User;
@@ -87,10 +88,13 @@ class SiteController extends AbstractController
                 ['site' => $site],
                 ['numeroSerie' => 'ASC']
             );
+            $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante($imprimantes);
 
             $imprimantesData = [];
             foreach ($imprimantes as $imp) {
-                $imprimantesData[] = $this->imprimanteToArray($imp);
+                $imprimanteId = $imp->getId();
+                $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
+                $imprimantesData[] = $this->imprimanteToArray($imp, $lastRapport);
             }
 
             $stocks = $this->em->getRepository(Stock::class)->findBy(
@@ -281,10 +285,10 @@ class SiteController extends AbstractController
         return true;
     }
 
-    private function imprimanteToArray(Imprimante $imprimante): array
+    private function imprimanteToArray(Imprimante $imprimante, ?RapportImprimante $lastRapport = null): array
     {
         $site = $imprimante->getSite();
-        $lastRapport = $imprimante->getRapports()->first() ?: null;
+        $lastRapport ??= $this->findLatestRapportForImprimante($imprimante);
         return [
             'id' => $imprimante->getId(),
             'numeroSerie' => $imprimante->getNumeroSerie(),
@@ -308,6 +312,57 @@ class SiteController extends AbstractController
             'createdAt' => $imprimante->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'updatedAt' => $imprimante->getUpdatedAt()->format(\DateTimeInterface::ATOM),
         ];
+    }
+
+    private function findLatestRapportForImprimante(Imprimante $imprimante): ?RapportImprimante
+    {
+        $imprimanteId = $imprimante->getId();
+        if ($imprimanteId === null) {
+            return null;
+        }
+
+        $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante([$imprimante]);
+
+        return $latestRapportsByImprimanteId[$imprimanteId] ?? null;
+    }
+
+    /**
+     * @param list<Imprimante> $imprimantes
+     * @return array<int, RapportImprimante>
+     */
+    private function findLatestRapportsByImprimante(array $imprimantes): array
+    {
+        $imprimanteIds = array_values(array_filter(array_map(
+            static fn (Imprimante $imprimante): ?int => $imprimante->getId(),
+            $imprimantes
+        ), static fn (?int $id): bool => $id !== null));
+
+        if ($imprimanteIds === []) {
+            return [];
+        }
+
+        /** @var list<RapportImprimante> $rapports */
+        $rapports = $this->em->getRepository(RapportImprimante::class)
+            ->createQueryBuilder('rapport')
+            ->addSelect('CASE WHEN rapport.lastScanDate IS NULL THEN rapport.dateScan ELSE rapport.lastScanDate END AS HIDDEN effectiveScanDate')
+            ->where('rapport.imprimante IN (:imprimanteIds)')
+            ->setParameter('imprimanteIds', $imprimanteIds)
+            ->orderBy('effectiveScanDate', 'DESC')
+            ->addOrderBy('rapport.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+
+        $latestRapportsByImprimanteId = [];
+        foreach ($rapports as $rapport) {
+            $imprimanteId = $rapport->getImprimante()?->getId();
+            if ($imprimanteId === null || isset($latestRapportsByImprimanteId[$imprimanteId])) {
+                continue;
+            }
+
+            $latestRapportsByImprimanteId[$imprimanteId] = $rapport;
+        }
+
+        return $latestRapportsByImprimanteId;
     }
 
     private function buildStockCriteriaForSite(Site $site): array

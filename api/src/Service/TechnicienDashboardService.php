@@ -111,7 +111,7 @@ INNER JOIN imprimante i ON i.site_id = s.id
 LEFT JOIN (
     SELECT
         imprimante_id,
-        MAX(COALESCE(last_scan_date, date_scan, created_at)) AS latest_scan
+        MAX(COALESCE(last_scan_date, date_scan)) AS latest_scan
     FROM rapport_imprimante
     GROUP BY imprimante_id
 ) rr ON rr.imprimante_id = i.id

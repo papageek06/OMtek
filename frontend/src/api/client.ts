@@ -1877,6 +1877,16 @@ export async function updateAlerteActive(id: number, active: boolean): Promise<A
   return body
 }
 
+export async function deleteAlerte(id: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/alertes/${id}`, {
+    method: 'DELETE',
+  })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'Erreur suppression alerte')
+  }
+}
+
 export async function fetchItems(): Promise<Item[]> {
   const res = await apiFetch(`${API_BASE}/items`)
   if (!res.ok) throw new Error('Erreur chargement des items')

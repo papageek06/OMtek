@@ -67,6 +67,15 @@ function isAlerteActive(alerte: Alerte): boolean {
   return !alerte.ignorer
 }
 
+const JOURS_ALERTE_SCAN = 10
+
+function isLastScanOld(lastScanDate: string | null | undefined): boolean {
+  if (!lastScanDate) return true
+  const scan = new Date(lastScanDate).getTime()
+  const limit = Date.now() - JOURS_ALERTE_SCAN * 24 * 60 * 60 * 1000
+  return scan < limit
+}
+
 const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
 
 const CATEGORIE_LABELS: Record<string, string> = {
@@ -170,7 +179,7 @@ export default function SiteDetailPage() {
   const [site, setSite] = useState<SiteDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<number | 'stocks' | 'resources' | null>('stocks')
+  const [activeTab, setActiveTab] = useState<number | 'stocks' | 'resources' | null>(null)
   const [showGraph, setShowGraph] = useState(false)
   const [graphImprimanteId, setGraphImprimanteId] = useState<number | null>(null)
   const [rapportsByImp, setRapportsByImp] = useState<Record<number, RapportImprimante[]>>({})
@@ -211,6 +220,10 @@ export default function SiteDetailPage() {
   const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
 
   const siteId = id ? parseInt(id, 10) : NaN
+
+  useEffect(() => {
+    setActiveTab(null)
+  }, [siteId])
 
   const modelesSite = (site?.imprimantes ?? [])
     .filter((i) => i.modeleId != null)
@@ -302,6 +315,34 @@ export default function SiteDetailPage() {
     setShowInactiveAlertsByImp((prev) => ({ ...prev, [impId]: showInactive }))
     loadImprimanteData(impId, numeroSerie, showInactive)
   }, [loadImprimanteData])
+
+  useEffect(() => {
+    if (!site) return
+
+    const printers = site.imprimantes ?? []
+    if (printers.length === 0) {
+      if (activeTab === null) {
+        setActiveTab('stocks')
+      }
+      return
+    }
+
+    if (typeof activeTab === 'number' && printers.some((printer) => printer.id === activeTab)) {
+      return
+    }
+
+    if (activeTab === 'stocks' || activeTab === 'resources') {
+      return
+    }
+
+    const firstPrinter = printers[0]
+    setActiveTab(firstPrinter.id)
+    loadImprimanteData(
+      firstPrinter.id,
+      firstPrinter.numeroSerie,
+      showInactiveAlertsByImp[firstPrinter.id] ?? false
+    )
+  }, [site, activeTab, loadImprimanteData, showInactiveAlertsByImp])
 
   const handleToggleAlerteInactive = useCallback(async (
     impId: number,
@@ -652,22 +693,31 @@ export default function SiteDetailPage() {
 
       {/* Onglets : Imprimantes en priorite, puis Stocks et Acces */}
       <div className="site-detail-tabs">
-        {imprimantes.map((imp) => (
-          <button
-            key={imp.id}
-            type="button"
-            className={
-              'site-detail-tab site-detail-tab--machine' + (activeTab === imp.id ? ' site-detail-tab--active' : '')
-            }
-            onClick={() => {
-              setActiveTab(imp.id)
-              loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
-            }}
-          >
-            <span className="site-detail-tab__serial">{imp.numeroSerie}</span>
-            <span className="site-detail-tab__model">{imp.modele}</span>
-          </button>
-        ))}
+        {imprimantes.map((imp) => {
+          const hasActiveMailAlert = (alertesByImp[imp.id] ?? []).some(isAlerteActive)
+          const hasScanAlert = isLastScanOld(imp.lastReport?.lastScanDate ?? null)
+          const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
+
+          return (
+            <button
+              key={imp.id}
+              type="button"
+              className={
+                'site-detail-tab site-detail-tab--machine'
+                + (activeTab === imp.id ? ' site-detail-tab--active' : '')
+                + (hasPrinterAlert ? ' site-detail-tab--alert' : '')
+              }
+              title={hasPrinterAlert ? 'Imprimante avec alerte active' : undefined}
+              onClick={() => {
+                setActiveTab(imp.id)
+                loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+              }}
+            >
+              <span className="site-detail-tab__serial">{imp.numeroSerie}</span>
+              <span className="site-detail-tab__model">{imp.modele}</span>
+            </button>
+          )
+        })}
         <button
           type="button"
           className={'site-detail-tab' + (activeTab === 'stocks' ? ' site-detail-tab--active' : '')}

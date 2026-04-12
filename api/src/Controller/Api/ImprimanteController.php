@@ -51,7 +51,13 @@ class ImprimanteController extends AbstractController
         }
 
         $imprimantes = $qb->getQuery()->getResult();
-        $data = array_map([$this, 'imprimanteToArray'], $imprimantes);
+        $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante($imprimantes);
+        $data = array_map(function (Imprimante $imprimante) use ($latestRapportsByImprimanteId): array {
+            $imprimanteId = $imprimante->getId();
+            $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
+
+            return $this->imprimanteToArray($imprimante, $lastRapport);
+        }, $imprimantes);
         return new JsonResponse($data, Response::HTTP_OK);
     }
 
@@ -74,14 +80,19 @@ class ImprimanteController extends AbstractController
         $limit = max(1, min(50, (int) $request->query->get('limit', 10)));
         $offset = ($page - 1) * $limit;
 
+        $countQb = $this->em->getRepository(RapportImprimante::class)->createQueryBuilder('r')
+            ->select('COUNT(r.id)')
+            ->where('r.imprimante = :impr')
+            ->setParameter('impr', $imprimante);
+
         $qb = $this->em->getRepository(RapportImprimante::class)->createQueryBuilder('r')
+            ->addSelect('CASE WHEN r.lastScanDate IS NULL THEN r.dateScan ELSE r.lastScanDate END AS HIDDEN effectiveScanDate')
             ->where('r.imprimante = :impr')
             ->setParameter('impr', $imprimante)
-            ->orderBy('r.lastScanDate', 'DESC')
-            ->addOrderBy('r.dateScan', 'DESC')
+            ->orderBy('effectiveScanDate', 'DESC')
             ->addOrderBy('r.id', 'DESC');
 
-        $total = (int) (clone $qb)->select('COUNT(r.id)')->getQuery()->getSingleScalarResult();
+        $total = (int) $countQb->getQuery()->getSingleScalarResult();
         $rapports = $qb->setFirstResult($offset)->setMaxResults($limit)->getQuery()->getResult();
 
         $data = array_map([$this, 'rapportToArray'], $rapports);
@@ -166,7 +177,10 @@ class ImprimanteController extends AbstractController
         if (!$this->canAccessImprimante($imprimante)) {
             return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
         }
-        return new JsonResponse($this->imprimanteToArray($imprimante), Response::HTTP_OK);
+
+        $lastRapport = $this->findLatestRapportForImprimante($imprimante);
+
+        return new JsonResponse($this->imprimanteToArray($imprimante, $lastRapport), Response::HTTP_OK);
     }
 
     /**
@@ -228,13 +242,15 @@ class ImprimanteController extends AbstractController
         $imprimante->setUpdatedAt(new \DateTimeImmutable());
         $this->em->flush();
 
-        return new JsonResponse($this->imprimanteToArray($imprimante), Response::HTTP_OK);
+        $lastRapport = $this->findLatestRapportForImprimante($imprimante);
+
+        return new JsonResponse($this->imprimanteToArray($imprimante, $lastRapport), Response::HTTP_OK);
     }
 
-    private function imprimanteToArray(Imprimante $imprimante): array
+    private function imprimanteToArray(Imprimante $imprimante, ?RapportImprimante $lastRapport = null): array
     {
         $site = $imprimante->getSite();
-        $lastRapport = $imprimante->getRapports()->first() ?: null;
+        $lastRapport ??= $this->findLatestRapportForImprimante($imprimante);
         return [
             'id' => $imprimante->getId(),
             'numeroSerie' => $imprimante->getNumeroSerie(),
@@ -258,6 +274,57 @@ class ImprimanteController extends AbstractController
             'createdAt' => $imprimante->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'updatedAt' => $imprimante->getUpdatedAt()->format(\DateTimeInterface::ATOM),
         ];
+    }
+
+    private function findLatestRapportForImprimante(Imprimante $imprimante): ?RapportImprimante
+    {
+        $imprimanteId = $imprimante->getId();
+        if ($imprimanteId === null) {
+            return null;
+        }
+
+        $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante([$imprimante]);
+
+        return $latestRapportsByImprimanteId[$imprimanteId] ?? null;
+    }
+
+    /**
+     * @param list<Imprimante> $imprimantes
+     * @return array<int, RapportImprimante>
+     */
+    private function findLatestRapportsByImprimante(array $imprimantes): array
+    {
+        $imprimanteIds = array_values(array_filter(array_map(
+            static fn (Imprimante $imprimante): ?int => $imprimante->getId(),
+            $imprimantes
+        ), static fn (?int $id): bool => $id !== null));
+
+        if ($imprimanteIds === []) {
+            return [];
+        }
+
+        /** @var list<RapportImprimante> $rapports */
+        $rapports = $this->em->getRepository(RapportImprimante::class)
+            ->createQueryBuilder('rapport')
+            ->addSelect('CASE WHEN rapport.lastScanDate IS NULL THEN rapport.dateScan ELSE rapport.lastScanDate END AS HIDDEN effectiveScanDate')
+            ->where('rapport.imprimante IN (:imprimanteIds)')
+            ->setParameter('imprimanteIds', $imprimanteIds)
+            ->orderBy('effectiveScanDate', 'DESC')
+            ->addOrderBy('rapport.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+
+        $latestRapportsByImprimanteId = [];
+        foreach ($rapports as $rapport) {
+            $imprimanteId = $rapport->getImprimante()?->getId();
+            if ($imprimanteId === null || isset($latestRapportsByImprimanteId[$imprimanteId])) {
+                continue;
+            }
+
+            $latestRapportsByImprimanteId[$imprimanteId] = $rapport;
+        }
+
+        return $latestRapportsByImprimanteId;
     }
 
     private function rapportToArray(RapportImprimante $r): array
