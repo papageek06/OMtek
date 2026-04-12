@@ -22,6 +22,9 @@ En production, definir les variables via le serveur ou un fichier `.env.local` n
 | APP_ENV | Environnement | prod |
 | APP_SECRET | Cle secrete Symfony | chaine generee (bin2hex random) |
 | DATABASE_URL | Connexion BDD | Voir ci-dessous |
+| MAILER_DSN | Transport email Symfony | Voir section Email |
+| MAILER_FROM | Adresse expediteur des emails | `api@votredomaine.fr` |
+| MAILER_FROM_NAME | Nom expediteur des emails | `OMtek` |
 | INBOUND_TOKEN | Token partage avec la VM mail-fetcher (header `X-Inbound-Token`) | chaine aleatoire forte |
 
 ### Base de donnees
@@ -41,6 +44,17 @@ Si le frontend est sur un autre domaine, adapter dans .env :
 ### URL par defaut (optionnel)
 
 `DEFAULT_URI=https://api.votredomaine.fr`
+
+### Email
+
+Pour OVH mutualise, les connexions SMTP sortantes vers 587/465 peuvent etre bloquees.
+Dans ce cas, utilisez le transport PHP natif :
+
+`MAILER_DSN=native://default`
+
+Si votre hebergement autorise SMTP sortant, exemple TLS:
+
+`MAILER_DSN="smtp://api%40votredomaine.fr:motdepasse_encode@smtp.mail.ovh.net:587?encryption=tls&auth_mode=login"`
 
 ## Deploiement
 

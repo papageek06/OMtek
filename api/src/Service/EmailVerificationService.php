@@ -19,6 +19,10 @@ final class EmailVerificationService
         private readonly UserRepository $userRepository,
         #[\Symfony\Component\DependencyInjection\Attribute\Autowire(value: '%env(default:default_app_url:APP_URL)%')]
         private readonly string $appUrl,
+        #[\Symfony\Component\DependencyInjection\Attribute\Autowire(value: '%env(default:default_mailer_from:MAILER_FROM)%')]
+        private readonly string $mailerFrom,
+        #[\Symfony\Component\DependencyInjection\Attribute\Autowire(value: '%env(default:default_mailer_from_name:MAILER_FROM_NAME)%')]
+        private readonly string $mailerFromName,
     ) {
     }
 
@@ -30,7 +34,7 @@ final class EmailVerificationService
         $body = "Bonjour,\n\nCliquez sur le lien suivant pour valider le changement d'adresse email :\n" . $verifyUrl . "\n\nCe lien expire dans 24 heures.";
 
         $email = (new Email())
-            ->from(new Address('noreply@omtek.local', 'OMtek'))
+            ->from($this->fromAddress())
             ->to($newEmail)
             ->subject('Vérification changement d\'email - OMtek')
             ->text($body);
@@ -45,7 +49,7 @@ final class EmailVerificationService
         $body = "Bonjour,\n\nCliquez sur le lien suivant pour valider le changement de mot de passe :\n" . $verifyUrl . "\n\nCe lien expire dans 24 heures.";
 
         $email = (new Email())
-            ->from(new Address('noreply@omtek.local', 'OMtek'))
+            ->from($this->fromAddress())
             ->to($user->getEmail())
             ->subject('Vérification changement de mot de passe - OMtek')
             ->text($body);
@@ -77,7 +81,7 @@ final class EmailVerificationService
             . "Si vous n'etes pas concerne, ignorez cet email.";
 
         $email = (new Email())
-            ->from(new Address('noreply@omtek.local', 'OMtek'))
+            ->from($this->fromAddress())
             ->to($user->getEmail())
             ->subject('Activation de votre compte OMtek')
             ->text($body);
@@ -139,5 +143,10 @@ final class EmailVerificationService
         $this->userRepository->getEntityManager()->flush();
 
         return $token;
+    }
+
+    private function fromAddress(): Address
+    {
+        return new Address($this->mailerFrom, $this->mailerFromName);
     }
 }

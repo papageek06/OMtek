@@ -666,7 +666,7 @@ export default function SiteDetailPage() {
             <p className="site-detail-header__subtitle">Vue site terrain: imprimantes, stock visible et reserve admin.</p>
           </div>
           <Link to={`/interventions?siteId=${site.id}&create=1`} className="site-detail-header__cta">
-            CrÃ©er une intervention
+            Créer une intervention
           </Link>
         </div>
         <div className="site-detail-summary">
@@ -675,7 +675,7 @@ export default function SiteDetailPage() {
             <strong className="site-detail-summary__value">{imprimantes.length}</strong>
           </article>
           <article className="site-detail-summary__card">
-            <span className="site-detail-summary__label">PiÃ¨ces suivies</span>
+            <span className="site-detail-summary__label">Pièces suivies</span>
             <strong className="site-detail-summary__value">{piecesAvecStocks.length}</strong>
           </article>
           <article className="site-detail-summary__card">
@@ -684,7 +684,7 @@ export default function SiteDetailPage() {
           </article>
           {isAdmin && (
             <article className="site-detail-summary__card site-detail-summary__card--admin">
-              <span className="site-detail-summary__label">RÃ©serve admin</span>
+              <span className="site-detail-summary__label">Réserve admin</span>
               <strong className="site-detail-summary__value">{totalAdminStock}</strong>
             </article>
           )}
@@ -848,14 +848,14 @@ export default function SiteDetailPage() {
                 </div>
                 {isAdmin && (
                   <div>
-                    <label style={{ display: 'block', marginBottom: '0.25rem' }}>PortÃ©e</label>
+                    <label style={{ display: 'block', marginBottom: '0.25rem' }}>Portée</label>
                     <select
                       value={addFormData.scope}
                       onChange={(e) => setAddFormData((prev) => ({ ...prev, scope: e.target.value as 'TECH_VISIBLE' | 'ADMIN_ONLY' }))}
                       style={{ width: '100%', padding: '0.5rem' }}
                     >
                       <option value="TECH_VISIBLE">Visible technicien</option>
-                      <option value="ADMIN_ONLY">RÃ©serve admin</option>
+                      <option value="ADMIN_ONLY">Réserve admin</option>
                     </select>
                   </div>
                 )}
@@ -891,7 +891,7 @@ export default function SiteDetailPage() {
                   </div>
                   <div className="piece-card__meta">
                     <span>Ref-bis: {refBisValues[p.pieceId] ?? p.refBis ?? '—'}</span>
-                    <span>Stock gÃ©nÃ©ral: {p.quantiteStockGeneral}</span>
+                    <span>Stock général: {p.quantiteStockGeneral}</span>
                   </div>
                   {p.modeles && p.modeles.length > 0 && (
                     <div className="piece-card__modeles">
@@ -915,7 +915,7 @@ export default function SiteDetailPage() {
                     </label>
                     {isAdmin && (
                       <label>
-                        <span>RÃ©serve admin</span>
+                        <span>Réserve admin</span>
                         <input
                           type="number"
                           min={0}
@@ -955,7 +955,7 @@ export default function SiteDetailPage() {
                     <th>Modèles</th>
                     <th className="pieces-table__th--num">Stock général (agent)</th>
                     <th className="pieces-table__th--num">Stock site</th>
-                    {isAdmin && <th className="pieces-table__th--num">RÃ©serve admin</th>}
+                    {isAdmin && <th className="pieces-table__th--num">Réserve admin</th>}
                     <th>Actions</th>
                   </tr>
                 </thead>

@@ -89,6 +89,9 @@ php bin/console debug:router
 
 # Verifier la config
 php bin/console debug:config doctrine
+
+# Tester l'envoi email (prod)
+php bin/console mailer:test destinataire@domaine.fr --from=api@votre-domaine.fr --env=prod --no-debug
 ```
 
 ## Variables d'environnement

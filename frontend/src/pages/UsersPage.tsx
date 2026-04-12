@@ -22,6 +22,7 @@ export default function UsersPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [form, setForm] = useState({
     email: '',
+    password: '',
     firstName: '',
     lastName: '',
     role: 'ROLE_TECH',
@@ -74,6 +75,8 @@ export default function UsersPage() {
 
   async function handleCreate(e: React.FormEvent): Promise<void> {
     e.preventDefault()
+    const passwordProvided = form.password.trim().length > 0
+
     if (
       !form.email.trim() ||
       !form.firstName.trim() ||
@@ -89,19 +92,30 @@ export default function UsersPage() {
     try {
       const result = await createUser({
         email: form.email.trim(),
+        password: passwordProvided ? form.password : undefined,
         firstName: form.firstName.trim(),
         lastName: form.lastName.trim(),
         roles: [form.role],
       })
 
       if (result.mailSent) {
-        setMessage('Utilisateur cree. Un email de configuration du mot de passe a ete envoye.')
+        if (passwordProvided) {
+          setMessage('Utilisateur cree. Le mot de passe saisi est actif et un email de changement de mot de passe a ete envoye.')
+        } else {
+          setMessage('Utilisateur cree. Un email de configuration du mot de passe a ete envoye.')
+        }
       } else {
-        setMessage(result.warning ?? 'Utilisateur cree, mais email non envoye.')
+        const warning = result.warning ?? 'Utilisateur cree, mais email non envoye.'
+        if (passwordProvided) {
+          setMessage(`${warning} Le mot de passe saisi reste utilisable.`)
+        } else {
+          setMessage(`${warning} Aucun mot de passe n'a ete saisi, l'utilisateur devra attendre le retour du service email.`)
+        }
       }
 
       setForm({
         email: '',
+        password: '',
         firstName: '',
         lastName: '',
         role: 'ROLE_TECH',
@@ -170,8 +184,14 @@ export default function UsersPage() {
           </label>
           <label>
             <span>Mot de passe</span>
+            <input
+              type="password"
+              value={form.password}
+              onChange={(e) => setForm((prev) => ({ ...prev, password: e.target.value }))}
+              autoComplete="new-password"
+            />
             <small className="users-form__hint">
-              Le mot de passe est defini par l'utilisateur via le lien recu par email.
+              Optionnel: si renseigne, l'utilisateur peut se connecter meme sans email. Un lien de changement reste envoye quand le mail fonctionne.
             </small>
           </label>
           <label>

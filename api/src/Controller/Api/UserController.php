@@ -30,7 +30,6 @@ class UserController extends AbstractController
         private readonly UserRepository $userRepository,
         private readonly UserPasswordHasherInterface $passwordHasher,
         private readonly ValidatorInterface $validator,
-        private readonly EmailVerificationService $emailVerification,
     ) {
     }
 
@@ -52,7 +51,7 @@ class UserController extends AbstractController
     }
 
     #[Route('', name: 'create', methods: ['POST'])]
-    public function create(Request $request): JsonResponse|Response
+    public function create(Request $request, EmailVerificationService $emailVerification): JsonResponse|Response
     {
         $this->denyAccessUnlessGranted('ROLE_ADMIN');
 
@@ -118,7 +117,7 @@ class UserController extends AbstractController
         $mailSent = true;
         $warning = null;
         try {
-            $this->emailVerification->sendNewAccountPasswordSetup($user);
+            $emailVerification->sendNewAccountPasswordSetup($user);
         } catch (TransportExceptionInterface) {
             $mailSent = false;
             $warning = 'Utilisateur cree, mais email non envoye (erreur SMTP).';
@@ -161,7 +160,7 @@ class UserController extends AbstractController
      * On utilise /api/users/me pour cohérence.
      */
     #[Route('/me', name: 'me', methods: ['GET', 'PATCH'])]
-    public function me(Request $request): JsonResponse|Response
+    public function me(Request $request, EmailVerificationService $emailVerification): JsonResponse|Response
     {
         $user = $this->getUser();
         if (!$user instanceof User) {
@@ -188,7 +187,7 @@ class UserController extends AbstractController
             if ($this->userRepository->findOneBy(['email' => $newEmail])) {
                 return new JsonResponse(['error' => 'Cet email est déjà utilisé'], Response::HTTP_CONFLICT);
             }
-            $this->emailVerification->sendEmailChangeVerification($user, $newEmail);
+            $emailVerification->sendEmailChangeVerification($user, $newEmail);
             return new JsonResponse([
                 'message' => 'Un email de vérification a été envoyé pour valider le changement d\'adresse.',
                 'user' => $this->userToArray($user),
@@ -198,7 +197,7 @@ class UserController extends AbstractController
             if (!$this->passwordHasher->isPasswordValid($user, (string) $data['currentPassword'])) {
                 return new JsonResponse(['error' => 'Mot de passe actuel incorrect'], Response::HTTP_BAD_REQUEST);
             }
-            $this->emailVerification->sendPasswordChangeVerification($user);
+            $emailVerification->sendPasswordChangeVerification($user);
             return new JsonResponse([
                 'message' => 'Un email de vérification a été envoyé pour valider le changement de mot de passe.',
                 'user' => $this->userToArray($user),
