@@ -110,6 +110,7 @@ export default function ModelesPage() {
   }
 
   const handleStartEdit = useCallback(async (id: number) => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
     try {
       const modele = await refreshModeleDetail(id)
       setEditingId(id)

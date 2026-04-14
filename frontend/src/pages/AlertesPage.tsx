@@ -44,7 +44,6 @@ export default function AlertesPage() {
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
   const [typeFilter, setTypeFilter] = useState<'ALL' | AlerteTypeKey>('ALL')
   const [search, setSearch] = useState('')
-  const [reloadToken, setReloadToken] = useState(0)
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [deleting, setDeleting] = useState(false)
   const [updatingActive, setUpdatingActive] = useState(false)
@@ -75,7 +74,7 @@ export default function AlertesPage() {
     return () => {
       cancelled = true
     }
-  }, [reloadToken])
+  }, [])
 
   useEffect(() => {
     setSelectedIds((prev) => {
@@ -286,14 +285,6 @@ export default function AlertesPage() {
           />
         </label>
 
-        <button
-          type="button"
-          className="alerts-filters__refresh"
-          onClick={() => setReloadToken((prev) => prev + 1)}
-          disabled={loading}
-        >
-          {loading ? 'Chargement...' : 'Rafraichir'}
-        </button>
       </section>
 
       {error && <div className="alerts-page__error">{error}</div>}
@@ -356,22 +347,13 @@ export default function AlertesPage() {
               {filteredAlertes.map((alerte) => {
                 const type = getAlerteType(alerte)
                 const siteName = alerte.imprimante?.site?.nom ?? alerte.site ?? 'Site inconnu'
-                return (
-                  <li key={alerte.id} className={'alerts-item' + (isAlerteActive(alerte) ? '' : ' alerts-item--inactive')}>
+                const siteId = alerte.imprimante?.site?.id
+                const cardContent = (
+                  <>
                     <div className="alerts-item__top">
-                      <div className="alerts-item__top-left">
-                        <input
-                          className="alerts-item__select alerts-checkbox"
-                          type="checkbox"
-                          checked={selectedIdsSet.has(alerte.id)}
-                          onChange={() => toggleSelectAlerte(alerte.id)}
-                          disabled={deleting || updatingActive}
-                          aria-label={`Selectionner l'alerte ${alerte.id}`}
-                        />
-                        <span className={'alerts-item__type alerts-item__type--' + type.toLowerCase()}>
-                          {ALERTE_TYPE_LABELS[type]}
-                        </span>
-                      </div>
+                      <span className={'alerts-item__type alerts-item__type--' + type.toLowerCase()}>
+                        {ALERTE_TYPE_LABELS[type]}
+                      </span>
                       <span className={'alerts-item__status ' + (isAlerteActive(alerte) ? 'is-active' : 'is-inactive')}>
                         {isAlerteActive(alerte) ? 'Active' : 'Desactivee'}
                       </span>
@@ -387,15 +369,35 @@ export default function AlertesPage() {
                       {alerte.niveauPourcent != null ? ` - Niveau: ${alerte.niveauPourcent}%` : ''}
                     </p>
                     <p className="alerts-item__date">Recu: {formatDate(alerte.recuLe ?? alerte.createdAt)}</p>
+                  </>
+                )
 
-                    <div className="alerts-item__links">
-                      {alerte.imprimante?.site?.id != null && (
-                        <Link to={`/sites/${alerte.imprimante.site.id}`}>Voir site</Link>
-                      )}
-                      {alerte.imprimante?.id != null && (
-                        <Link to={`/imprimantes/${alerte.imprimante.id}`}>Voir imprimante</Link>
-                      )}
+                return (
+                  <li key={alerte.id} className={'alerts-item' + (isAlerteActive(alerte) ? '' : ' alerts-item--inactive')}>
+                    <div className="alerts-item__select-wrap">
+                      <input
+                        className="alerts-item__select alerts-checkbox"
+                        type="checkbox"
+                        checked={selectedIdsSet.has(alerte.id)}
+                        onChange={() => toggleSelectAlerte(alerte.id)}
+                        disabled={deleting || updatingActive}
+                        aria-label={`Selectionner l'alerte ${alerte.id}`}
+                      />
                     </div>
+
+                    {siteId != null ? (
+                      <Link
+                        to={`/sites/${siteId}`}
+                        className="alerts-item__card-link"
+                        aria-label={`Voir le detail du site ${siteName}`}
+                      >
+                        {cardContent}
+                      </Link>
+                    ) : (
+                      <div className="alerts-item__card alerts-item__card--disabled">
+                        {cardContent}
+                      </div>
+                    )}
                   </li>
                 )
               })}
