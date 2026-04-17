@@ -40,6 +40,14 @@ class SiteResourcesController extends AbstractController
         'json',
         'xml',
         'zip',
+        'jpg',
+        'jpeg',
+        'png',
+        'gif',
+        'webp',
+        'bmp',
+        'heic',
+        'heif',
     ];
 
     public function __construct(

@@ -42,7 +42,7 @@ function normalizeCategory(raw: string): 'ADDRESS_BOOK' | 'CONFIG' | 'OTHER' {
   return 'OTHER'
 }
 
-const SITE_FILE_ACCEPT = '.csv,.udf,.txt,.pdf,.doc,.docx,.xls,.xlsx,.conf,.cfg,.ini,.json,.xml,.zip'
+const SITE_FILE_ACCEPT = '.csv,.udf,.txt,.pdf,.doc,.docx,.xls,.xlsx,.conf,.cfg,.ini,.json,.xml,.zip,.jpg,.jpeg,.png,.gif,.webp,.bmp,.heic,.heif'
 
 export default function SiteResourcesTab({ siteId }: { siteId: number }) {
   const [resources, setResources] = useState<SiteResources | null>(null)
@@ -57,6 +57,8 @@ export default function SiteResourcesTab({ siteId }: { siteId: number }) {
   const [newFileCategory, setNewFileCategory] = useState<'ADDRESS_BOOK' | 'CONFIG' | 'OTHER'>('OTHER')
   const [credentialModalOpen, setCredentialModalOpen] = useState(false)
   const [fileModalOpen, setFileModalOpen] = useState(false)
+  const [notscanModalOpen, setNotscanModalOpen] = useState(false)
+  const [noteModalOpen, setNoteModalOpen] = useState(false)
   const [revealedSecrets, setRevealedSecrets] = useState<Record<number, string>>({})
   const [copiedCredentialId, setCopiedCredentialId] = useState<number | null>(null)
   const [previewFile, setPreviewFile] = useState<SiteFileItem | null>(null)
@@ -162,6 +164,50 @@ export default function SiteResourcesTab({ siteId }: { siteId: number }) {
     })
   }
 
+  const openNotscanModal = () => {
+    setNewNotscan({ address: '', notes: '' })
+    setNotscanModalOpen(true)
+  }
+
+  const closeNotscanModal = () => {
+    if (busy) return
+    setNotscanModalOpen(false)
+  }
+
+  const submitNotscanCreate = () => {
+    if (newNotscan.address.trim() === '') return
+    void withBusy(async () => {
+      await createSiteNotscan(siteId, {
+        address: newNotscan.address,
+        notes: newNotscan.notes || null,
+        isActive: true,
+      })
+      setNewNotscan({ address: '', notes: '' })
+      setNotscanModalOpen(false)
+      await loadResources()
+    })
+  }
+
+  const openNoteModal = () => {
+    setNewNote('')
+    setNoteModalOpen(true)
+  }
+
+  const closeNoteModal = () => {
+    if (busy) return
+    setNoteModalOpen(false)
+  }
+
+  const submitNoteCreate = () => {
+    if (newNote.trim() === '') return
+    void withBusy(async () => {
+      await createSiteNote(siteId, newNote)
+      setNewNote('')
+      setNoteModalOpen(false)
+      await loadResources()
+    })
+  }
+
   const copyToClipboard = useCallback(async (value: string): Promise<boolean> => {
     if (typeof navigator !== 'undefined' && navigator.clipboard?.writeText) {
       try {
@@ -209,15 +255,9 @@ export default function SiteResourcesTab({ siteId }: { siteId: number }) {
 
       <div className="site-resources__grid">
         <article className="site-resources__panel">
-          <h3>NOTscan</h3>
-          <div className="site-resources__form">
-            <input placeholder="Adresse" value={newNotscan.address} onChange={(e) => setNewNotscan((p) => ({ ...p, address: e.target.value }))} />
-            <textarea rows={2} placeholder="Notes" value={newNotscan.notes} onChange={(e) => setNewNotscan((p) => ({ ...p, notes: e.target.value }))} />
-            <button disabled={busy || newNotscan.address.trim() === ''} onClick={() => void withBusy(async () => {
-              await createSiteNotscan(siteId, { address: newNotscan.address, notes: newNotscan.notes || null, isActive: true })
-              setNewNotscan({ address: '', notes: '' })
-              await loadResources()
-            })}>Ajouter</button>
+          <div className="site-resources__panel-header">
+            <h3>NOTscan</h3>
+            <button type="button" className="site-resources__panel-add" disabled={busy} onClick={openNotscanModal}>Ajouter</button>
           </div>
           <div className="site-resources__list">
             {resources.notscans.map((n) => (
@@ -296,14 +336,9 @@ export default function SiteResourcesTab({ siteId }: { siteId: number }) {
         </article>
 
         <article className="site-resources__panel">
-          <h3>Notes</h3>
-          <div className="site-resources__form">
-            <textarea rows={3} placeholder="Nouvelle note" value={newNote} onChange={(e) => setNewNote(e.target.value)} />
-            <button disabled={busy || newNote.trim() === ''} onClick={() => void withBusy(async () => {
-              await createSiteNote(siteId, newNote)
-              setNewNote('')
-              await loadResources()
-            })}>Ajouter</button>
+          <div className="site-resources__panel-header">
+            <h3>Notes</h3>
+            <button type="button" className="site-resources__panel-add" disabled={busy} onClick={openNoteModal}>Ajouter</button>
           </div>
           <div className="site-resources__list">
             {resources.notes.map((n) => (
@@ -455,6 +490,75 @@ export default function SiteResourcesTab({ siteId }: { siteId: number }) {
               <div className="site-resources__modal-actions">
                 <button type="button" className="site-resources__modal-cancel" disabled={busy} onClick={closeFileModal}>Annuler</button>
                 <button type="submit" disabled={busy || !newFile}>Ajouter</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {notscanModalOpen && (
+        <div className="site-resources__modal-backdrop" onClick={closeNotscanModal}>
+          <div
+            className="site-resources__modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="site-resources-notscan-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 id="site-resources-notscan-modal-title">Ajouter un NOTscan</h4>
+            <form
+              className="site-resources__form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                submitNotscanCreate()
+              }}
+            >
+              <input
+                placeholder="Adresse"
+                value={newNotscan.address}
+                onChange={(e) => setNewNotscan((p) => ({ ...p, address: e.target.value }))}
+              />
+              <textarea
+                rows={2}
+                placeholder="Notes"
+                value={newNotscan.notes}
+                onChange={(e) => setNewNotscan((p) => ({ ...p, notes: e.target.value }))}
+              />
+              <div className="site-resources__modal-actions">
+                <button type="button" className="site-resources__modal-cancel" disabled={busy} onClick={closeNotscanModal}>Annuler</button>
+                <button type="submit" disabled={busy || newNotscan.address.trim() === ''}>Ajouter</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {noteModalOpen && (
+        <div className="site-resources__modal-backdrop" onClick={closeNoteModal}>
+          <div
+            className="site-resources__modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="site-resources-note-modal-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h4 id="site-resources-note-modal-title">Ajouter une note</h4>
+            <form
+              className="site-resources__form"
+              onSubmit={(e) => {
+                e.preventDefault()
+                submitNoteCreate()
+              }}
+            >
+              <textarea
+                rows={3}
+                placeholder="Nouvelle note"
+                value={newNote}
+                onChange={(e) => setNewNote(e.target.value)}
+              />
+              <div className="site-resources__modal-actions">
+                <button type="button" className="site-resources__modal-cancel" disabled={busy} onClick={closeNoteModal}>Annuler</button>
+                <button type="submit" disabled={busy || newNote.trim() === ''}>Ajouter</button>
               </div>
             </form>
           </div>
