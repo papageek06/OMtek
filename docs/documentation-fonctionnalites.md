@@ -117,6 +117,7 @@ Usage cible:
 
 - carnets d adresses imprimantes (`.udf`, `.csv`)
 - fichiers de configuration (`.txt`, `.conf`, `.cfg`, `.ini`, `.json`, `.xml`, `.zip`)
+- documents bureautiques (`.pdf`, `.doc`, `.docx`, `.xls`, `.xlsx`)
 
 Fonctions:
 
