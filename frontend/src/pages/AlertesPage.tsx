@@ -1,39 +1,19 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { deleteAlerte, fetchAlertes, UnauthorizedError, updateAlerteActive, type Alerte } from '../api/client'
+import {
+  ALERTE_TYPE_LABELS,
+  getAlerteType,
+  isAlerteActive,
+  sortAlertesByNewest,
+  type AlerteTypeKey,
+} from '../domain/alertes/rules'
+import { formatDateTime } from '../shared/formatters/date'
 import { useAuth } from '../context/AuthContext'
 import './AlertesPage.css'
 
-type AlerteTypeKey = 'TONER' | 'TONER_CHANGE' | 'WASTE' | 'OTHER'
-
-const ALERTE_TYPE_LABELS: Record<AlerteTypeKey, string> = {
-  TONER: 'Toner bas',
-  TONER_CHANGE: 'Changement cartouche',
-  WASTE: 'Bac recup',
-  OTHER: 'Autre',
-}
-
-function isAlerteActive(alerte: Alerte): boolean {
-  if (typeof alerte.active === 'boolean') return alerte.active
-  return !Boolean(alerte.ignorer)
-}
-
-function getAlerteType(alerte: Alerte): AlerteTypeKey {
-  const motif = (alerte.motifAlerte ?? '').toLowerCase()
-  const piece = (alerte.piece ?? '').toLowerCase()
-  const haystack = `${motif} ${piece}`
-
-  if (motif.includes('changement de cartouche')) return 'TONER_CHANGE'
-  if (haystack.includes('bac') && haystack.includes('recup')) return 'WASTE'
-  if (haystack.includes('toner') || haystack.includes('cartouche')) return 'TONER'
-  return 'OTHER'
-}
-
 function formatDate(value: string | null | undefined): string {
-  if (!value) return 'Date inconnue'
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) return 'Date inconnue'
-  return date.toLocaleString('fr-FR')
+  return formatDateTime(value, 'Date inconnue')
 }
 
 export default function AlertesPage() {
@@ -100,7 +80,7 @@ export default function AlertesPage() {
   const filteredAlertes = useMemo(() => {
     const query = search.trim().toLowerCase()
 
-    return [...alertes]
+    return sortAlertesByNewest(alertes
       .filter((alerte) => {
         if (statusFilter === 'active' && !isAlerteActive(alerte)) return false
         if (statusFilter === 'inactive' && isAlerteActive(alerte)) return false
@@ -118,12 +98,7 @@ export default function AlertesPage() {
           .join(' ')
           .toLowerCase()
         return searchable.includes(query)
-      })
-      .sort((a, b) => {
-        const dateA = new Date(a.recuLe ?? a.createdAt).getTime()
-        const dateB = new Date(b.recuLe ?? b.createdAt).getTime()
-        return dateB - dateA
-      })
+      }))
   }, [alertes, search, statusFilter, typeFilter])
 
   const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds])

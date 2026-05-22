@@ -16,11 +16,8 @@ import {
   type ModeleUpdate,
   type PieceItem,
 } from '../api/client'
+import { CATEGORIES, NATURES, VARIANTS } from '../domain/pieces/catalog'
 import './ModelesPage.css'
-
-const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
-const VARIANTS = ['', 'BLACK', 'CYAN', 'MAGENTA', 'YELLOW', 'UNIT', 'KIT', 'NONE'] as const
-const NATURES = ['', 'CONSUMABLE', 'SPARE_PART', 'VENTE', 'LOCATION', 'MOBILIER'] as const
 
 export default function ModelesPage() {
   const [modeles, setModeles] = useState<ModeleItem[]>([])

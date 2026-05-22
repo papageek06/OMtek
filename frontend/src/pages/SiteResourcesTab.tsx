@@ -20,22 +20,8 @@ import {
   type SiteFileItem,
   type SiteResources,
 } from '../api/client'
-
-function formatDateTime(raw: string): string {
-  return new Date(raw).toLocaleString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatBytes(size: number): string {
-  if (size < 1024) return `${size} B`
-  if (size < 1024 * 1024) return `${(size / 1024).toFixed(1)} KB`
-  return `${(size / (1024 * 1024)).toFixed(1)} MB`
-}
+import { formatDateTime } from '../shared/formatters/date'
+import { formatBytes } from '../shared/formatters/number'
 
 function normalizeCategory(raw: string): 'ADDRESS_BOOK' | 'CONFIG' | 'OTHER' {
   if (raw === 'ADDRESS_BOOK' || raw === 'CONFIG') return raw

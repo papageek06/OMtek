@@ -33,6 +33,7 @@ import {
   type PieceItem,
   type ModeleItem,
 } from '../api/client'
+import { isAdmin as isUserAdmin } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
 import SiteResourcesTab from './SiteResourcesTab'
 import './SiteDetailPage.css'
@@ -217,7 +218,7 @@ export default function SiteDetailPage() {
   const scrollPositionRef = useRef<number>(0)
   const shouldRestoreScrollRef = useRef<boolean>(false)
 
-  const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
+  const isAdmin = isUserAdmin(user)
 
   const siteId = id ? parseInt(id, 10) : NaN
 

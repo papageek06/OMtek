@@ -5,39 +5,15 @@ import {
   type TonerAnalyticsPayload,
   type TonerAnalyticsPrinterYield,
 } from '../api/client'
+import { colorLabel } from '../domain/imprimantes/rules'
+import { formatDateTime } from '../shared/formatters/date'
+import { formatInt } from '../shared/formatters/number'
 import './AnalyticsPage.css'
 
 type AnalyticsTab = 'OVERVIEW' | 'YIELD' | 'DETECTION' | 'RISK' | 'TREND'
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function formatInt(value: number | null): string {
-  if (value == null) return '-'
-  return value.toLocaleString('fr-FR')
-}
-
-function colorLabel(color: string): string {
-  switch (color) {
-    case 'black':
-      return 'Noir'
-    case 'cyan':
-      return 'Cyan'
-    case 'magenta':
-      return 'Magenta'
-    case 'yellow':
-      return 'Jaune'
-    default:
-      return color
-  }
+  return formatDateTime(iso)
 }
 
 function sortByRisk(a: TonerAnalyticsPrinterYield, b: TonerAnalyticsPrinterYield): number {

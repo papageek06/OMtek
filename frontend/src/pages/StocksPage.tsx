@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useState, useRef } from 'react'
 import { Link } from 'react-router-dom'
 import { fetchStocksGlobal, fetchModeles, fetchPiecesByModele, upsertStockGeneral, updatePiece, deletePiece, addModeleToPiece, removeModeleFromPiece, UnauthorizedError, type StockGlobalItem, type ModeleItem, type StockSearchParams, type PieceItem } from '../api/client'
+import { CATEGORIES } from '../domain/pieces/catalog'
 import './StocksPage.css'
-
-const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
 
 const CATEGORIE_LABELS: Record<string, string> = {
   TONER: 'Toner',

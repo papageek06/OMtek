@@ -8,39 +8,14 @@ import {
   type Site as SiteType,
   type Imprimante,
 } from '../api/client'
+import { isLastScanOld, parseLevelPercent } from '../domain/imprimantes/rules'
+import { isAdmin } from '../shared/auth/permissions'
+import { formatDateTime } from '../shared/formatters/date'
 import { useAuth } from '../context/AuthContext'
 import './SitesPage.css'
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  const d = new Date(iso)
-  return d.toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-const JOURS_ALERTE_SCAN = 10
-
-function parseLevelPercent(raw: string | null | undefined): number | null {
-  if (raw == null || raw === '') return null
-  const s = String(raw).trim()
-  const match = s.match(/(\d+)\s*%?/)
-  if (match) return Math.min(100, Math.max(0, parseInt(match[1], 10)))
-  if (/low|bas|faible/i.test(s)) return 15
-  if (/medium|moyen/i.test(s)) return 50
-  if (/high|full|complet|100/i.test(s)) return 100
-  return null
-}
-
-function isLastScanOld(lastScanDate: string | null | undefined): boolean {
-  if (!lastScanDate) return true
-  const scan = new Date(lastScanDate).getTime()
-  const limit = Date.now() - JOURS_ALERTE_SCAN * 24 * 60 * 60 * 1000
-  return scan < limit
+  return formatDateTime(iso)
 }
 
 function AlertBadge({
@@ -112,7 +87,7 @@ function buildImprimantesBySite(imprimantes: Imprimante[]): Record<number, Impri
 export default function SitesPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
-  const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
+  const userIsAdmin = isAdmin(user)
   const [sites, setSites] = useState<SiteType[]>([])
   const [imprimantesBySite, setImprimantesBySite] = useState<Record<number, Imprimante[]>>({})
   const [loading, setLoading] = useState(true)
@@ -248,7 +223,7 @@ export default function SitesPage() {
   }
 
   const handleToggleSiteVisibility = async (site: SiteType) => {
-    if (!isAdmin || visibilityUpdatingSiteId !== null) {
+    if (!userIsAdmin || visibilityUpdatingSiteId !== null) {
       return
     }
 
@@ -397,7 +372,7 @@ export default function SitesPage() {
                         <Link to={'/sites/' + site.id} className="site-card__detail-link">
                           Voir details (stocks, graphiques) -&gt;
                         </Link>
-                        {isAdmin && (
+                        {userIsAdmin && (
                           <button
                             type="button"
                             className="site-card__visibility-btn"

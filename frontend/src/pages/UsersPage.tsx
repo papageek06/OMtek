@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
 import { createUser, deleteUser, fetchUsers, UnauthorizedError, type User } from '../api/client'
+import { canManageUsers } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
 import './UsersPage.css'
 
@@ -12,7 +13,7 @@ const ROLE_OPTIONS = [
 export default function UsersPage() {
   const { user } = useAuth()
   const currentUserId = user?.id ?? null
-  const isAdmin = useMemo(() => !!user?.roles?.some((r) => r === 'ROLE_ADMIN' || r === 'ROLE_SUPER_ADMIN'), [user])
+  const isAdmin = useMemo(() => canManageUsers(user), [user])
   const [users, setUsers] = useState<User[]>([])
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)

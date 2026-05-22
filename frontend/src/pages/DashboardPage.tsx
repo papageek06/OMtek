@@ -5,20 +5,14 @@ import {
   UnauthorizedError,
   type DashboardTechnicien,
 } from '../api/client'
+import { isAdmin } from '../shared/auth/permissions'
+import { formatEnum } from '../shared/formatters/number'
 import { useAuth } from '../context/AuthContext'
 import './DashboardPage.css'
 
-function formatEnum(value: string): string {
-  return value
-    .toLowerCase()
-    .split('_')
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ')
-}
-
 export default function DashboardPage() {
   const { user } = useAuth()
-  const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
+  const userIsAdmin = isAdmin(user)
   const [dashboard, setDashboard] = useState<DashboardTechnicien | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -68,7 +62,7 @@ export default function DashboardPage() {
     <div className="dashboard-home">
       <header className="dashboard-home__hero">
         <div className="dashboard-home__hero-copy">
-          <span className="dashboard-home__eyebrow">{isAdmin ? 'Accueil admin' : 'Accueil technicien'}</span>
+          <span className="dashboard-home__eyebrow">{userIsAdmin ? 'Accueil admin' : 'Accueil technicien'}</span>
           <h1>Dashboard technique</h1>
           <p>
             Vue rapide des alertes, des absences de remontee, des interventions en
@@ -88,7 +82,7 @@ export default function DashboardPage() {
         </div>
       </header>
 
-      {isAdmin && (
+      {userIsAdmin && (
         <section className="dashboard-home__admin-quick">
           <h2>Acces essentiel admin</h2>
           <div className="dashboard-home__admin-links">

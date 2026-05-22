@@ -12,68 +12,16 @@ import {
   type Alerte,
   type TonerReplacementEvent,
 } from '../api/client'
+import { isAlerteActive } from '../domain/alertes/rules'
+import { colorLabel, parseLevelPercent as parseWastePercent, sortRapportsByDateDesc, sourceLabel } from '../domain/imprimantes/rules'
+import { formatDateTime } from '../shared/formatters/date'
 import './ImprimantePage.css'
 
 function formatDate(iso: string | null): string {
-  if (!iso) return '-'
-  return new Date(iso).toLocaleDateString('fr-FR', {
-    day: '2-digit',
-    month: '2-digit',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-  })
-}
-
-function parseWastePercent(raw: string | null | undefined): number | null {
-  if (raw == null || raw === '') return null
-  const m = String(raw).trim().match(/(\d+)\s*%?/)
-  return m ? Math.min(100, Math.max(0, parseInt(m[1], 10))) : null
+  return formatDateTime(iso)
 }
 
 const RAPPORTS_PER_PAGE = 10
-
-function sortRapportsByDateDesc(rapports: RapportImprimante[]): RapportImprimante[] {
-  if (!Array.isArray(rapports)) return []
-  return [...rapports].sort((a, b) => {
-    const da = a?.lastScanDate || a?.createdAt
-    const db = b?.lastScanDate || b?.createdAt
-    const ta = da ? new Date(da).getTime() : 0
-    const tb = db ? new Date(db).getTime() : 0
-    return tb - ta
-  })
-}
-
-function isAlerteActive(alerte: Alerte): boolean {
-  if (typeof alerte.active === 'boolean') return alerte.active
-  return !alerte.ignorer
-}
-
-function colorLabel(color: string): string {
-  switch (color) {
-    case 'black':
-      return 'Noir'
-    case 'cyan':
-      return 'Cyan'
-    case 'magenta':
-      return 'Magenta'
-    case 'yellow':
-      return 'Jaune'
-    default:
-      return color
-  }
-}
-
-function sourceLabel(sourceType: string): string {
-  switch (sourceType) {
-    case 'ALERTE':
-      return 'Alerte mail'
-    case 'REPORT_LEVEL_ASC':
-      return 'Niveau ascendant'
-    default:
-      return sourceType
-  }
-}
 
 type PrinterAnalyticsTab = 'CYCLES' | 'YIELD' | 'QUALITY'
 

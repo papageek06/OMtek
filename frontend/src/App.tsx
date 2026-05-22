@@ -15,13 +15,14 @@ import ContractsPage from './pages/ContractsPage'
 import UsersPage from './pages/UsersPage'
 import AlertesPage from './pages/AlertesPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import { isAdmin } from './shared/auth/permissions'
 import './App.css'
 
 function HeaderNav() {
   const { user, logout } = useAuth()
   const location = useLocation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
-  const isAdmin = !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
+  const userIsAdmin = isAdmin(user)
 
   useEffect(() => {
     setIsMenuOpen(false)
@@ -75,12 +76,12 @@ function HeaderNav() {
             <NavLink to="/modeles" className={navLinkClass} onClick={closeMenu}>
               Modeles
             </NavLink>
-            {isAdmin && (
+            {userIsAdmin && (
               <NavLink to="/contracts" className={navLinkClass} onClick={closeMenu}>
                 Contrats
               </NavLink>
             )}
-            {isAdmin && (
+            {userIsAdmin && (
               <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
                 Utilisateurs
               </NavLink>

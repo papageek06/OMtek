@@ -24,40 +24,18 @@ import {
   type Imprimante,
   type Site,
 } from '../api/client'
+import {
+  BILLING_PERIOD_STATUS_LABELS as BILLING_STATUS_LABELS,
+  CONTRACT_LINE_LABELS,
+  CONTRACT_LINE_TYPES,
+  CONTRACT_PERIODICITY_LABELS as PERIODICITY_LABELS,
+  CONTRACT_PERIODICITY_OPTIONS as PERIODICITY_OPTIONS,
+  CONTRACT_STATUS_LABELS as STATUS_LABELS,
+  CONTRACT_STATUS_OPTIONS as STATUS_OPTIONS,
+} from '../domain/contracts/options'
+import { canManageContracts } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
 import './ContractsPage.css'
-
-const PERIODICITY_OPTIONS = ['MONTHLY', 'QUARTERLY', 'SEMIANNUAL', 'YEARLY'] as const
-const STATUS_OPTIONS = ['DRAFT', 'ACTIVE', 'SUSPENDED', 'CLOSED'] as const
-const CONTRACT_LINE_TYPES = ['FORFAIT_MAINTENANCE', 'IMPRIMANTE', 'INTERVENTION', 'AUTRE'] as const
-
-const PERIODICITY_LABELS: Record<string, string> = {
-  MONTHLY: 'Mensuel',
-  QUARTERLY: 'Trimestriel',
-  SEMIANNUAL: 'Semestriel',
-  YEARLY: 'Annuel',
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Brouillon',
-  ACTIVE: 'Actif',
-  SUSPENDED: 'Suspendu',
-  CLOSED: 'Clos',
-}
-
-const BILLING_STATUS_LABELS: Record<string, string> = {
-  DRAFT: 'Brouillon',
-  READY: 'Pret',
-  LOCKED: 'Verrouille',
-  EXPORTED: 'Exporte',
-}
-
-const CONTRACT_LINE_LABELS: Record<string, string> = {
-  FORFAIT_MAINTENANCE: 'Forfait maintenance',
-  IMPRIMANTE: 'Imprimante',
-  INTERVENTION: 'Intervention',
-  AUTRE: 'Autre',
-}
 
 function formatDate(isoOrDate: string | null): string {
   if (!isoOrDate) return '-'
@@ -81,7 +59,7 @@ function formatDateTime(value: string | null): string {
 
 export default function ContractsPage() {
   const { user } = useAuth()
-  const isAdmin = !!user?.roles?.some((r) => r === 'ROLE_ADMIN' || r === 'ROLE_SUPER_ADMIN')
+  const isAdmin = canManageContracts(user)
 
   const [sites, setSites] = useState<Site[]>([])
   const [contracts, setContracts] = useState<ContractItem[]>([])
@@ -911,4 +889,3 @@ export default function ContractsPage() {
     </div>
   )
 }
-

@@ -14,55 +14,23 @@ import {
   type InterventionUpdatePayload,
   type Site,
 } from '../api/client'
+import {
+  INTERVENTION_APPROVAL_LABELS as APPROVAL_LABELS,
+  INTERVENTION_APPROVAL_OPTIONS as APPROVAL_OPTIONS,
+  INTERVENTION_BILLING_LABELS as BILLING_LABELS,
+  INTERVENTION_BILLING_OPTIONS as BILLING_OPTIONS,
+  INTERVENTION_PRIORITY_LABELS as PRIORITY_LABELS,
+  INTERVENTION_PRIORITY_OPTIONS as PRIORITY_OPTIONS,
+  INTERVENTION_SOURCE_LABELS as SOURCE_LABELS,
+  INTERVENTION_SOURCE_OPTIONS as SOURCE_OPTIONS,
+  INTERVENTION_STATUS_LABELS as STATUS_LABELS,
+  INTERVENTION_STATUS_OPTIONS as STATUS_OPTIONS,
+  INTERVENTION_TYPE_LABELS as TYPE_LABELS,
+  INTERVENTION_TYPE_OPTIONS as TYPE_OPTIONS,
+} from '../domain/interventions/options'
+import { isAdmin } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
 import './InterventionsPage.css'
-
-const STATUS_OPTIONS = ['A_FAIRE', 'EN_COURS', 'TERMINEE', 'ANNULEE'] as const
-const TYPE_OPTIONS = ['LIVRAISON_TONER', 'DEPANNAGE', 'TELEMAINTENANCE', 'AUTRE'] as const
-const SOURCE_OPTIONS = ['MANUEL', 'ALERTE_MAIL', 'SUPERVISION', 'ABSENCE_SCAN'] as const
-const PRIORITY_OPTIONS = ['BASSE', 'NORMALE', 'HAUTE', 'CRITIQUE'] as const
-const BILLING_OPTIONS = ['NON_FACTURE', 'A_FACTURER'] as const
-const APPROVAL_OPTIONS = ['DRAFT', 'SUBMITTED', 'APPROVED', 'REJECTED'] as const
-
-const STATUS_LABELS: Record<string, string> = {
-  A_FAIRE: 'A faire',
-  EN_COURS: 'En cours',
-  TERMINEE: 'Terminee',
-  ANNULEE: 'Annulee',
-}
-
-const TYPE_LABELS: Record<string, string> = {
-  LIVRAISON_TONER: 'Livraison toner',
-  DEPANNAGE: 'Depannage',
-  TELEMAINTENANCE: 'Telemaintenance',
-  AUTRE: 'Autre',
-}
-
-const SOURCE_LABELS: Record<string, string> = {
-  MANUEL: 'Manuel',
-  ALERTE_MAIL: 'Alerte mail',
-  SUPERVISION: 'Supervision',
-  ABSENCE_SCAN: 'Absence scan',
-}
-
-const PRIORITY_LABELS: Record<string, string> = {
-  BASSE: 'Basse',
-  NORMALE: 'Normale',
-  HAUTE: 'Haute',
-  CRITIQUE: 'Critique',
-}
-
-const BILLING_LABELS: Record<string, string> = {
-  NON_FACTURE: 'Non facture',
-  A_FACTURER: 'A facturer',
-}
-
-const APPROVAL_LABELS: Record<string, string> = {
-  DRAFT: 'Brouillon',
-  SUBMITTED: 'Soumise',
-  APPROVED: 'Validee',
-  REJECTED: 'Rejetee',
-}
 
 function formatDate(iso: string | null): string {
   if (!iso) return '—'
@@ -105,9 +73,7 @@ export default function InterventionsPage() {
     description: '',
   })
 
-  const isAdmin = useMemo(() => {
-    return !!user?.roles?.some((role) => role === 'ROLE_ADMIN' || role === 'ROLE_SUPER_ADMIN')
-  }, [user])
+  const userIsAdmin = useMemo(() => isAdmin(user), [user])
 
   const loadData = useCallback(async () => {
     setLoading(true)
@@ -151,7 +117,7 @@ export default function InterventionsPage() {
         type: form.type,
         source: form.source,
         priorite: form.priorite,
-        billingStatus: isAdmin ? form.billingStatus : undefined,
+        billingStatus: userIsAdmin ? form.billingStatus : undefined,
         title: form.title.trim() || undefined,
         description: form.description.trim() || null,
       })
@@ -383,7 +349,7 @@ export default function InterventionsPage() {
               </select>
             </label>
 
-            {isAdmin && (
+            {userIsAdmin && (
               <label>
                 <span>Facturation</span>
                 <select
@@ -462,7 +428,7 @@ export default function InterventionsPage() {
           </select>
         </label>
 
-        {isAdmin && (
+        {userIsAdmin && (
           <label>
             <span>Facturation</span>
             <select
@@ -479,7 +445,7 @@ export default function InterventionsPage() {
           </label>
         )}
 
-        {isAdmin && (
+        {userIsAdmin && (
           <label>
             <span>Validation</span>
             <select
@@ -496,7 +462,7 @@ export default function InterventionsPage() {
           </label>
         )}
 
-        {isAdmin && (
+        {userIsAdmin && (
           <label>
             <span>Archive</span>
             <select
@@ -521,11 +487,11 @@ export default function InterventionsPage() {
             const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
             const billingStatus = intervention.billingStatus ?? 'NON_FACTURE'
             const canSubmitForApproval =
-              !isAdmin &&
+              !userIsAdmin &&
               intervention.statut === 'TERMINEE' &&
               (approvalStatus === 'DRAFT' || approvalStatus === 'REJECTED')
-            const canApprove = isAdmin && approvalStatus === 'SUBMITTED'
-            const canReject = isAdmin && (approvalStatus === 'SUBMITTED' || approvalStatus === 'APPROVED')
+            const canApprove = userIsAdmin && approvalStatus === 'SUBMITTED'
+            const canReject = userIsAdmin && (approvalStatus === 'SUBMITTED' || approvalStatus === 'APPROVED')
 
             return (
               <article key={intervention.id} className="intervention-card">
@@ -538,7 +504,7 @@ export default function InterventionsPage() {
                     <span className={`intervention-chip intervention-chip--${statusClass(intervention.priorite)}`}>
                       {PRIORITY_LABELS[intervention.priorite] ?? intervention.priorite}
                     </span>
-                    {isAdmin && (
+                    {userIsAdmin && (
                       <span className={`intervention-chip intervention-chip--${statusClass(billingStatus)}`}>
                         {BILLING_LABELS[billingStatus] ?? billingStatus}
                       </span>
@@ -578,7 +544,7 @@ export default function InterventionsPage() {
                 {intervention.approvalNote && (
                   <span>Note validation: {intervention.approvalNote}</span>
                 )}
-                {isAdmin && (
+                {userIsAdmin && (
                   <>
                     <span>Duree (min): {intervention.interventionDurationMinutes ?? '-'}</span>
                     <span>MO HT: {intervention.interventionLaborCostHt ?? '-'}</span>
@@ -608,7 +574,7 @@ export default function InterventionsPage() {
                   </select>
                 </label>
 
-                {isAdmin && (
+                {userIsAdmin && (
                   <label>
                     <span>Facturation</span>
                     <select
@@ -625,7 +591,7 @@ export default function InterventionsPage() {
                   </label>
                 )}
 
-                {isAdmin && (
+                {userIsAdmin && (
                   <button
                     type="button"
                     className="intervention-card__secondary-btn"
@@ -636,7 +602,7 @@ export default function InterventionsPage() {
                   </button>
                 )}
 
-                {isAdmin && (
+                {userIsAdmin && (
                   <button
                     type="button"
                     className="intervention-card__secondary-btn"
