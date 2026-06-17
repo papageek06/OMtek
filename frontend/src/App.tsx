@@ -15,6 +15,7 @@ import ContractsPage from './pages/ContractsPage'
 import UsersPage from './pages/UsersPage'
 import AlertesPage from './pages/AlertesPage'
 import AnalyticsPage from './pages/AnalyticsPage'
+import ContactsPage from './pages/ContactsPage'
 import { isAdmin } from './shared/auth/permissions'
 import './App.css'
 
@@ -70,6 +71,9 @@ function HeaderNav() {
         </NavLink>
         {user ? (
           <>
+            <NavLink to="/contacts" className={navLinkClass} onClick={closeMenu}>
+              Contacts
+            </NavLink>
             <NavLink to="/interventions" className={navLinkClass} onClick={closeMenu}>
               Interventions
             </NavLink>
@@ -121,6 +125,7 @@ function App() {
               <Route path="/stocks" element={<StocksPage />} />
               <Route path="/alertes" element={<AlertesPage />} />
               <Route path="/analyses" element={<AnalyticsPage />} />
+              <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/interventions" element={<InterventionsPage />} />
               <Route path="/contracts" element={<ContractsPage />} />
               <Route path="/users" element={<UsersPage />} />

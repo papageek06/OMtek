@@ -292,6 +292,80 @@ export async function deleteUser(userId: number): Promise<void> {
   }
 }
 
+// --- Contacts ---
+
+export interface ContactSiteLink {
+  id: number | null
+  nom: string
+  role: string | null
+  favorite: boolean
+  notes: string | null
+}
+
+export interface ContactItem {
+  id: number
+  exchangeId: string | null
+  displayName: string
+  firstName: string | null
+  lastName: string | null
+  email: string | null
+  mobilePhone: string | null
+  businessPhone: string | null
+  companyName: string | null
+  jobTitle: string | null
+  notes: string | null
+  syncedAt: string | null
+  sites: ContactSiteLink[]
+  createdAt: string
+  updatedAt: string
+}
+
+export interface ContactSearchParams {
+  page?: number
+  limit?: number
+  q?: string
+  onlyFavorites?: boolean
+}
+
+export interface ContactsPageResponse {
+  data: ContactItem[]
+  pagination: {
+    page: number
+    limit: number
+    total: number
+    totalPages: number
+  }
+}
+
+export async function fetchContacts(params?: ContactSearchParams): Promise<ContactsPageResponse> {
+  const sp = new URLSearchParams()
+  if (params?.page != null) sp.set('page', String(params.page))
+  if (params?.limit != null) sp.set('limit', String(params.limit))
+  if (params?.q) sp.set('q', params.q)
+  if (params?.onlyFavorites) sp.set('onlyFavorites', 'true')
+  const qs = sp.toString()
+  const res = await apiFetch(`${API_BASE}/contacts${qs ? `?${qs}` : ''}`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement contacts')
+  }
+  if (Array.isArray(body)) {
+    return {
+      data: body,
+      pagination: {
+        page: 1,
+        limit: body.length,
+        total: body.length,
+        totalPages: 1,
+      },
+    }
+  }
+  return {
+    data: Array.isArray(body?.data) ? body.data : [],
+    pagination: body?.pagination ?? { page: 1, limit: params?.limit ?? 20, total: 0, totalPages: 1 },
+  }
+}
+
 // --- Items (legacy, pour compat) ---
 
 export interface Item {

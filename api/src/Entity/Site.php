@@ -50,6 +50,10 @@ class Site
     #[ORM\OneToMany(targetEntity: SiteFile::class, mappedBy: 'site', cascade: ['persist', 'remove'], orphanRemoval: true)]
     private Collection $files;
 
+    /** @var Collection<int, SiteContact> */
+    #[ORM\OneToMany(targetEntity: SiteContact::class, mappedBy: 'site', cascade: ['persist', 'remove'], orphanRemoval: true)]
+    private Collection $contactLinks;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
 
@@ -61,6 +65,7 @@ class Site
         $this->credentials = new ArrayCollection();
         $this->notes = new ArrayCollection();
         $this->files = new ArrayCollection();
+        $this->contactLinks = new ArrayCollection();
         $this->createdAt = new \DateTimeImmutable();
     }
 
@@ -125,6 +130,12 @@ class Site
     public function getFiles(): Collection
     {
         return $this->files;
+    }
+
+    /** @return Collection<int, SiteContact> */
+    public function getContactLinks(): Collection
+    {
+        return $this->contactLinks;
     }
 
     public function getCreatedAt(): \DateTimeImmutable
