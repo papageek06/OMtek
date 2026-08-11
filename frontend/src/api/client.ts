@@ -537,6 +537,8 @@ export interface TonerAnalyticsPayload {
 export interface Alerte {
   id: number
   messageId?: string | null
+  source?: string
+  sourceLabel?: string
   sujet: string
   expediteur: string
   recuLe: string | null
@@ -1688,11 +1690,13 @@ export async function updatePieceRefBis(pieceId: number, refBis: string | null):
 }
 
 export interface PieceUpdate {
+  reference?: string
   libelle?: string
   refBis?: string | null
   variant?: string | null
   nature?: string | null
   categorie?: string
+  modeleIds?: number[]
 }
 
 export interface PieceCreate {
@@ -1702,6 +1706,7 @@ export interface PieceCreate {
   categorie: string
   variant?: string | null
   nature?: string | null
+  modeleIds?: number[]
 }
 
 export async function createPiece(data: PieceCreate): Promise<PieceItem> {

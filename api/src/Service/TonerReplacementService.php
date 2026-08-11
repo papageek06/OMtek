@@ -23,6 +23,7 @@ final class TonerReplacementService
 {
     private const SOURCE_ALERTE = 'ALERTE';
     private const SOURCE_REPORT_LEVEL_ASC = 'REPORT_LEVEL_ASC';
+    private const SOURCE_MAIL_AND_REPORT = 'MAIL_AND_REPORT';
     private const RECENT_DUPLICATE_WINDOW_HOURS = 18;
     private const REPORT_REPLACEMENT_MIN_JUMP = 40;
     private const REPORT_REPLACEMENT_LOW_MAX = 30;
@@ -63,7 +64,12 @@ final class TonerReplacementService
         if ($this->replacementEventExists($eventKey)) {
             return;
         }
-        if ($this->hasEquivalentReplacementRecently($imprimante, $color, $detectedAt, $alerte->getNiveauPourcent())) {
+        $equivalentEvent = $this->findEquivalentReplacementRecently($imprimante, $color, $detectedAt, $alerte->getNiveauPourcent());
+        if ($equivalentEvent instanceof TonerReplacementEvent) {
+            $this->attachAlerteToExistingEvent($equivalentEvent, $alerte);
+            return;
+        }
+        if ($this->isRuntimeDuplicateSeen($imprimante, $color, $detectedAt, $alerte->getNiveauPourcent())) {
             return;
         }
 
@@ -133,7 +139,12 @@ final class TonerReplacementService
             if ($this->replacementEventExists($eventKey)) {
                 continue;
             }
-            if ($this->hasEquivalentReplacementRecently($imprimante, $color, $detectedAt, $levelAfter)) {
+            $equivalentEvent = $this->findEquivalentReplacementRecently($imprimante, $color, $detectedAt, $levelAfter);
+            if ($equivalentEvent instanceof TonerReplacementEvent) {
+                $this->attachRapportToExistingEvent($equivalentEvent, $rapport);
+                continue;
+            }
+            if ($this->isRuntimeDuplicateSeen($imprimante, $color, $detectedAt, $levelAfter)) {
                 continue;
             }
 
@@ -199,17 +210,12 @@ final class TonerReplacementService
         ]) instanceof TonerReplacementEvent;
     }
 
-    private function hasEquivalentReplacementRecently(
+    private function findEquivalentReplacementRecently(
         Imprimante $imprimante,
         string $color,
         \DateTimeImmutable $detectedAt,
         ?int $levelAfter,
-    ): bool {
-        $runtimeKey = $this->buildRuntimeDuplicateKey($imprimante, $color, $detectedAt, $levelAfter);
-        if (isset($this->runtimeDuplicateGuard[$runtimeKey])) {
-            return true;
-        }
-
+    ): ?TonerReplacementEvent {
         $rows = $this->em->getRepository(TonerReplacementEvent::class)
             ->createQueryBuilder('event')
             ->andWhere('event.imprimante = :imprimante')
@@ -230,17 +236,49 @@ final class TonerReplacementService
             }
             $existingLevelAfter = $row->getLevelAfter();
             if ($levelAfter === null || $existingLevelAfter === null) {
-                $this->runtimeDuplicateGuard[$runtimeKey] = true;
-                return true;
+                return $row;
             }
             if (abs($existingLevelAfter - $levelAfter) <= 15) {
-                $this->runtimeDuplicateGuard[$runtimeKey] = true;
-                return true;
+                return $row;
             }
+        }
+
+        return null;
+    }
+
+    private function isRuntimeDuplicateSeen(
+        Imprimante $imprimante,
+        string $color,
+        \DateTimeImmutable $detectedAt,
+        ?int $levelAfter,
+    ): bool {
+        $runtimeKey = $this->buildRuntimeDuplicateKey($imprimante, $color, $detectedAt, $levelAfter);
+        if (isset($this->runtimeDuplicateGuard[$runtimeKey])) {
+            return true;
         }
 
         $this->runtimeDuplicateGuard[$runtimeKey] = true;
         return false;
+    }
+
+    private function attachAlerteToExistingEvent(TonerReplacementEvent $event, Alerte $alerte): void
+    {
+        if (!$event->getSourceAlerte() instanceof Alerte) {
+            $event->setSourceAlerte($alerte);
+        }
+        if ($event->getSourceRapport() instanceof RapportImprimante) {
+            $event->setSourceType(self::SOURCE_MAIL_AND_REPORT);
+        }
+    }
+
+    private function attachRapportToExistingEvent(TonerReplacementEvent $event, RapportImprimante $rapport): void
+    {
+        if (!$event->getSourceRapport() instanceof RapportImprimante) {
+            $event->setSourceRapport($rapport);
+        }
+        if ($event->getSourceAlerte() instanceof Alerte) {
+            $event->setSourceType(self::SOURCE_MAIL_AND_REPORT);
+        }
     }
 
     private function buildRuntimeDuplicateKey(

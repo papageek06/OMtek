@@ -67,6 +67,7 @@ async function postAlertes(payload) {
     for (const a of parsed) {
       alertes.push({
         messageId: payload.messageId || null,
+        source: 'MAIL_FETCHER',
         sujet: payload.subject || '',
         expediteur: payload.from || '',
         recuLe: payload.receivedAt || null,

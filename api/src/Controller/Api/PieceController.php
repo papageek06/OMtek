@@ -85,9 +85,14 @@ class PieceController extends AbstractController
             return new JsonResponse(['errors' => $errs], Response::HTTP_BAD_REQUEST);
         }
 
-        $existing = $this->em->getRepository(Piece::class)->findOneBy(['reference' => $piece->getReference()]);
+        $existing = $this->findDuplicateReference($piece);
         if ($existing) {
             return new JsonResponse(['error' => 'Une pièce avec cette référence existe déjà'], Response::HTTP_CONFLICT);
+        }
+
+        $modeleErrors = $this->applyModelesPayload($piece, $data);
+        if (!empty($modeleErrors)) {
+            return new JsonResponse(['errors' => $modeleErrors], Response::HTTP_BAD_REQUEST);
         }
 
         $this->em->persist($piece);
@@ -163,6 +168,18 @@ class PieceController extends AbstractController
                 $errs[$v->getPropertyPath()] = $v->getMessage();
             }
             return new JsonResponse(['errors' => $errs], Response::HTTP_BAD_REQUEST);
+        }
+
+        if (array_key_exists('reference', $data)) {
+            $duplicate = $this->findDuplicateReference($piece);
+            if ($duplicate) {
+                return new JsonResponse(['error' => 'Une piece avec cette reference existe deja'], Response::HTTP_CONFLICT);
+            }
+        }
+
+        $modeleErrors = $this->applyModelesPayload($piece, $data);
+        if (!empty($modeleErrors)) {
+            return new JsonResponse(['errors' => $modeleErrors], Response::HTTP_BAD_REQUEST);
         }
 
         $this->em->flush();
@@ -292,6 +309,63 @@ class PieceController extends AbstractController
         return $errors;
     }
 
+    private function findDuplicateReference(Piece $piece): ?Piece
+    {
+        $existing = $this->em->getRepository(Piece::class)->findOneBy(['reference' => $piece->getReference()]);
+        if (!$existing) {
+            return null;
+        }
+
+        return $existing->getId() !== $piece->getId() ? $existing : null;
+    }
+
+    /**
+     * @return array<string, string>
+     */
+    private function applyModelesPayload(Piece $piece, array $data): array
+    {
+        if (!array_key_exists('modeleIds', $data) && !array_key_exists('modelIds', $data)) {
+            return [];
+        }
+
+        $rawIds = $data['modeleIds'] ?? $data['modelIds'];
+        if (!\is_array($rawIds)) {
+            return ['modeleIds' => 'La liste des modeles doit etre un tableau'];
+        }
+
+        $ids = [];
+        foreach ($rawIds as $rawId) {
+            if (!is_numeric($rawId)) {
+                return ['modeleIds' => 'Chaque modele doit etre identifie par un ID numerique'];
+            }
+            $id = (int) $rawId;
+            if ($id > 0) {
+                $ids[$id] = $id;
+            }
+        }
+
+        $modeles = [];
+        foreach ($ids as $id) {
+            $modele = $this->em->getRepository(Modele::class)->find($id);
+            if (!$modele) {
+                return ['modeleIds' => sprintf('Modele introuvable: %d', $id)];
+            }
+            $modeles[$id] = $modele;
+        }
+
+        foreach ($piece->getModeles()->toArray() as $modele) {
+            if ($modele->getId() === null || !isset($modeles[$modele->getId()])) {
+                $piece->removeModele($modele);
+            }
+        }
+
+        foreach ($modeles as $modele) {
+            $piece->addModele($modele);
+        }
+
+        return [];
+    }
+
     /**
      * POST /api/pieces/{id}/modeles : ajouter un modèle à une pièce.
      * Body: { "modeleId": 1 }
@@ -366,4 +440,3 @@ class PieceController extends AbstractController
         ];
     }
 }
-

@@ -93,6 +93,7 @@ export default function AlertesPage() {
           alerte.modeleImprimante,
           alerte.motifAlerte,
           alerte.piece,
+          alerte.sourceLabel ?? alerte.source ?? '',
           alerte.imprimante?.site?.nom ?? '',
         ]
           .join(' ')
@@ -331,6 +332,9 @@ export default function AlertesPage() {
                       </span>
                       <span className={'alerts-item__status ' + (isAlerteActive(alerte) ? 'is-active' : 'is-inactive')}>
                         {isAlerteActive(alerte) ? 'Active' : 'Desactivee'}
+                      </span>
+                      <span className="alerts-item__source">
+                        Source: {alerte.sourceLabel ?? alerte.source ?? 'Mail'}
                       </span>
                     </div>
 

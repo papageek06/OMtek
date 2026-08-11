@@ -264,7 +264,7 @@
 .alerts-item__top {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  flex-wrap: wrap;
   gap: 0.5rem;
 }
 
@@ -330,6 +330,14 @@
 
 .alerts-item__status {
   font-size: 0.76rem;
+}
+
+.alerts-item__source {
+  color: #b5bac1;
+  background: rgba(114, 118, 125, 0.16);
+  border-radius: 999px;
+  padding: 0.18rem 0.45rem;
+  font-size: 0.73rem;
 }
 
 .alerts-item__status.is-active {

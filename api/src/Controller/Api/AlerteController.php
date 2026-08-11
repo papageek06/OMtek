@@ -189,6 +189,7 @@ class AlerteController extends AbstractController
 
             $alerte = new Alerte();
             $alerte->setMessageId(isset($a['messageId']) ? (string) $a['messageId'] : null);
+            $alerte->setSource(isset($a['source']) ? (string) $a['source'] : 'MAIL_FETCHER');
             $alerte->setSujet((string) ($a['sujet'] ?? ''));
             $alerte->setExpediteur((string) ($a['expediteur'] ?? ''));
             if (!empty($a['recuLe'])) {
@@ -277,6 +278,8 @@ class AlerteController extends AbstractController
         return [
             'id' => $alerte->getId(),
             'messageId' => $alerte->getMessageId(),
+            'source' => $alerte->getSource(),
+            'sourceLabel' => $this->alerteSourceLabel($alerte->getSource()),
             'sujet' => $alerte->getSujet(),
             'expediteur' => $alerte->getExpediteur(),
             'recuLe' => $alerte->getRecuLe()?->format(\DateTimeInterface::ATOM),
@@ -312,6 +315,16 @@ class AlerteController extends AbstractController
             return false;
         }
         return $default;
+    }
+
+    private function alerteSourceLabel(string $source): string
+    {
+        return match ($source) {
+            'MAIL_FETCHER' => 'Mail',
+            'MANUAL' => 'Manuelle',
+            'SYSTEM' => 'Systeme',
+            default => $source,
+        };
     }
 
     private function applyActionableFilter(QueryBuilder $qb, string $alias): void

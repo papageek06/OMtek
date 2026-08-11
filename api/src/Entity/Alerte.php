@@ -24,6 +24,10 @@ class Alerte
     #[ORM\Column(type: Types::STRING, length: 255, nullable: true)]
     private ?string $messageId = null;
 
+    /** Origine technique de l'alerte: MAIL_FETCHER, MANUAL, SYSTEM. */
+    #[ORM\Column(type: Types::STRING, length: 30, options: ['default' => 'MAIL_FETCHER'])]
+    private string $source = 'MAIL_FETCHER';
+
     #[ORM\Column(type: Types::STRING, length: 500)]
     private string $sujet = '';
 
@@ -88,6 +92,18 @@ class Alerte
     public function setMessageId(?string $messageId): static
     {
         $this->messageId = $messageId;
+        return $this;
+    }
+
+    public function getSource(): string
+    {
+        return $this->source;
+    }
+
+    public function setSource(string $source): static
+    {
+        $source = strtoupper(trim($source));
+        $this->source = $source !== '' ? mb_substr($source, 0, 30) : 'MAIL_FETCHER';
         return $this;
     }
 

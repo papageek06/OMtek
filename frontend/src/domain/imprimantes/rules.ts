@@ -58,6 +58,8 @@ export function sourceLabel(sourceType: string): string {
       return 'Alerte mail'
     case 'REPORT_LEVEL_ASC':
       return 'Niveau ascendant'
+    case 'MAIL_AND_REPORT':
+      return 'Mail + detection rapport'
     default:
       return sourceType
   }

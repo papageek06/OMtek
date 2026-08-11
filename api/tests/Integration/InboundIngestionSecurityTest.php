@@ -11,10 +11,12 @@ use App\Entity\Enum\VariantPiece;
 use App\Entity\Imprimante;
 use App\Entity\Modele;
 use App\Entity\Piece;
+use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Entity\Stock;
 use App\Entity\TonerReplacementEvent;
 use App\Entity\User;
+use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
 use Symfony\Bundle\FrameworkBundle\KernelBrowser;
@@ -319,5 +321,113 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertCount(1, $events);
         self::assertSame('black', $events[0]->getColorKey());
         self::assertNotNull($events[0]->getStockMovement());
+    }
+
+    public function testMailTonerChangeDoesNotDuplicateExistingReportDetection(): void
+    {
+        $systemUser = (new User())
+            ->setEmail('system-toner-dedupe@example.test')
+            ->setPassword('hashed-password')
+            ->setFirstName('System')
+            ->setLastName('Dedupe')
+            ->setRoles([User::ROLE_SUPER_ADMIN]);
+
+        $site = (new Site())->setNom('Site Dedupe');
+        $modele = (new Modele())
+            ->setNom('Modele Dedupe')
+            ->setConstructeur('RICOH');
+        $piece = (new Piece())
+            ->setReference('TN-DEDUPE-BLACK')
+            ->setLibelle('Toner Noir Dedupe')
+            ->setCategorie(CategoriePiece::TONER)
+            ->setVariant(VariantPiece::BLACK);
+        $modele->addPiece($piece);
+
+        $imprimante = (new Imprimante())
+            ->setSite($site)
+            ->setNumeroSerie('SN-DEDUPE-0001')
+            ->setModele($modele)
+            ->setModeleNom('Modele Dedupe')
+            ->setConstructeur('RICOH')
+            ->setColor(false);
+
+        $stock = (new Stock())
+            ->setPiece($piece)
+            ->setSite($site)
+            ->setScope(StockScope::TECH_VISIBLE)
+            ->setQuantite(2);
+
+        $previousRapport = (new RapportImprimante())
+            ->setImprimante($imprimante)
+            ->setLastScanDate(new \DateTimeImmutable('2026-08-10 08:00:00'))
+            ->setBlackLevel('10%')
+            ->setMonoLifeCount('1000');
+
+        $currentRapport = (new RapportImprimante())
+            ->setImprimante($imprimante)
+            ->setLastScanDate(new \DateTimeImmutable('2026-08-10 10:00:00'))
+            ->setBlackLevel('100%')
+            ->setMonoLifeCount('1100');
+
+        $this->em->persist($systemUser);
+        $this->em->persist($site);
+        $this->em->persist($modele);
+        $this->em->persist($piece);
+        $this->em->persist($imprimante);
+        $this->em->persist($stock);
+        $this->em->persist($previousRapport);
+        $this->em->persist($currentRapport);
+
+        $tonerReplacementService = static::getContainer()->get(TonerReplacementService::class);
+        self::assertInstanceOf(TonerReplacementService::class, $tonerReplacementService);
+        $tonerReplacementService->registerFromRapport($currentRapport, $previousRapport);
+        $this->em->flush();
+
+        $this->client->request(
+            'POST',
+            '/api/alertes',
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN,
+            ],
+            json_encode([
+                'alertes' => [[
+                    'source' => 'MAIL_FETCHER',
+                    'site' => 'Site Dedupe',
+                    'modeleImprimante' => 'Modele Dedupe',
+                    'numeroSerie' => 'SN-DEDUPE-0001',
+                    'motifAlerte' => 'Changement de cartouche',
+                    'piece' => 'Toner Noir',
+                    'niveauPourcent' => 100,
+                    'recuLe' => '2026-08-10T11:00:00+00:00',
+                ]],
+            ], JSON_THROW_ON_ERROR)
+        );
+
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+
+        $this->em->clear();
+
+        $siteRef = $this->em->getReference(Site::class, $site->getId());
+        $pieceRef = $this->em->getReference(Piece::class, $piece->getId());
+        $imprimanteRef = $this->em->getReference(Imprimante::class, $imprimante->getId());
+
+        $updatedStock = $this->em->getRepository(Stock::class)->findOneBy([
+            'site' => $siteRef,
+            'piece' => $pieceRef,
+            'scope' => StockScope::TECH_VISIBLE,
+        ]);
+        self::assertInstanceOf(Stock::class, $updatedStock);
+        self::assertSame(1, $updatedStock->getQuantite());
+
+        $events = $this->em->getRepository(TonerReplacementEvent::class)->findBy([
+            'imprimante' => $imprimanteRef,
+        ]);
+        self::assertCount(1, $events);
+        self::assertSame('MAIL_AND_REPORT', $events[0]->getSourceType());
+        self::assertNotNull($events[0]->getSourceAlerte());
+        self::assertNotNull($events[0]->getSourceRapport());
     }
 }
