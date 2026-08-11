@@ -977,8 +977,8 @@
 }
 
 .site-detail-chart-wrap {
-  background: #d7dbe2;
-  border: 1px solid #aeb4bf;
+  background: #2b2d31;
+  border: 1px solid #3f4147;
   border-radius: 10px;
   padding: 1rem;
   margin-bottom: 1.5rem;
@@ -994,22 +994,22 @@
 
 .site-detail-chart-head h3 {
   margin: 0;
-  color: #1f2937;
+  color: #f2f3f5;
 }
 
 .site-detail-chart-head p {
   margin: 0.25rem 0 0;
-  color: #4b5563;
+  color: #b5bac1;
   font-size: 0.9rem;
 }
 
 .site-detail-chart-head span {
   flex: 0 0 auto;
   padding: 0.35rem 0.55rem;
-  border: 1px solid #aeb4bf;
+  border: 1px solid #3f4147;
   border-radius: 999px;
-  color: #1f2937;
-  background: #eef0f4;
+  color: #f2f3f5;
+  background: #1e1f22;
   font-size: 0.82rem;
   white-space: nowrap;
 }

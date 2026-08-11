@@ -184,7 +184,7 @@ const TONER_COLOR_LABELS: Record<TonerColorKey, string> = {
 }
 
 const TONER_COLOR_STROKES: Record<TonerColorKey, string> = {
-  black: '#111827',
+  black: '#050505',
   cyan: '#00a6c8',
   magenta: '#d61f69',
   yellow: '#f0b429',
@@ -1751,46 +1751,6 @@ export default function SiteDetailPage() {
   )
 }
 
-function renderTonerDot(colorKey: TonerColorKey) {
-  return function TonerDot({
-    cx,
-    cy,
-    payload,
-  }: {
-    cx?: number
-    cy?: number
-    payload?: ChartPoint
-  }) {
-    if (cx == null || cy == null || !payload?.changes[colorKey]) {
-      if (cx == null || cy == null) return null
-      return (
-        <circle
-          cx={cx}
-          cy={cy}
-          r={3}
-          fill={TONER_COLOR_STROKES[colorKey]}
-          stroke="#202225"
-          strokeWidth={1}
-        />
-      )
-    }
-
-    return (
-      <g>
-        <circle
-          cx={cx}
-          cy={cy}
-          r={6}
-          fill="#ffffff"
-          stroke={TONER_COLOR_STROKES[colorKey]}
-          strokeWidth={3}
-        />
-        <circle cx={cx} cy={cy} r={2.5} fill={TONER_COLOR_STROKES[colorKey]} />
-      </g>
-    )
-  }
-}
-
 function ConsumptionTooltip({
   active,
   label,
@@ -1823,7 +1783,7 @@ function ConsumptionTooltip({
       <strong>{label}</strong>
       <div className="site-detail-chart-tooltip__levels">
         {payload
-          .filter((item) => item.value != null)
+          .filter((item) => item.value != null && item.name !== 'Noir halo')
           .map((item) => (
             <span key={item.name} style={{ color: item.color }}>
               {item.name}: {item.value} %
@@ -1933,26 +1893,28 @@ function ImprimanteTab({
           ) : (
             <ResponsiveContainer width="100%" height={320}>
               <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#c4c8cf" />
+                <CartesianGrid strokeDasharray="3 3" stroke="#3f4147" />
                 <XAxis
                   dataKey="dateLabel"
-                  stroke="#4b5563"
+                  stroke="#b5bac1"
                   fontSize={12}
                   minTickGap={18}
+                  tickLine={false}
                   tickFormatter={(value, index) => chartTickFormatter(String(value), index, chartData)}
                 />
-                <YAxis stroke="#4b5563" fontSize={12} domain={[0, 100]} />
+                <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} tickLine={false} />
                 <Tooltip content={<ConsumptionTooltip tonerStocksByDate={tonerStocksByDate} isAdmin={isAdmin} isColor={imprimante.color} />} />
                 <Legend />
-                <Line type="monotone" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2} dot={renderTonerDot('black')} activeDot={{ r: 6 }} connectNulls />
+                <Line type="monotone" dataKey="black" name="Noir halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" connectNulls />
+                <Line type="monotone" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} connectNulls />
                 {imprimante.color && (
                   <>
-                    <Line type="monotone" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={renderTonerDot('cyan')} activeDot={{ r: 6 }} connectNulls />
-                    <Line type="monotone" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={renderTonerDot('magenta')} activeDot={{ r: 6 }} connectNulls />
-                    <Line type="monotone" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={renderTonerDot('yellow')} activeDot={{ r: 6 }} connectNulls />
+                    <Line type="monotone" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+                    <Line type="monotone" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+                    <Line type="monotone" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
                   </>
                 )}
-                <Line type="monotone" dataKey="bacRecup" name="Bac recup" stroke="#5b6472" strokeWidth={2} dot={{ r: 2 }} strokeDasharray="4 4" connectNulls />
+                <Line type="monotone" dataKey="bacRecup" name="Bac recup" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="4 4" connectNulls />
               </LineChart>
             </ResponsiveContainer>
           )}
