@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useSearchParams } from 'react-router-dom'
 import {
   LineChart,
   Line,
@@ -15,6 +15,7 @@ import {
   fetchSiteStockMovements,
   fetchRapports,
   fetchAlertes,
+  fetchTonerReplacements,
   updateAlerteActive,
   upsertStock,
   updatePiece,
@@ -28,9 +29,11 @@ import {
   type Imprimante,
   type RapportImprimante,
   type Alerte,
+  type TonerReplacementEvent,
   type StockSearchParams,
   type StockMovementItem,
   type PieceItem,
+  type PieceAvecStocks,
   type ModeleItem,
 } from '../api/client'
 import { isAdmin as isUserAdmin } from '../shared/auth/permissions'
@@ -75,6 +78,37 @@ function isLastScanOld(lastScanDate: string | null | undefined): boolean {
   const scan = new Date(lastScanDate).getTime()
   const limit = Date.now() - JOURS_ALERTE_SCAN * 24 * 60 * 60 * 1000
   return scan < limit
+}
+
+function SitePrinterLevelBar({
+  label,
+  raw,
+  fillClass,
+}: {
+  label: string
+  raw: string | null | undefined
+  fillClass: string
+}) {
+  const pct = parseLevelPercent(raw)
+  if (pct === null) return null
+
+  return (
+    <div className="site-printer-level" title={`${label}: ${pct}%`}>
+      <span className="site-printer-level__label">{label}</span>
+      <div className="site-printer-level__track">
+        <div
+          className={`site-printer-level__fill ${fillClass}`}
+          style={{ width: `${pct}%` }}
+          role="progressbar"
+          aria-label={label}
+          aria-valuenow={pct}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        />
+      </div>
+      <span className="site-printer-level__value">{pct}%</span>
+    </div>
+  )
 }
 
 const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
@@ -127,69 +161,332 @@ const STOCK_MOVEMENT_REASON_LABELS: Record<string, string> = {
 }
 
 /** Point de données pour le graphique consommation. */
+type TonerColorKey = 'black' | 'cyan' | 'magenta' | 'yellow'
+
+interface ConsumptionChangeMarker {
+  color: TonerColorKey
+  source: string
+  before: number | null
+  after: number | null
+}
+
+interface TonerStockByColor {
+  visible: number
+  adminOnly: number
+  references: string[]
+}
+
+const TONER_COLOR_LABELS: Record<TonerColorKey, string> = {
+  black: 'Noir',
+  cyan: 'Cyan',
+  magenta: 'Magenta',
+  yellow: 'Jaune',
+}
+
+const TONER_COLOR_STROKES: Record<TonerColorKey, string> = {
+  black: '#111827',
+  cyan: '#00a6c8',
+  magenta: '#d61f69',
+  yellow: '#f0b429',
+}
+
+function tonerSourceLabel(sourceType: string): string {
+  switch (sourceType) {
+    case 'ALERTE':
+      return 'Mail'
+    case 'REPORT_LEVEL_ASC':
+      return 'Detection rapport'
+    case 'MAIL_AND_REPORT':
+      return 'Mail + detection rapport'
+    default:
+      return sourceType
+  }
+}
+
+function extractTonerColor(text: string): TonerColorKey | null {
+  const value = text.toLowerCase()
+  if (/(black|noir|bk|k)\b/.test(value)) return 'black'
+  if (/(cyan|c)\b/.test(value)) return 'cyan'
+  if (/(magenta|m)\b/.test(value)) return 'magenta'
+  if (/(yellow|jaune|y)\b/.test(value)) return 'yellow'
+  return null
+}
+
+function normalizeTonerVariant(value: string | null | undefined): TonerColorKey | null {
+  switch ((value ?? '').trim().toUpperCase()) {
+    case 'BLACK':
+      return 'black'
+    case 'CYAN':
+      return 'cyan'
+    case 'MAGENTA':
+      return 'magenta'
+    case 'YELLOW':
+      return 'yellow'
+    default:
+      return null
+  }
+}
+
+function buildTonerStocksByColor(
+  imprimante: Imprimante,
+  pieces: PieceAvecStocks[],
+  movements: StockMovementItem[] = [],
+  atDate?: string | null
+): Partial<Record<TonerColorKey, TonerStockByColor>> {
+  const stocks: Partial<Record<TonerColorKey, TonerStockByColor>> = {}
+  const pieceColorById = new Map<number, TonerColorKey>()
+
+  pieces.forEach((piece) => {
+    if ((piece.categorie ?? '').toUpperCase() !== 'TONER') return
+    const color = normalizeTonerVariant(piece.variant)
+    if (!color) return
+    if (
+      imprimante.modeleId != null &&
+      piece.modeles?.length &&
+      !piece.modeles.some((modele) => modele.id === imprimante.modeleId)
+    ) {
+      return
+    }
+
+    const current = stocks[color] ?? { visible: 0, adminOnly: 0, references: [] }
+    current.visible += piece.quantiteStockSite ?? 0
+    current.adminOnly += piece.quantiteStockSiteAdminOnly ?? 0
+    current.references.push(piece.reference)
+    stocks[color] = current
+    pieceColorById.set(piece.pieceId, color)
+  })
+
+  if (atDate) {
+    const targetEndOfDay = new Date(`${atDate.slice(0, 10)}T23:59:59.999`).getTime()
+    if (Number.isFinite(targetEndOfDay)) {
+      movements.forEach((movement) => {
+        const pieceId = movement.piece.id
+        if (pieceId == null) return
+        const color = pieceColorById.get(pieceId)
+        if (!color) return
+        const movementTime = new Date(movement.createdAt).getTime()
+        if (!Number.isFinite(movementTime) || movementTime <= targetEndOfDay) return
+
+        const current = stocks[color] ?? { visible: 0, adminOnly: 0, references: [] }
+        if (movement.stockScope === 'ADMIN_ONLY') {
+          current.adminOnly -= movement.quantityDelta
+        } else {
+          current.visible -= movement.quantityDelta
+        }
+        stocks[color] = current
+      })
+    }
+  }
+
+  return stocks
+}
+
+function isReportReplacementJump(before: number | null, after: number | null): boolean {
+  if (before == null || after == null) return false
+  return before <= 30 && after >= 70 && after - before >= 40
+}
+
+function monthKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+}
+
+function chartDateLabel(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: 'short',
+  })
+}
+
+function chartMonthTick(isoDate: string): string {
+  return new Date(`${isoDate}T00:00:00`).toLocaleDateString('fr-FR', {
+    month: 'short',
+    year: '2-digit',
+  })
+}
+
+function getTwelveMonthWindowStart(): Date {
+  const now = new Date()
+  return new Date(now.getFullYear(), now.getMonth() - 11, 1)
+}
+
+function isWithinTwelveMonthWindow(isoDate: string | null | undefined): boolean {
+  if (!isoDate) return false
+  const parsed = new Date(isoDate)
+  if (!Number.isFinite(parsed.getTime())) return false
+  return parsed >= getTwelveMonthWindowStart()
+}
+
+function findNearestChartPointIndex(points: ChartPoint[], isoDate: string | null | undefined): number | null {
+  if (!isoDate || points.length === 0 || !isWithinTwelveMonthWindow(isoDate)) return null
+  const target = new Date(isoDate).getTime()
+  if (!Number.isFinite(target)) return null
+
+  let bestIndex: number | null = null
+  let bestDelta = Number.POSITIVE_INFINITY
+  points.forEach((point, index) => {
+    const pointTime = new Date(point.date).getTime()
+    if (!Number.isFinite(pointTime)) return
+    const delta = Math.abs(pointTime - target)
+    if (delta < bestDelta) {
+      bestIndex = index
+      bestDelta = delta
+    }
+  })
+
+  return bestIndex
+}
+
+function registerChangeMarker(
+  point: ChartPoint,
+  color: TonerColorKey,
+  marker: ConsumptionChangeMarker
+): void {
+  const previous = point.changes[color]
+  if (!previous) {
+    point.changes[color] = marker
+    return
+  }
+
+  point.changes[color] = {
+    color,
+    source: previous.source === marker.source ? previous.source : 'Mail + detection rapport',
+    before: previous.before ?? marker.before,
+    after: marker.after ?? previous.after,
+  }
+}
+
 interface ChartPoint {
   date: string
   dateLabel: string
   compteurMono: number | null
   compteurColor: number | null
-  noir: number | null
+  black: number | null
   cyan: number | null
   magenta: number | null
-  jaune: number | null
+  yellow: number | null
   bacRecup: number | null
-  tonerChange?: boolean
+  changes: Partial<Record<TonerColorKey, ConsumptionChangeMarker>>
+}
+
+function chartTickFormatter(value: string, index: number, points: ChartPoint[]): string {
+  const point = points[index]
+  if (!point) return value
+  const previous = points[index - 1]
+  if (index !== 0 && previous && monthKey(new Date(point.date)) === monthKey(new Date(previous.date))) {
+    return ''
+  }
+  return chartMonthTick(point.date)
 }
 
 function buildChartData(
   rapports: RapportImprimante[],
   alertes: Alerte[],
+  tonerEvents: TonerReplacementEvent[],
   color: boolean
 ): ChartPoint[] {
-  const alerteDates = new Set(
-    alertes
-      .filter((a) => /toner|encre|cartouche/i.test(a.motifAlerte))
-      .map((a) => (a.recuLe ? new Date(a.recuLe).toISOString().slice(0, 10) : ''))
-      .filter(Boolean)
-  )
-  return [...rapports]
-    .sort((a, b) => {
-      const da = a.lastScanDate || a.createdAt
-      const db = b.lastScanDate || b.createdAt
-      return new Date(da).getTime() - new Date(db).getTime()
+  const sortedRapports = [...rapports].sort((a, b) => {
+    const da = a.lastScanDate || a.createdAt
+    const db = b.lastScanDate || b.createdAt
+    return new Date(da).getTime() - new Date(db).getTime()
+  }).filter((rapport) => isWithinTwelveMonthWindow(rapport.lastScanDate || rapport.createdAt))
+
+  const points = sortedRapports.map((rapport): ChartPoint => {
+    const dateStr = (rapport.lastScanDate || rapport.createdAt)?.slice(0, 10) ?? ''
+    return {
+      date: dateStr,
+      dateLabel: dateStr ? chartDateLabel(dateStr) : '',
+      compteurMono: parseCounter(rapport.monoLifeCount),
+      compteurColor: parseCounter(rapport.colorLifeCount),
+      black: parseLevelPercent(rapport.blackLevel),
+      cyan: color ? parseLevelPercent(rapport.cyanLevel) : null,
+      magenta: color ? parseLevelPercent(rapport.magentaLevel) : null,
+      yellow: color ? parseLevelPercent(rapport.yellowLevel) : null,
+      bacRecup: parseLevelPercent(rapport.wasteLevel),
+      changes: {},
+    }
+  })
+
+  for (let index = 1; index < sortedRapports.length; index += 1) {
+    const previousReport = sortedRapports[index - 1]
+    const currentReport = sortedRapports[index]
+    const currentDate = currentReport.lastScanDate || currentReport.createdAt
+    const pointIndex = findNearestChartPointIndex(points, currentDate)
+    if (pointIndex == null) continue
+
+    const colors: TonerColorKey[] = color
+      ? ['black', 'cyan', 'magenta', 'yellow']
+      : ['black']
+
+    colors.forEach((colorKey) => {
+      const before = parseLevelPercent(
+        colorKey === 'black' ? previousReport.blackLevel
+          : colorKey === 'cyan' ? previousReport.cyanLevel
+            : colorKey === 'magenta' ? previousReport.magentaLevel
+              : previousReport.yellowLevel
+      )
+      const after = parseLevelPercent(
+        colorKey === 'black' ? currentReport.blackLevel
+          : colorKey === 'cyan' ? currentReport.cyanLevel
+            : colorKey === 'magenta' ? currentReport.magentaLevel
+              : currentReport.yellowLevel
+      )
+      if (!isReportReplacementJump(before, after)) return
+      registerChangeMarker(points[pointIndex], colorKey, {
+        color: colorKey,
+        source: 'Detection rapport',
+        before,
+        after,
+      })
     })
-    .map((r) => {
-      const dateStr = (r.lastScanDate || r.createdAt)?.slice(0, 10) ?? ''
-      return {
-        date: dateStr,
-        dateLabel: dateStr ? new Date(dateStr).toLocaleDateString('fr-FR', { day: '2-digit', month: 'short', year: '2-digit' }) : '',
-        compteurMono: parseCounter(r.monoLifeCount),
-        compteurColor: parseCounter(r.colorLifeCount),
-        noir: parseLevelPercent(r.blackLevel),
-        cyan: color ? parseLevelPercent(r.cyanLevel) : null,
-        magenta: color ? parseLevelPercent(r.magentaLevel) : null,
-        jaune: color ? parseLevelPercent(r.yellowLevel) : null,
-        bacRecup: parseLevelPercent(r.wasteLevel),
-        tonerChange: dateStr ? alerteDates.has(dateStr) : false,
-      }
+  }
+
+  tonerEvents.forEach((event) => {
+    const colorKey = event.color as TonerColorKey
+    if (!['black', 'cyan', 'magenta', 'yellow'].includes(colorKey)) return
+    const index = findNearestChartPointIndex(points, event.detectedAt)
+    if (index == null) return
+    registerChangeMarker(points[index], colorKey, {
+      color: colorKey,
+      source: tonerSourceLabel(event.sourceType),
+      before: event.levelBefore,
+      after: event.levelAfter,
     })
+  })
+
+  alertes.forEach((alerte) => {
+    if (!/toner|encre|cartouche/i.test(`${alerte.motifAlerte} ${alerte.piece}`)) return
+    const colorKey = extractTonerColor(`${alerte.motifAlerte} ${alerte.piece}`)
+    if (!colorKey) return
+    const index = findNearestChartPointIndex(points, alerte.recuLe)
+    if (index == null) return
+    registerChangeMarker(points[index], colorKey, {
+      color: colorKey,
+      source: 'Mail',
+      before: null,
+      after: alerte.niveauPourcent ?? points[index][colorKey],
+    })
+  })
+
+  return points
 }
 
 export default function SiteDetailPage() {
   const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
+  const [searchParams] = useSearchParams()
   const [site, setSite] = useState<SiteDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [activeTab, setActiveTab] = useState<number | 'stocks' | 'resources' | null>(null)
-  const [showGraph, setShowGraph] = useState(false)
-  const [graphImprimanteId, setGraphImprimanteId] = useState<number | null>(null)
   const [rapportsByImp, setRapportsByImp] = useState<Record<number, RapportImprimante[]>>({})
   const [alertesByImp, setAlertesByImp] = useState<Record<number, Alerte[]>>({})
+  const [tonerEventsByImp, setTonerEventsByImp] = useState<Record<number, TonerReplacementEvent[]>>({})
   const [showInactiveAlertsByImp, setShowInactiveAlertsByImp] = useState<Record<number, boolean>>({})
   const [updatingAlerteIdByImp, setUpdatingAlerteIdByImp] = useState<Record<number, number | null>>({})
   const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
   const [adminStockQuantites, setAdminStockQuantites] = useState<Record<number, number>>({})
   const [stockMovements, setStockMovements] = useState<StockMovementItem[]>([])
+  const [stockMovementHistory, setStockMovementHistory] = useState<StockMovementItem[]>([])
   const [search, setSearch] = useState<StockSearchParams>({})
   const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
@@ -221,10 +518,13 @@ export default function SiteDetailPage() {
   const isAdmin = isUserAdmin(user)
 
   const siteId = id ? parseInt(id, 10) : NaN
+  const requestedImprimanteId = searchParams.get('imprimanteId')
+    ? parseInt(searchParams.get('imprimanteId') ?? '', 10)
+    : null
 
   useEffect(() => {
     setActiveTab(null)
-  }, [siteId])
+  }, [siteId, requestedImprimanteId])
 
   const modelesSite = (site?.imprimantes ?? [])
     .filter((i) => i.modeleId != null)
@@ -243,11 +543,13 @@ export default function SiteDetailPage() {
       fetchSiteDetail(siteId, appliedSearch),
       fetchModeles(),
       fetchSiteStockMovements(siteId, { limit: 20 }),
+      fetchSiteStockMovements(siteId, { limit: 5000 }),
     ])
-      .then(([data, modelesData, movementsData]) => {
+      .then(([data, modelesData, movementsData, movementHistoryData]) => {
         setSite(data)
         setAllModeles(modelesData)
         setStockMovements(movementsData)
+        setStockMovementHistory(movementHistoryData)
         const qty: Record<number, number> = {}
         const adminQty: Record<number, number> = {}
         const refBis: Record<number, string> = {}
@@ -284,7 +586,7 @@ export default function SiteDetailPage() {
 
   const loadImprimanteData = useCallback((impId: number, numeroSerie: string, includeInactive: boolean) => {
     if (!rapportsByImp[impId]) {
-      fetchRapports(impId, { page: 1, limit: 10 })
+      fetchRapports(impId, { page: 1, limit: 400 })
         .then((rapsPage) => {
           const sorted = [...rapsPage.items].sort((a, b) => {
             const da = a.lastScanDate || a.createdAt
@@ -300,6 +602,16 @@ export default function SiteDetailPage() {
         })
     }
 
+    if (!tonerEventsByImp[impId]) {
+      fetchTonerReplacements(impId, { limit: 200 })
+        .then((events) => {
+          setTonerEventsByImp((prev) => ({ ...prev, [impId]: Array.isArray(events) ? events : [] }))
+        })
+        .catch(() => {
+          setTonerEventsByImp((prev) => ({ ...prev, [impId]: [] }))
+        })
+    }
+
     fetchAlertes({
       numeroSerie,
       includeInactive,
@@ -310,7 +622,7 @@ export default function SiteDetailPage() {
       .catch(() => {
         setAlertesByImp((prev) => ({ ...prev, [impId]: [] }))
       })
-  }, [rapportsByImp])
+  }, [rapportsByImp, tonerEventsByImp])
 
   const handleToggleShowInactiveAlerts = useCallback((impId: number, numeroSerie: string, showInactive: boolean) => {
     setShowInactiveAlertsByImp((prev) => ({ ...prev, [impId]: showInactive }))
@@ -336,14 +648,17 @@ export default function SiteDetailPage() {
       return
     }
 
-    const firstPrinter = printers[0]
+    const requestedPrinter = requestedImprimanteId != null && Number.isFinite(requestedImprimanteId)
+      ? printers.find((printer) => printer.id === requestedImprimanteId)
+      : null
+    const firstPrinter = requestedPrinter ?? printers[0]
     setActiveTab(firstPrinter.id)
     loadImprimanteData(
       firstPrinter.id,
       firstPrinter.numeroSerie,
       showInactiveAlertsByImp[firstPrinter.id] ?? false
     )
-  }, [site, activeTab, loadImprimanteData, showInactiveAlertsByImp])
+  }, [site, activeTab, requestedImprimanteId, loadImprimanteData, showInactiveAlertsByImp])
 
   const handleToggleAlerteInactive = useCallback(async (
     impId: number,
@@ -627,7 +942,7 @@ export default function SiteDetailPage() {
         {error && error.includes('connecter') ? (
           <Link to="/login" className="site-detail-back">Se connecter →</Link>
         ) : (
-          <Link to="/" className="site-detail-back">← Retour aux sites</Link>
+          <Link to="/sites" className="site-detail-back">← Retour aux sites</Link>
         )}
       </div>
     )
@@ -635,9 +950,6 @@ export default function SiteDetailPage() {
 
   const imprimantes = site.imprimantes
   const piecesAvecStocks = site.piecesAvecStocks ?? []
-  const totalVisibleStock = piecesAvecStocks.reduce((sum, piece) => sum + (stockQuantites[piece.pieceId] ?? piece.quantiteStockSite ?? 0), 0)
-  const totalAdminStock = piecesAvecStocks.reduce((sum, piece) => sum + (adminStockQuantites[piece.pieceId] ?? piece.quantiteStockSiteAdminOnly ?? 0), 0)
-
   const handleQuickStockSave = async (pieceId: number) => {
     if (!Number.isFinite(siteId)) return
     setQuickSavingPieceId(pieceId)
@@ -658,7 +970,7 @@ export default function SiteDetailPage() {
   return (
     <div className="site-detail-page">
       <nav className="site-detail-nav">
-        <Link to="/" className="site-detail-back">← Retour aux sites</Link>
+        <Link to="/sites" className="site-detail-back">← Retour aux sites</Link>
       </nav>
       <header className="site-detail-header">
         <div className="site-detail-header__top">
@@ -670,27 +982,75 @@ export default function SiteDetailPage() {
             Créer une intervention
           </Link>
         </div>
-        <div className="site-detail-summary">
-          <article className="site-detail-summary__card">
-            <span className="site-detail-summary__label">Imprimantes</span>
-            <strong className="site-detail-summary__value">{imprimantes.length}</strong>
-          </article>
-          <article className="site-detail-summary__card">
-            <span className="site-detail-summary__label">Pièces suivies</span>
-            <strong className="site-detail-summary__value">{piecesAvecStocks.length}</strong>
-          </article>
-          <article className="site-detail-summary__card">
-            <span className="site-detail-summary__label">Stock visible site</span>
-            <strong className="site-detail-summary__value">{totalVisibleStock}</strong>
-          </article>
-          {isAdmin && (
-            <article className="site-detail-summary__card site-detail-summary__card--admin">
-              <span className="site-detail-summary__label">Réserve admin</span>
-              <strong className="site-detail-summary__value">{totalAdminStock}</strong>
-            </article>
-          )}
-        </div>
       </header>
+
+      <section className="site-detail-printers" aria-label="Imprimantes du site">
+        <div className="site-detail-printers__header">
+          <h2>Imprimantes du site</h2>
+          <span>{imprimantes.length} imprimante{imprimantes.length > 1 ? 's' : ''}</span>
+        </div>
+        {imprimantes.length === 0 ? (
+          <p className="site-detail-empty">Aucune imprimante sur ce site.</p>
+        ) : (
+          <div className="site-detail-printers__grid">
+            {imprimantes.map((imp) => {
+              const hasActiveMailAlert = (alertesByImp[imp.id] ?? []).some(isAlerteActive)
+              const hasScanAlert = isLastScanOld(imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null)
+              const lastScan = imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
+              const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
+
+              return (
+                <button
+                  key={imp.id}
+                  type="button"
+                  className={
+                    'site-printer-card'
+                    + (activeTab === imp.id ? ' site-printer-card--active' : '')
+                    + (hasPrinterAlert ? ' site-printer-card--alert' : '')
+                  }
+                  onClick={() => {
+                    setActiveTab(imp.id)
+                    loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+                  }}
+                >
+                  <span className="site-printer-card__top">
+                    <span className="site-printer-card__serial">{imp.numeroSerie}</span>
+                    <span className="site-printer-card__badges">
+                      {hasScanAlert && <span className="site-printer-card__alert-badge">S</span>}
+                      {hasActiveMailAlert && <span className="site-printer-card__alert-badge site-printer-card__alert-badge--toner">T</span>}
+                      <span className={imp.color ? 'site-printer-card__type site-printer-card__type--color' : 'site-printer-card__type'}>
+                        {imp.color ? 'Couleur' : 'Mono'}
+                      </span>
+                    </span>
+                  </span>
+                  <span className="site-printer-card__meta">
+                    {imp.ipAddress && <span className="site-printer-card__ip">{imp.ipAddress}</span>}
+                    <span className="site-printer-card__model">
+                      {imp.modele || '-'}
+                      {imp.emplacement ? ' - ' + imp.emplacement : ''}
+                    </span>
+                  </span>
+                  <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
+
+                  {imp.lastReport && (
+                    <div className="site-printer-card__levels">
+                      <SitePrinterLevelBar label="Noir" raw={imp.lastReport.blackLevel} fillClass="site-printer-level__fill--black" />
+                      {imp.color && (
+                        <>
+                          <SitePrinterLevelBar label="Cyan" raw={imp.lastReport.cyanLevel} fillClass="site-printer-level__fill--cyan" />
+                          <SitePrinterLevelBar label="Magenta" raw={imp.lastReport.magentaLevel} fillClass="site-printer-level__fill--magenta" />
+                          <SitePrinterLevelBar label="Jaune" raw={imp.lastReport.yellowLevel} fillClass="site-printer-level__fill--yellow" />
+                        </>
+                      )}
+                      <SitePrinterLevelBar label="Bac" raw={imp.lastReport.wasteLevel} fillClass="site-printer-level__fill--waste" />
+                    </div>
+                  )}
+                </button>
+              )
+            })}
+          </div>
+        )}
+      </section>
 
       {/* Onglets : Imprimantes en priorite, puis Stocks et Acces */}
       <div className="site-detail-tabs">
@@ -1368,7 +1728,11 @@ export default function SiteDetailPage() {
           imprimante={imprimantes.find((i) => i.id === activeTab)!}
           rapports={rapportsByImp[activeTab] ?? []}
           alertes={alertesByImp[activeTab] ?? []}
-          loading={!rapportsByImp[activeTab] || !alertesByImp[activeTab]}
+          tonerEvents={tonerEventsByImp[activeTab] ?? []}
+          piecesAvecStocks={piecesAvecStocks}
+          stockMovementHistory={stockMovementHistory}
+          isAdmin={isAdmin}
+          loading={!rapportsByImp[activeTab] || !alertesByImp[activeTab] || !tonerEventsByImp[activeTab]}
           showInactiveAlerts={showInactiveAlertsByImp[activeTab] ?? false}
           updatingAlerteId={updatingAlerteIdByImp[activeTab] ?? null}
           onToggleShowInactive={(checked) => {
@@ -1381,12 +1745,120 @@ export default function SiteDetailPage() {
             if (!imp) return
             void handleToggleAlerteInactive(activeTab, imp.numeroSerie, alerteId, inactiveChecked)
           }}
-          showGraph={showGraph && graphImprimanteId === activeTab}
-          onToggleGraph={() => {
-            setShowGraph((v) => !v)
-            setGraphImprimanteId((prev) => (prev === activeTab ? null : activeTab))
-          }}
         />
+      )}
+    </div>
+  )
+}
+
+function renderTonerDot(colorKey: TonerColorKey) {
+  return function TonerDot({
+    cx,
+    cy,
+    payload,
+  }: {
+    cx?: number
+    cy?: number
+    payload?: ChartPoint
+  }) {
+    if (cx == null || cy == null || !payload?.changes[colorKey]) {
+      if (cx == null || cy == null) return null
+      return (
+        <circle
+          cx={cx}
+          cy={cy}
+          r={3}
+          fill={TONER_COLOR_STROKES[colorKey]}
+          stroke="#202225"
+          strokeWidth={1}
+        />
+      )
+    }
+
+    return (
+      <g>
+        <circle
+          cx={cx}
+          cy={cy}
+          r={6}
+          fill="#ffffff"
+          stroke={TONER_COLOR_STROKES[colorKey]}
+          strokeWidth={3}
+        />
+        <circle cx={cx} cy={cy} r={2.5} fill={TONER_COLOR_STROKES[colorKey]} />
+      </g>
+    )
+  }
+}
+
+function ConsumptionTooltip({
+  active,
+  label,
+  payload,
+  tonerStocksByDate,
+  isAdmin,
+  isColor,
+}: {
+  active?: boolean
+  label?: string
+  payload?: Array<{
+    name?: string
+    value?: number | null
+    color?: string
+    payload?: ChartPoint
+  }>
+  tonerStocksByDate: Record<string, Partial<Record<TonerColorKey, TonerStockByColor>>>
+  isAdmin: boolean
+  isColor: boolean
+}) {
+  if (!active || !payload || payload.length === 0) return null
+
+  const point = payload[0]?.payload
+  const changes = point ? Object.values(point.changes) : []
+  const tonerStocks = point ? (tonerStocksByDate[point.date] ?? {}) : {}
+  const stockColors: TonerColorKey[] = isColor ? ['black', 'cyan', 'magenta', 'yellow'] : ['black']
+
+  return (
+    <div className="site-detail-chart-tooltip">
+      <strong>{label}</strong>
+      <div className="site-detail-chart-tooltip__levels">
+        {payload
+          .filter((item) => item.value != null)
+          .map((item) => (
+            <span key={item.name} style={{ color: item.color }}>
+              {item.name}: {item.value} %
+            </span>
+          ))}
+      </div>
+      {point && (
+        <div className="site-detail-chart-tooltip__counters">
+          <span>Mono: {point.compteurMono ?? '-'}</span>
+          <span>Couleur: {point.compteurColor ?? '-'}</span>
+        </div>
+      )}
+      <div className="site-detail-chart-tooltip__stock">
+        <strong>Stock cartouches a cette date</strong>
+        {stockColors.map((colorKey) => {
+          const stock = tonerStocks[colorKey]
+          return (
+            <span key={colorKey}>
+              {TONER_COLOR_LABELS[colorKey]}: {stock?.visible ?? 0}
+              {isAdmin && stock?.adminOnly ? ` (+${stock.adminOnly} reserve)` : ''}
+            </span>
+          )
+        })}
+      </div>
+      {changes.length > 0 && (
+        <div className="site-detail-chart-tooltip__changes">
+          {changes.map((change) => (
+            <span key={`${change.color}-${change.source}`}>
+              Changement {TONER_COLOR_LABELS[change.color]} - {change.source}
+              {change.before != null || change.after != null
+                ? ` (${change.before ?? '?'} -> ${change.after ?? '?'} %) `
+                : ''}
+            </span>
+          ))}
+        </div>
       )}
     </div>
   )
@@ -1396,26 +1868,44 @@ function ImprimanteTab({
   imprimante,
   rapports,
   alertes,
+  tonerEvents,
+  piecesAvecStocks,
+  stockMovementHistory,
+  isAdmin,
   loading,
   showInactiveAlerts,
   updatingAlerteId,
   onToggleShowInactive,
   onToggleAlerteInactive,
-  showGraph,
-  onToggleGraph,
 }: {
   imprimante: Imprimante
   rapports: RapportImprimante[]
   alertes: Alerte[]
+  tonerEvents: TonerReplacementEvent[]
+  piecesAvecStocks: PieceAvecStocks[]
+  stockMovementHistory: StockMovementItem[]
+  isAdmin: boolean
   loading: boolean
   showInactiveAlerts: boolean
   updatingAlerteId: number | null
   onToggleShowInactive: (checked: boolean) => void
   onToggleAlerteInactive: (alerteId: number, inactiveChecked: boolean) => void
-  showGraph: boolean
-  onToggleGraph: () => void
 }) {
-  const chartData = buildChartData(rapports, alertes, imprimante.color)
+  const chartData = buildChartData(rapports, alertes, tonerEvents, imprimante.color)
+  const tonerStocksByDate = Object.fromEntries(
+    chartData.map((point) => [
+      point.date,
+      buildTonerStocksByColor(imprimante, piecesAvecStocks, stockMovementHistory, point.date),
+    ])
+  )
+  const tonerChangeCount = chartData.reduce((count, point) => count + Object.keys(point.changes).length, 0)
+  const chartUsefulPointCount = chartData.filter((point) => (
+    point.black != null
+    || point.cyan != null
+    || point.magenta != null
+    || point.yellow != null
+  )).length
+  const tableRapports = rapports.slice(0, 10)
 
   return (
     <section className="site-detail-section imprimante-tab">
@@ -1430,44 +1920,43 @@ function ImprimanteTab({
         {imprimante.emplacement ? ' · ' + imprimante.emplacement : ''}
       </p>
 
-      <button
-        type="button"
-        className="site-detail-graph-toggle"
-        onClick={onToggleGraph}
-      >
-        {showGraph ? '▼ Masquer le graphique' : '▶ Voir le graphique consommation (encre vs compteur)'}
-      </button>
-
-      {showGraph && (
-        <div className="site-detail-chart-wrap">
-          {chartData.length === 0 ? (
+      <div className="site-detail-chart-wrap">
+          <div className="site-detail-chart-head">
+            <div>
+              <h3>Consommation toner</h3>
+              <p>Vue sur les 12 derniers mois, avec marqueur sur les changements de cartouche.</p>
+            </div>
+            <span>{tonerChangeCount} changement{tonerChangeCount > 1 ? 's' : ''}</span>
+          </div>
+          {chartUsefulPointCount < 2 ? (
             <p className="site-detail-empty">Pas assez de rapports pour afficher le graphique.</p>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
               <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#3f4147" />
-                <XAxis dataKey="dateLabel" stroke="#b5bac1" fontSize={12} />
-                <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} />
-                <Tooltip
-                  contentStyle={{ background: '#2b2d31', border: '1px solid #3f4147' }}
-                  labelStyle={{ color: '#f2f3f5' }}
-                  formatter={(value) => (value != null ? String(value) + ' %' : '—')}
+                <CartesianGrid strokeDasharray="3 3" stroke="#c4c8cf" />
+                <XAxis
+                  dataKey="dateLabel"
+                  stroke="#4b5563"
+                  fontSize={12}
+                  minTickGap={18}
+                  tickFormatter={(value, index) => chartTickFormatter(String(value), index, chartData)}
                 />
+                <YAxis stroke="#4b5563" fontSize={12} domain={[0, 100]} />
+                <Tooltip content={<ConsumptionTooltip tonerStocksByDate={tonerStocksByDate} isAdmin={isAdmin} isColor={imprimante.color} />} />
                 <Legend />
-                <Line type="monotone" dataKey="noir" name="Noir" stroke="#5a5a5a" strokeWidth={2} dot={{ r: 3 }} />
+                <Line type="monotone" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2} dot={renderTonerDot('black')} activeDot={{ r: 6 }} connectNulls />
                 {imprimante.color && (
                   <>
-                    <Line type="monotone" dataKey="cyan" name="Cyan" stroke="#00bcd4" strokeWidth={2} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="magenta" name="Magenta" stroke="#e91e63" strokeWidth={2} dot={{ r: 3 }} />
-                    <Line type="monotone" dataKey="jaune" name="Jaune" stroke="#ffeb3b" strokeWidth={2} dot={{ r: 3 }} />
+                    <Line type="monotone" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={renderTonerDot('cyan')} activeDot={{ r: 6 }} connectNulls />
+                    <Line type="monotone" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={renderTonerDot('magenta')} activeDot={{ r: 6 }} connectNulls />
+                    <Line type="monotone" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={renderTonerDot('yellow')} activeDot={{ r: 6 }} connectNulls />
                   </>
                 )}
-                <Line type="monotone" dataKey="bacRecup" name="Bac récup" stroke="#9e9e9e" strokeWidth={2} dot={{ r: 3 }} strokeDasharray="4 4" />
+                <Line type="monotone" dataKey="bacRecup" name="Bac recup" stroke="#5b6472" strokeWidth={2} dot={{ r: 2 }} strokeDasharray="4 4" connectNulls />
               </LineChart>
             </ResponsiveContainer>
           )}
-        </div>
-      )}
+      </div>
 
       <h3>Rapports</h3>
       {loading ? (
@@ -1490,7 +1979,7 @@ function ImprimanteTab({
               </tr>
             </thead>
             <tbody>
-              {rapports.map((r) => (
+              {tableRapports.map((r) => (
                 <tr key={r.id}>
                   <td className="rapports-table__td--black">{r.blackLevel ?? '—'}</td>
                   <td className="rapports-table__td--cyan">{r.cyanLevel ?? '—'}</td>

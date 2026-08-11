@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   fetchSites,
@@ -13,6 +13,27 @@ import { isAdmin } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import { useAuth } from '../context/AuthContext'
 import './SitesPage.css'
+
+const SITES_PAGE_STATE_STORAGE_KEY = 'omtek:sites-page-state'
+
+interface SitesPageSavedState {
+  searchQuery?: string
+  filterScanAlert?: boolean
+  filterTonerAlert?: boolean
+  expandedSiteIds?: number[]
+  scrollY?: number
+}
+
+function readSitesPageSavedState(): SitesPageSavedState {
+  try {
+    const raw = sessionStorage.getItem(SITES_PAGE_STATE_STORAGE_KEY)
+    if (!raw) return {}
+    const parsed = JSON.parse(raw) as SitesPageSavedState
+    return parsed && typeof parsed === 'object' ? parsed : {}
+  } catch {
+    return {}
+  }
+}
 
 function formatDate(iso: string | null): string {
   return formatDateTime(iso)
@@ -87,16 +108,34 @@ function buildImprimantesBySite(imprimantes: Imprimante[]): Record<number, Impri
 export default function SitesPage() {
   const { user } = useAuth()
   const navigate = useNavigate()
+  const restoredStateRef = useRef<SitesPageSavedState>(readSitesPageSavedState())
+  const scrollRestoredRef = useRef(false)
   const userIsAdmin = isAdmin(user)
   const [sites, setSites] = useState<SiteType[]>([])
   const [imprimantesBySite, setImprimantesBySite] = useState<Record<number, Imprimante[]>>({})
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [searchQuery, setSearchQuery] = useState('')
-  const [filterScanAlert, setFilterScanAlert] = useState(false)
-  const [filterTonerAlert, setFilterTonerAlert] = useState(false)
-  const [expandedSiteIds, setExpandedSiteIds] = useState<Set<number>>(new Set())
+  const [searchQuery, setSearchQuery] = useState(restoredStateRef.current.searchQuery ?? '')
+  const [filterScanAlert, setFilterScanAlert] = useState(restoredStateRef.current.filterScanAlert ?? false)
+  const [filterTonerAlert, setFilterTonerAlert] = useState(restoredStateRef.current.filterTonerAlert ?? false)
+  const [expandedSiteIds, setExpandedSiteIds] = useState<Set<number>>(
+    () => new Set(restoredStateRef.current.expandedSiteIds ?? [])
+  )
   const [visibilityUpdatingSiteId, setVisibilityUpdatingSiteId] = useState<number | null>(null)
+
+  const saveSitesPageState = (scrollY = window.scrollY || document.documentElement.scrollTop) => {
+    try {
+      sessionStorage.setItem(SITES_PAGE_STATE_STORAGE_KEY, JSON.stringify({
+        searchQuery,
+        filterScanAlert,
+        filterTonerAlert,
+        expandedSiteIds: Array.from(expandedSiteIds),
+        scrollY,
+      }))
+    } catch {
+      // Ignore storage failures: navigation still works.
+    }
+  }
 
   useEffect(() => {
     let cancelled = false
@@ -127,6 +166,20 @@ export default function SitesPage() {
       cancelled = true
     }
   }, [])
+
+  useEffect(() => {
+    saveSitesPageState()
+  }, [searchQuery, filterScanAlert, filterTonerAlert, expandedSiteIds])
+
+  useEffect(() => {
+    if (loading || scrollRestoredRef.current) return
+    scrollRestoredRef.current = true
+    const savedScrollY = restoredStateRef.current.scrollY
+    if (typeof savedScrollY !== 'number' || !Number.isFinite(savedScrollY)) return
+    window.setTimeout(() => {
+      window.scrollTo(0, savedScrollY)
+    }, 0)
+  }, [loading])
 
   const q = searchQuery.trim().toLowerCase()
 
@@ -218,8 +271,9 @@ export default function SitesPage() {
     return list.filter((imp) => imp.numeroSerie.toLowerCase().includes(q))
   }
 
-  const handleImprimanteClick = (imprimanteId: number) => {
-    navigate('/imprimantes/' + imprimanteId)
+  const handleImprimanteClick = (siteId: number, imprimanteId: number) => {
+    saveSitesPageState()
+    navigate(`/sites/${siteId}?imprimanteId=${imprimanteId}`)
   }
 
   const handleToggleSiteVisibility = async (site: SiteType) => {
@@ -367,12 +421,9 @@ export default function SitesPage() {
 
                 {isExpanded && (
                   <div className="site-card__body">
-                    <div className="site-card__body-header">
-                      <div className="site-card__body-actions">
-                        <Link to={'/sites/' + site.id} className="site-card__detail-link">
-                          Voir details (stocks, graphiques) -&gt;
-                        </Link>
-                        {userIsAdmin && (
+                    {userIsAdmin && (
+                      <div className="site-card__body-header">
+                        <div className="site-card__body-actions">
                           <button
                             type="button"
                             className="site-card__visibility-btn"
@@ -385,9 +436,9 @@ export default function SitesPage() {
                                 ? 'Demasquer'
                                 : 'Masquer'}
                           </button>
-                        )}
+                        </div>
                       </div>
-                    </div>
+                    )}
 
                     {!getImprimantesForSite(site.id).length ? (
                       <p className="site-card__empty">
@@ -411,7 +462,7 @@ export default function SitesPage() {
                                   'imprimante-item__btn' +
                                   (hasAlert ? ' imprimante-item__btn--alert' : '')
                                 }
-                                onClick={() => handleImprimanteClick(imp.id)}
+                                onClick={() => handleImprimanteClick(site.id, imp.id)}
                               >
                                 <div className="imprimante-item__top">
                                   <span className="imprimante-item__serie">{imp.numeroSerie}</span>

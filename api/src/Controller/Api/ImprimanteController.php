@@ -77,7 +77,7 @@ class ImprimanteController extends AbstractController
         }
 
         $page = max(1, (int) $request->query->get('page', 1));
-        $limit = max(1, min(50, (int) $request->query->get('limit', 10)));
+        $limit = max(1, min(400, (int) $request->query->get('limit', 10)));
         $offset = ($page - 1) * $limit;
 
         $countQb = $this->em->getRepository(RapportImprimante::class)->createQueryBuilder('r')
@@ -393,6 +393,5 @@ class ImprimanteController extends AbstractController
         return true;
     }
 }
-
 
 

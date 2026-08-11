@@ -206,7 +206,7 @@ class StockController extends AbstractController
                 ->setParameter('movementType', $movementType);
         }
 
-        $limit = max(1, min(100, (int) $request->query->get('limit', 20)));
+        $limit = max(1, min(5000, (int) $request->query->get('limit', 20)));
         $qb->setMaxResults($limit);
 
         return new JsonResponse(array_map(

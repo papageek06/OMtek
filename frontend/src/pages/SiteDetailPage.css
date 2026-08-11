@@ -68,40 +68,6 @@
   box-shadow: 0 10px 24px rgba(0, 168, 252, 0.2);
 }
 
-.site-detail-summary {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: 0.85rem;
-  margin-top: 1rem;
-}
-
-.site-detail-summary__card {
-  padding: 0.95rem 1rem;
-  border-radius: 14px;
-  border: 1px solid #1e1f22;
-  background: linear-gradient(180deg, rgba(43, 45, 49, 0.98), rgba(30, 31, 34, 0.98));
-  box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
-}
-
-.site-detail-summary__card--admin {
-  border-color: rgba(0, 168, 252, 0.2);
-}
-
-.site-detail-summary__label {
-  display: block;
-  font-size: 0.8rem;
-  color: #8e9297;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.site-detail-summary__value {
-  display: block;
-  margin-top: 0.35rem;
-  font-size: 1.7rem;
-  color: #f2f3f5;
-}
-
 /* Onglets */
 .site-detail-tabs {
   display: flex;
@@ -127,6 +93,7 @@
 }
 
 .site-detail-tab--machine {
+  display: none;
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;
@@ -186,6 +153,243 @@
 
 .site-detail-tab--active.site-detail-tab--alert .site-detail-tab__model {
   color: #ffd2d3;
+}
+
+.site-detail-printers {
+  margin-bottom: 1rem;
+  padding: 1rem;
+  border: 1px solid #1e1f22;
+  border-radius: 12px;
+  background: #25272c;
+}
+
+.site-detail-printers__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+}
+
+.site-detail-printers__header h2 {
+  margin: 0;
+  color: #f2f3f5;
+  font-size: 1.05rem;
+}
+
+.site-detail-printers__header span {
+  color: #8e9297;
+  font-size: 0.85rem;
+}
+
+.site-detail-printers__grid {
+  display: grid;
+  gap: 0.6rem;
+}
+
+.site-printer-card {
+  width: 100%;
+  display: grid;
+  grid-template-columns: minmax(160px, 220px) minmax(240px, 1fr) minmax(180px, auto) minmax(360px, 1.2fr);
+  gap: 0.7rem 1rem;
+  align-items: center;
+  padding: 0.85rem 1rem;
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  background: #313338;
+  color: #dcddde;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, box-shadow 0.15s;
+}
+
+.site-printer-card:hover {
+  background: #383a40;
+  border-color: #4e5058;
+}
+
+.site-printer-card--active {
+  border-color: #00a8fc;
+  box-shadow: 0 0 0 1px rgba(0, 168, 252, 0.28);
+}
+
+.site-printer-card--alert {
+  border-color: #c77700;
+  background: rgba(199, 119, 0, 0.12);
+}
+
+.site-printer-card--alert:hover,
+.site-printer-card--active.site-printer-card--alert {
+  border-color: #e08900;
+  background: rgba(199, 119, 0, 0.18);
+}
+
+.site-printer-card__top,
+.site-printer-card__meta,
+.site-printer-card__badges,
+.site-printer-card__levels {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.site-printer-card__top {
+  gap: 0.55rem;
+}
+
+.site-printer-card__serial {
+  color: #f2f3f5;
+  font-weight: 700;
+}
+
+.site-printer-card__badges {
+  gap: 0.35rem;
+  margin-left: auto;
+}
+
+.site-printer-card__alert-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.15rem;
+  height: 1.15rem;
+  border-radius: 50%;
+  background: #c77700;
+  border: 1px solid #e08900;
+  color: #fff;
+  font-size: 0.62rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.site-printer-card__alert-badge--toner {
+  background: #ed4245;
+  border-color: #f04749;
+}
+
+.site-printer-card__type {
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(185, 187, 190, 0.22);
+  color: #b9bbbe;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+
+.site-printer-card__type--color {
+  background: rgba(88, 101, 242, 0.25);
+  color: #949cf7;
+}
+
+.site-printer-card__meta {
+  gap: 0.75rem;
+}
+
+.site-printer-card__ip {
+  color: #00a8fc;
+  font-family: ui-monospace, monospace;
+  white-space: nowrap;
+}
+
+.site-printer-card__model {
+  min-width: 0;
+  overflow: hidden;
+  color: #8e9297;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.site-printer-card__last {
+  color: #8e9297;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.site-printer-card__levels {
+  gap: 0.45rem;
+}
+
+.site-printer-level {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  flex: 1 1 0;
+  min-width: 0;
+  font-size: 0.78rem;
+}
+
+.site-printer-level__label {
+  display: none;
+}
+
+.site-printer-level__track {
+  flex: 1;
+  min-width: 42px;
+  height: 8px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #1e1f22;
+}
+
+.site-printer-level__fill {
+  height: 100%;
+  border-radius: 4px;
+}
+
+.site-printer-level__fill--black {
+  background: linear-gradient(90deg, #3d3d3d, #5a5a5a);
+}
+
+.site-printer-level__fill--cyan {
+  background: linear-gradient(90deg, #0097a7, #00bcd4);
+}
+
+.site-printer-level__fill--magenta {
+  background: linear-gradient(90deg, #ad1457, #e91e63);
+}
+
+.site-printer-level__fill--yellow {
+  background: linear-gradient(90deg, #f9a825, #ffeb3b);
+}
+
+.site-printer-level__fill--waste {
+  background: linear-gradient(90deg, #7b1fa2, #ab47bc);
+}
+
+.site-printer-level__value {
+  width: 2.1rem;
+  flex: 0 0 auto;
+  color: #8e9297;
+  text-align: right;
+}
+
+@media (max-width: 1180px) {
+  .site-printer-card {
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .site-printer-card__badges {
+    margin-left: 0;
+  }
+
+  .site-printer-card__top {
+    justify-content: space-between;
+  }
+
+  .site-printer-card__meta {
+    flex-wrap: wrap;
+  }
+
+  .site-printer-card__levels {
+    flex-wrap: wrap;
+  }
+
+  .site-printer-level {
+    min-width: 120px;
+  }
 }
 
 .site-detail-section {
@@ -773,11 +977,83 @@
 }
 
 .site-detail-chart-wrap {
-  background: #2b2d31;
-  border: 1px solid #3f4147;
+  background: #d7dbe2;
+  border: 1px solid #aeb4bf;
   border-radius: 10px;
   padding: 1rem;
   margin-bottom: 1.5rem;
+}
+
+.site-detail-chart-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.8rem;
+}
+
+.site-detail-chart-head h3 {
+  margin: 0;
+  color: #1f2937;
+}
+
+.site-detail-chart-head p {
+  margin: 0.25rem 0 0;
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.site-detail-chart-head span {
+  flex: 0 0 auto;
+  padding: 0.35rem 0.55rem;
+  border: 1px solid #aeb4bf;
+  border-radius: 999px;
+  color: #1f2937;
+  background: #eef0f4;
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.site-detail-chart-tooltip {
+  display: grid;
+  gap: 0.45rem;
+  max-width: 280px;
+  padding: 0.7rem 0.8rem;
+  color: #f2f3f5;
+  background: #1e1f22;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
+}
+
+.site-detail-chart-tooltip__levels,
+.site-detail-chart-tooltip__counters,
+.site-detail-chart-tooltip__stock,
+.site-detail-chart-tooltip__changes {
+  display: grid;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.site-detail-chart-tooltip__counters {
+  color: #b5bac1;
+}
+
+.site-detail-chart-tooltip__stock {
+  padding-top: 0.35rem;
+  border-top: 1px solid #3f4147;
+  color: #d7dbe2;
+}
+
+.site-detail-chart-tooltip__stock strong {
+  color: #f2f3f5;
+  font-size: 0.82rem;
+}
+
+.site-detail-chart-tooltip__changes {
+  padding-top: 0.35rem;
+  border-top: 1px solid #3f4147;
+  color: #fff;
 }
 
 .imprimante-tab__header {
@@ -793,6 +1069,7 @@
 }
 
 .imprimante-tab__link {
+  display: none;
   font-size: 0.9rem;
   color: #00a8fc;
   text-decoration: none;
@@ -1174,6 +1451,14 @@
     white-space: nowrap;
   }
 
+  .site-detail-chart-head {
+    flex-direction: column;
+  }
+
+  .site-detail-chart-head span {
+    justify-self: start;
+  }
+
   .site-detail-stock-search {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1201,10 +1486,6 @@
 }
 
 @media (max-width: 720px) {
-  .site-detail-summary {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-
   .pieces-cards {
     display: grid;
     gap: 0.9rem;
@@ -1227,10 +1508,6 @@
 @media (max-width: 560px) {
   .site-detail-page {
     padding: 0.9rem;
-  }
-
-  .site-detail-summary {
-    grid-template-columns: 1fr;
   }
 
   .site-detail-stock-search {

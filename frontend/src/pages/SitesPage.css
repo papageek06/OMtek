@@ -1,5 +1,6 @@
 .sites-page {
-  max-width: 920px;
+  width: 100%;
+  max-width: min(1420px, calc(100vw - 96px));
   margin: 0 auto;
   padding: 1.5rem;
 }
@@ -426,17 +427,6 @@
   gap: 0.65rem;
 }
 
-.site-card__detail-link {
-  font-size: 0.9rem;
-  color: #00a8fc;
-  text-decoration: none;
-}
-
-.site-card__detail-link:hover {
-  color: #58b4f0;
-  text-decoration: underline;
-}
-
 .site-card__visibility-btn {
   min-height: 2rem;
   padding: 0.3rem 0.75rem;
@@ -675,8 +665,87 @@
   flex-shrink: 0;
 }
 
+@media (min-width: 1180px) {
+  .sites-page {
+    padding-inline: 2rem;
+  }
+
+  .site-card__header {
+    padding: 0.9rem 1.25rem;
+  }
+
+  .site-card__body {
+    padding: 0 1.1rem 1rem;
+  }
+
+  .site-card__body-header {
+    padding: 0.65rem 0 0.45rem;
+  }
+
+  .imprimantes-list {
+    padding-top: 0.45rem;
+  }
+
+  .imprimante-item {
+    margin-bottom: 0.5rem;
+  }
+
+  .imprimante-item__btn {
+    display: grid;
+    grid-template-columns: minmax(170px, 220px) minmax(260px, 1fr) minmax(180px, auto) minmax(460px, 1.25fr);
+    gap: 0.75rem 1rem;
+    align-items: center;
+    padding: 0.85rem 1rem;
+  }
+
+  .imprimante-item__top,
+  .imprimante-item__meta,
+  .imprimante-item__last,
+  .ink-levels {
+    margin: 0;
+  }
+
+  .imprimante-item__top {
+    justify-content: flex-start;
+    flex-wrap: nowrap;
+  }
+
+  .imprimante-item__meta {
+    min-width: 0;
+    gap: 0.45rem 0.75rem;
+  }
+
+  .imprimante-item__modele {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .imprimante-item__last {
+    white-space: nowrap;
+  }
+
+  .ink-levels {
+    flex-wrap: nowrap;
+    gap: 0.45rem;
+    min-width: 0;
+  }
+
+  .ink-level {
+    flex: 1 1 0;
+    min-width: 0;
+    gap: 0.35rem;
+  }
+
+  .ink-level__track {
+    min-width: 42px;
+  }
+}
+
 @media (max-width: 640px) {
   .sites-page {
+    max-width: none;
     padding: 1rem;
   }
 
