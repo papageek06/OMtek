@@ -378,6 +378,15 @@ function chartTickFormatter(value: string, index: number, points: ChartPoint[]):
   return chartMonthTick(point.date)
 }
 
+function reportLevelForColor(rapport: RapportImprimante, colorKey: TonerColorKey): number | null {
+  return parseLevelPercent(
+    colorKey === 'black' ? rapport.blackLevel
+      : colorKey === 'cyan' ? rapport.cyanLevel
+        : colorKey === 'magenta' ? rapport.magentaLevel
+          : rapport.yellowLevel
+  )
+}
+
 function buildChartData(
   rapports: RapportImprimante[],
   alertes: Alerte[],
@@ -390,24 +399,45 @@ function buildChartData(
     return new Date(da).getTime() - new Date(db).getTime()
   }).filter((rapport) => isWithinTwelveMonthWindow(rapport.lastScanDate || rapport.createdAt))
 
+  const lastKnownLevels: Pick<ChartPoint, 'black' | 'cyan' | 'magenta' | 'yellow' | 'bacRecup'> = {
+    black: null,
+    cyan: null,
+    magenta: null,
+    yellow: null,
+    bacRecup: null,
+  }
+
   const points = sortedRapports.map((rapport): ChartPoint => {
     const dateStr = (rapport.lastScanDate || rapport.createdAt)?.slice(0, 10) ?? ''
+    const black = parseLevelPercent(rapport.blackLevel)
+    const cyan = color ? parseLevelPercent(rapport.cyanLevel) : null
+    const magenta = color ? parseLevelPercent(rapport.magentaLevel) : null
+    const yellow = color ? parseLevelPercent(rapport.yellowLevel) : null
+    const bacRecup = parseLevelPercent(rapport.wasteLevel)
+
+    if (black != null) lastKnownLevels.black = black
+    if (cyan != null) lastKnownLevels.cyan = cyan
+    if (magenta != null) lastKnownLevels.magenta = magenta
+    if (yellow != null) lastKnownLevels.yellow = yellow
+    if (bacRecup != null) lastKnownLevels.bacRecup = bacRecup
+
     return {
       date: dateStr,
       dateLabel: dateStr ? chartDateLabel(dateStr) : '',
       compteurMono: parseCounter(rapport.monoLifeCount),
       compteurColor: parseCounter(rapport.colorLifeCount),
-      black: parseLevelPercent(rapport.blackLevel),
-      cyan: color ? parseLevelPercent(rapport.cyanLevel) : null,
-      magenta: color ? parseLevelPercent(rapport.magentaLevel) : null,
-      yellow: color ? parseLevelPercent(rapport.yellowLevel) : null,
-      bacRecup: parseLevelPercent(rapport.wasteLevel),
+      black: black ?? lastKnownLevels.black,
+      cyan: color ? (cyan ?? lastKnownLevels.cyan) : null,
+      magenta: color ? (magenta ?? lastKnownLevels.magenta) : null,
+      yellow: color ? (yellow ?? lastKnownLevels.yellow) : null,
+      bacRecup: bacRecup ?? lastKnownLevels.bacRecup,
       changes: {},
     }
   })
 
-  for (let index = 1; index < sortedRapports.length; index += 1) {
-    const previousReport = sortedRapports[index - 1]
+  const lastKnownReplacementLevels: Partial<Record<TonerColorKey, number>> = {}
+
+  for (let index = 0; index < sortedRapports.length; index += 1) {
     const currentReport = sortedRapports[index]
     const currentDate = currentReport.lastScanDate || currentReport.createdAt
     const pointIndex = findNearestChartPointIndex(points, currentDate)
@@ -418,18 +448,10 @@ function buildChartData(
       : ['black']
 
     colors.forEach((colorKey) => {
-      const before = parseLevelPercent(
-        colorKey === 'black' ? previousReport.blackLevel
-          : colorKey === 'cyan' ? previousReport.cyanLevel
-            : colorKey === 'magenta' ? previousReport.magentaLevel
-              : previousReport.yellowLevel
-      )
-      const after = parseLevelPercent(
-        colorKey === 'black' ? currentReport.blackLevel
-          : colorKey === 'cyan' ? currentReport.cyanLevel
-            : colorKey === 'magenta' ? currentReport.magentaLevel
-              : currentReport.yellowLevel
-      )
+      const after = reportLevelForColor(currentReport, colorKey)
+      if (after == null) return
+      const before = lastKnownReplacementLevels[colorKey] ?? null
+      lastKnownReplacementLevels[colorKey] = after
       if (!isReportReplacementJump(before, after)) return
       registerChangeMarker(points[pointIndex], colorKey, {
         color: colorKey,
