@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import {
   LineChart,
@@ -22,8 +22,6 @@ import {
   deletePiece,
   fetchPiecesByModele,
   fetchModeles,
-  addModeleToPiece,
-  removeModeleFromPiece,
   UnauthorizedError,
   type SiteDetail,
   type Imprimante,
@@ -176,6 +174,12 @@ interface TonerStockByColor {
   references: string[]
 }
 
+interface ModeleModalState {
+  pieceId: number
+  reference: string
+  selectedIds: number[]
+}
+
 const TONER_COLOR_LABELS: Record<TonerColorKey, string> = {
   black: 'Noir',
   cyan: 'Cyan',
@@ -188,6 +192,10 @@ const TONER_COLOR_STROKES: Record<TonerColorKey, string> = {
   cyan: '#00a6c8',
   magenta: '#d61f69',
   yellow: '#f0b429',
+}
+
+function modeleLabel(modele: Pick<ModeleItem, 'constructeur' | 'nom'>): string {
+  return `${modele.constructeur} ${modele.nom}`.trim()
 }
 
 function tonerSourceLabel(sourceType: string): string {
@@ -532,12 +540,23 @@ export default function SiteDetailPage() {
   const [availablePieces, setAvailablePieces] = useState<PieceItem[]>([])
   const [loadingPieces, setLoadingPieces] = useState(false)
   const [allModeles, setAllModeles] = useState<ModeleItem[]>([])
+  const [modeleModal, setModeleModal] = useState<ModeleModalState | null>(null)
   const [saving, setSaving] = useState(false)
   const [quickSavingPieceId, setQuickSavingPieceId] = useState<number | null>(null)
   const scrollPositionRef = useRef<number>(0)
   const shouldRestoreScrollRef = useRef<boolean>(false)
 
   const isAdmin = isUserAdmin(user)
+
+  const sortedAllModeles = useMemo(
+    () => [...allModeles].sort((a, b) => modeleLabel(a).localeCompare(modeleLabel(b), 'fr', { sensitivity: 'base' })),
+    [allModeles]
+  )
+
+  const allModelesById = useMemo(
+    () => new Map(allModeles.map((modele) => [modele.id, modele])),
+    [allModeles]
+  )
 
   const siteId = id ? parseInt(id, 10) : NaN
   const requestedImprimanteId = searchParams.get('imprimanteId')
@@ -894,31 +913,61 @@ export default function SiteDetailPage() {
     }
   }, [addFormData, site, siteId, loadSite])
 
-  const handleAddModele = useCallback(async (pieceId: number, modeleId: number) => {
-    try {
-      // Sauvegarder la position de scroll avant le rechargement
-      scrollPositionRef.current = window.scrollY || document.documentElement.scrollTop
-      shouldRestoreScrollRef.current = true
-      
-      await addModeleToPiece(pieceId, modeleId)
-      loadSite()
-    } catch (e) {
-      console.error('Erreur lors de l\'ajout du modèle:', e)
-    }
-  }, [loadSite])
+  const handleOpenModeleModal = useCallback((piece: PieceAvecStocks) => {
+    setModeleModal({
+      pieceId: piece.pieceId,
+      reference: piece.reference,
+      selectedIds: (piece.modeles ?? []).map((modele) => modele.id),
+    })
+  }, [])
 
-  const handleRemoveModele = useCallback(async (pieceId: number, modeleId: number) => {
+  const handleToggleModalModele = useCallback((modeleId: number, checked: boolean) => {
+    setModeleModal((prev) => {
+      if (!prev) return prev
+      return {
+        ...prev,
+        selectedIds: checked
+          ? [...prev.selectedIds, modeleId]
+          : prev.selectedIds.filter((id) => id !== modeleId),
+      }
+    })
+  }, [])
+
+  const handleSaveModeleModal = useCallback(async () => {
+    if (!modeleModal || saving) return
+
+    setSaving(true)
+    setError(null)
     try {
-      // Sauvegarder la position de scroll avant le rechargement
       scrollPositionRef.current = window.scrollY || document.documentElement.scrollTop
       shouldRestoreScrollRef.current = true
-      
-      await removeModeleFromPiece(pieceId, modeleId)
+
+      await updatePiece(modeleModal.pieceId, { modeleIds: modeleModal.selectedIds })
+      setSite((prevSite) => {
+        if (!prevSite) return prevSite
+        return {
+          ...prevSite,
+          piecesAvecStocks: (prevSite.piecesAvecStocks ?? []).map((piece) => {
+            if (piece.pieceId !== modeleModal.pieceId) return piece
+            return {
+              ...piece,
+              modeles: modeleModal.selectedIds
+                .map((id) => allModelesById.get(id))
+                .filter((modele): modele is ModeleItem => Boolean(modele)),
+            }
+          }),
+        }
+      })
+      setModeleModal(null)
       loadSite()
     } catch (e) {
-      console.error('Erreur lors de la suppression du modèle:', e)
+      const errorMessage = e instanceof Error ? e.message : 'Erreur lors de la mise a jour des modeles'
+      setError(errorMessage)
+      alert(errorMessage)
+    } finally {
+      setSaving(false)
     }
-  }, [loadSite])
+  }, [allModelesById, loadSite, modeleModal, saving])
 
   const handleDeleteStock = useCallback(async (pieceId: number) => {
     if (!site || !Number.isFinite(siteId)) return
@@ -1276,15 +1325,32 @@ export default function SiteDetailPage() {
                     <span>Ref-bis: {refBisValues[p.pieceId] ?? p.refBis ?? '—'}</span>
                     <span>Stock général: {p.quantiteStockGeneral}</span>
                   </div>
-                  {p.modeles && p.modeles.length > 0 && (
-                    <div className="piece-card__modeles">
-                      {p.modeles.map((m) => (
-                        <span key={m.id} className="piece-card__modele-chip">
-                          {m.constructeur} {m.nom}
-                        </span>
-                      ))}
-                    </div>
-                  )}
+                  <div className="piece-card__modeles piece-card__modeles--compact">
+                    <select value="" onChange={() => undefined} aria-label={`Modeles lies a ${p.reference}`}>
+                      {(p.modeles ?? []).length === 0 ? (
+                        <option value="">Aucun modele</option>
+                      ) : (
+                        <>
+                          <option value="">
+                            {p.modeles?.length} modele{(p.modeles?.length ?? 0) > 1 ? 's' : ''} lie{(p.modeles?.length ?? 0) > 1 ? 's' : ''}
+                          </option>
+                          {[...(p.modeles ?? [])]
+                            .sort((a, b) => modeleLabel(a).localeCompare(modeleLabel(b), 'fr', { sensitivity: 'base' }))
+                            .map((modele) => (
+                              <option key={modele.id} value={modele.id}>{modeleLabel(modele)}</option>
+                            ))}
+                        </>
+                      )}
+                    </select>
+                    <button
+                      type="button"
+                      className="piece-card__modele-add"
+                      onClick={() => handleOpenModeleModal(p)}
+                      aria-label={`Modifier les modeles de ${p.reference}`}
+                    >
+                      +
+                    </button>
+                  </div>
                   <div className="piece-card__stock-grid">
                     <label>
                       <span>Stock site</span>
@@ -1453,74 +1519,32 @@ export default function SiteDetailPage() {
                             </span>
                           )}
                         </td>
-                        <td style={{ maxWidth: '250px' }}>
-                          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.25rem' }}>
-                            {p.modeles && p.modeles.length > 0 ? (
-                              <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.25rem', maxHeight: '100px', overflowY: 'auto' }}>
-                                {p.modeles.map((m) => (
-                                  <span
-                                    key={m.id}
-                                    style={{
-                                      display: 'inline-flex',
-                                      alignItems: 'center',
-                                      gap: '0.25rem',
-                                      padding: '0.125rem 0.5rem',
-                                      backgroundColor: '#3f4147',
-                                      borderRadius: '4px',
-                                      fontSize: '0.75rem',
-                                      maxWidth: '100%',
-                                    }}
-                                    title={`${m.constructeur} ${m.nom}`}
-                                  >
-                                    <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                                      {m.constructeur} {m.nom}
-                                    </span>
-                                    {!isEditing && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleRemoveModele(p.pieceId, m.id)}
-                                        style={{
-                                          background: 'none',
-                                          border: 'none',
-                                          color: '#f2f3f5',
-                                          cursor: 'pointer',
-                                          padding: 0,
-                                          fontSize: '0.875rem',
-                                          flexShrink: 0,
-                                        }}
-                                        title="Retirer ce modèle"
-                                      >
-                                        ×
-                                      </button>
-                                    )}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span style={{ color: '#72767d', fontSize: '0.875rem' }}>Aucun modèle</span>
-                            )}
-                            {!isEditing && (
-                              <select
-                                value=""
-                                onChange={(e) => {
-                                  const modeleId = e.target.value ? Number(e.target.value) : null
-                                  if (modeleId) {
-                                    handleAddModele(p.pieceId, modeleId)
-                                    e.target.value = ''
-                                  }
-                                }}
-                                style={{ padding: '0.25rem', fontSize: '0.875rem', width: '100%' }}
-                              >
-                                <option value="">+ Ajouter un modèle</option>
-                                {allModeles
-                                  .filter((m) => !p.modeles?.some((pm) => pm.id === m.id))
-                                  .map((m) => (
-                                    <option key={m.id} value={m.id}>
-                                      {m.constructeur} {m.nom}
-                                    </option>
-                                  ))}
-                              </select>
-                            )}
+                        <td>
+                          <div className="pieces-table__modeles-row">
+                            <select value="" onChange={() => undefined} aria-label={`Modeles lies a ${p.reference}`}>
+                              {(p.modeles ?? []).length === 0 ? (
+                                <option value="">Aucun modele</option>
+                              ) : (
+                                <>
+                                  <option value="">
+                                    {p.modeles?.length} modele{(p.modeles?.length ?? 0) > 1 ? 's' : ''} lie{(p.modeles?.length ?? 0) > 1 ? 's' : ''}
+                                  </option>
+                                  {[...(p.modeles ?? [])]
+                                    .sort((a, b) => modeleLabel(a).localeCompare(modeleLabel(b), 'fr', { sensitivity: 'base' }))
+                                    .map((modele) => (
+                                      <option key={modele.id} value={modele.id}>{modeleLabel(modele)}</option>
+                                    ))}
+                                </>
+                              )}
+                            </select>
+                            <button
+                              type="button"
+                              className="pieces-table__modele-add"
+                              onClick={() => handleOpenModeleModal(p)}
+                              aria-label={`Modifier les modeles de ${p.reference}`}
+                            >
+                              +
+                            </button>
                           </div>
                         </td>
                         <td className="pieces-table__num">{p.quantiteStockGeneral}</td>
@@ -1743,6 +1767,71 @@ export default function SiteDetailPage() {
 
       {activeTab === 'resources' && Number.isFinite(siteId) && (
         <SiteResourcesTab siteId={siteId} />
+      )}
+
+      {modeleModal && (
+        <div
+          className="site-detail-modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !saving) setModeleModal(null)
+          }}
+        >
+          <section className="site-detail-modal" role="dialog" aria-modal="true" aria-labelledby="site-detail-modele-modal-title">
+            <header className="site-detail-modal__header">
+              <div>
+                <h2 id="site-detail-modele-modal-title">Modeles compatibles</h2>
+                <p>{modeleModal.reference}</p>
+              </div>
+              <button
+                type="button"
+                className="site-detail-modal__close"
+                onClick={() => setModeleModal(null)}
+                disabled={saving}
+                aria-label="Fermer"
+              >
+                x
+              </button>
+            </header>
+
+            <div className="site-detail-modal__modeles">
+              {sortedAllModeles.length === 0 ? (
+                <span className="site-detail-modal__muted">Aucun modele enregistre.</span>
+              ) : (
+                sortedAllModeles.map((modele) => (
+                  <label key={modele.id} className="site-detail-modal__modele-check">
+                    <input
+                      type="checkbox"
+                      checked={modeleModal.selectedIds.includes(modele.id)}
+                      onChange={(e) => handleToggleModalModele(modele.id, e.target.checked)}
+                      disabled={saving}
+                    />
+                    <span>{modeleLabel(modele)}</span>
+                  </label>
+                ))
+              )}
+            </div>
+
+            <footer className="site-detail-modal__actions">
+              <button
+                type="button"
+                className="site-detail-modal__cancel"
+                onClick={() => setModeleModal(null)}
+                disabled={saving}
+              >
+                Annuler
+              </button>
+              <button
+                type="button"
+                className="site-detail-modal__save"
+                onClick={() => void handleSaveModeleModal()}
+                disabled={saving}
+              >
+                {saving ? 'Enregistrement...' : 'Valider'}
+              </button>
+            </footer>
+          </section>
+        </div>
       )}
 
       {typeof activeTab === 'number' && (

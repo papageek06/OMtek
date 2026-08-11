@@ -266,9 +266,12 @@ export default function SitesPage() {
   }
 
   const getImprimantesForSite = (siteId: number): Imprimante[] => {
-    const list = imprimantesBySite[siteId] ?? []
-    if (!q) return list
-    return list.filter((imp) => imp.numeroSerie.toLowerCase().includes(q))
+    return imprimantesBySite[siteId] ?? []
+  }
+
+  const handleSiteDetailClick = (siteId: number) => {
+    saveSitesPageState()
+    navigate(`/sites/${siteId}`)
   }
 
   const handleImprimanteClick = (siteId: number, imprimanteId: number) => {
@@ -384,14 +387,31 @@ export default function SitesPage() {
                 key={site.id}
                 className={'site-card' + (isExpanded ? ' site-card--open' : '')}
               >
-                <button
-                  type="button"
+                <div
                   className="site-card__header"
                   onClick={() => handleSiteClick(site.id)}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      handleSiteClick(site.id)
+                    }
+                  }}
+                  role="button"
+                  tabIndex={0}
                   aria-expanded={isExpanded}
                 >
                   <span className="site-card__title-row">
-                    <span className="site-card__nom">{site.nom}</span>
+                    <button
+                      type="button"
+                      className="site-card__nom site-card__nom-link"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        handleSiteDetailClick(site.id)
+                      }}
+                    >
+                      {site.nom}
+                    </button>
                     {site.isHidden && (
                       <span className="site-card__hidden-badge">Masque</span>
                     )}
@@ -417,7 +437,7 @@ export default function SitesPage() {
                   <span className="site-card__chevron" aria-hidden>
                     {isExpanded ? '\u25BC' : '\u25B6'}
                   </span>
-                </button>
+                </div>
 
                 {isExpanded && (
                   <div className="site-card__body">
@@ -442,9 +462,7 @@ export default function SitesPage() {
 
                     {!getImprimantesForSite(site.id).length ? (
                       <p className="site-card__empty">
-                        {q
-                          ? 'Aucune imprimante ne correspond a la recherche sur ce site.'
-                          : 'Aucune imprimante sur ce site.'}
+                        Aucune imprimante sur ce site.
                       </p>
                     ) : (
                       <ul className="imprimantes-list">

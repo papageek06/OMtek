@@ -356,6 +356,29 @@
   font-weight: 600;
 }
 
+.site-card__nom-link {
+  min-width: 0;
+  padding: 0;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: inherit;
+}
+
+.site-card__nom-link:hover,
+.site-card__nom-link:focus-visible {
+  color: #00a8fc;
+  text-decoration: underline;
+}
+
+.site-card__nom-link:focus-visible {
+  outline: 2px solid rgba(0, 168, 252, 0.55);
+  outline-offset: 3px;
+  border-radius: 3px;
+}
+
 .site-card__hidden-badge {
   display: inline-flex;
   align-items: center;

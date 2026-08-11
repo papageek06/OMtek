@@ -9,6 +9,7 @@ use App\Entity\Modele;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Service\InboundTokenGuard;
+use App\Service\PrinterReplacementService;
 use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -24,6 +25,7 @@ class CsvBackupController extends AbstractController
         private readonly EntityManagerInterface $em,
         private readonly InboundTokenGuard $inboundTokenGuard,
         private readonly TonerReplacementService $tonerReplacementService,
+        private readonly PrinterReplacementService $printerReplacementService,
     ) {
     }
 
@@ -54,6 +56,11 @@ class CsvBackupController extends AbstractController
         $imprimantesUpdated = 0;
         $rapportsCreated = 0;
         $skipped = 0;
+        $printerReplacementStats = [
+            'detected' => 0,
+            'detached' => 0,
+            'contractLinesTransferred' => 0,
+        ];
 
         /** @var array<string, Site> cache des sites déjà créés ou chargés dans cette requête (évite doublon avant flush) */
         $sitesByNom = [];
@@ -175,6 +182,8 @@ class CsvBackupController extends AbstractController
         }
 
         $this->em->flush();
+        $printerReplacementStats = $this->printerReplacementService->applySameIpReplacementsFromCsvRows($rows);
+        $this->em->flush();
 
         return new JsonResponse([
             'ok' => true,
@@ -182,6 +191,9 @@ class CsvBackupController extends AbstractController
             'imprimantesCreated' => $imprimantesCreated,
             'imprimantesUpdated' => $imprimantesUpdated,
             'rapportsCreated' => $rapportsCreated,
+            'printerReplacementsDetected' => $printerReplacementStats['detected'],
+            'printerReplacementsDetached' => $printerReplacementStats['detached'],
+            'printerReplacementContractLinesTransferred' => $printerReplacementStats['contractLinesTransferred'],
             'skipped' => $skipped,
         ], Response::HTTP_CREATED);
         } catch (\Throwable $e) {
