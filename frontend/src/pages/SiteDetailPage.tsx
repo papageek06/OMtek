@@ -99,10 +99,13 @@ function SitePrinterLevelBar({
     return (
       <div className="site-printer-level site-printer-level--low" title={`${label}: niveau bas`}>
         <span className="site-printer-level__label">{label}</span>
-        <span className="site-printer-level__warning" aria-label={`${label}: niveau bas`}>
-          <span aria-hidden>!</span>
-        </span>
         <span className="site-printer-level__value">Bas</span>
+        <div className="site-printer-level__track site-printer-level__track--low">
+          <div className={`site-printer-level__fill site-printer-level__fill--low ${fillClass}`} />
+          <span className="site-printer-level__warning" aria-label={`${label}: niveau bas`}>
+            <span aria-hidden>!</span>
+          </span>
+        </div>
       </div>
     )
   }
@@ -110,6 +113,7 @@ function SitePrinterLevelBar({
   return (
     <div className="site-printer-level" title={`${label}: ${pct}%`}>
       <span className="site-printer-level__label">{label}</span>
+      <span className="site-printer-level__value">{pct}%</span>
       <div className="site-printer-level__track">
         <div
           className={`site-printer-level__fill ${fillClass}`}
@@ -121,7 +125,6 @@ function SitePrinterLevelBar({
           aria-valuemax={100}
         />
       </div>
-      <span className="site-printer-level__value">{pct}%</span>
     </div>
   )
 }

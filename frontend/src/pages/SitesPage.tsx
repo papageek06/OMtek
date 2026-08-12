@@ -77,10 +77,13 @@ function InkLevelBar({
     return (
       <div className={'ink-level ink-level--low' + (compact ? ' ink-level--compact' : '')} title={`${label}: niveau bas`}>
         {!compact && <span className="ink-level__label">{label}</span>}
-        <span className="ink-level__warning" aria-label={`${label}: niveau bas`}>
-          <span aria-hidden>!</span>
-        </span>
         <span className="ink-level__value">Bas</span>
+        <div className="ink-level__track ink-level__track--low">
+          <div className={`ink-level__fill ink-level__fill--low ${fillClass}`} />
+          <span className="ink-level__warning" aria-label={`${label}: niveau bas`}>
+            <span aria-hidden>!</span>
+          </span>
+        </div>
       </div>
     )
   }
@@ -88,6 +91,7 @@ function InkLevelBar({
   return (
     <div className={'ink-level' + (compact ? ' ink-level--compact' : '')} title={`${label}: ${pct}%`}>
       {!compact && <span className="ink-level__label">{label}</span>}
+      <span className="ink-level__value">{pct}%</span>
       <div className="ink-level__track">
         <div
           className={`ink-level__fill ${fillClass}`}
@@ -99,7 +103,6 @@ function InkLevelBar({
           aria-valuemax={100}
         />
       </div>
-      <span className="ink-level__value">{pct}%</span>
     </div>
   )
 }

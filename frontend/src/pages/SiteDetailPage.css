@@ -395,7 +395,7 @@
 .site-printer-level {
   display: flex;
   align-items: center;
-  gap: 0.35rem;
+  gap: 0.28rem;
   flex: 1 1 0;
   min-width: 0;
   font-size: 0.78rem;
@@ -440,11 +440,24 @@
 }
 
 .site-printer-level--low {
-  flex: 0 0 auto;
-  min-width: 4.6rem;
+  flex: 1 1 0;
+}
+
+.site-printer-level__track--low {
+  position: relative;
+  overflow: visible;
+}
+
+.site-printer-level__fill--low {
+  width: 100%;
+  min-width: 100%;
+  opacity: 0.5;
 }
 
 .site-printer-level__warning {
+  position: absolute;
+  right: -0.55rem;
+  top: 50%;
   width: 1.25rem;
   height: 1.1rem;
   display: inline-flex;
@@ -456,6 +469,8 @@
   font-size: 0.68rem;
   font-weight: 900;
   line-height: 1;
+  transform: translateY(-50%);
+  z-index: 1;
 }
 
 .site-printer-level__warning span {
@@ -463,7 +478,7 @@
 }
 
 .site-printer-level__value {
-  width: 2.1rem;
+  width: 2.35rem;
   flex: 0 0 auto;
   color: #8e9297;
   text-align: right;
