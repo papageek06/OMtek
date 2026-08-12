@@ -24,8 +24,9 @@ class PrinterReplacementService
      * meme site + meme IP, une nouvelle imprimante remonte dans le scan courant,
      * les anciennes avec cette IP ne remontent plus.
      *
-     * Les anciennes imprimantes sont retirees fonctionnellement du site pour
-     * conserver leur historique de rapports.
+     * Les anciennes imprimantes sont retirees fonctionnellement de la vue
+     * principale via gerer=false, tout en restant rattachees au site pour
+     * pouvoir les restaurer en cas d'erreur.
      *
      * @param array<int, mixed> $rows
      * @return array{detected:int, detached:int, contractLinesTransferred:int}
@@ -67,7 +68,6 @@ class PrinterReplacementService
                 $this->recordConfirmedCandidate($site, $previousPrinter, $candidate, $group);
 
                 $previousPrinter
-                    ->setSite(null)
                     ->setGerer(false)
                     ->setUpdatedAt(new \DateTimeImmutable());
 
@@ -181,7 +181,7 @@ class PrinterReplacementService
                 'currentScanSerials' => $group['serials'],
                 'previousSerial' => $previousPrinter->getNumeroSerie(),
                 'candidateSerial' => $candidatePrinter->getNumeroSerie(),
-                'action' => 'DETACH_PREVIOUS_PRINTER_FROM_SITE',
+                'action' => 'HIDE_PREVIOUS_PRINTER_FROM_SITE_VIEW',
             ]);
 
         $this->em->persist($candidate);

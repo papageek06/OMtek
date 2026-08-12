@@ -190,7 +190,7 @@
 .site-printer-card {
   width: 100%;
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(240px, 1fr) minmax(180px, auto) minmax(360px, 1.2fr);
+  grid-template-columns: minmax(160px, 220px) minmax(240px, 1fr) minmax(180px, auto) minmax(360px, 1.2fr) auto;
   gap: 0.7rem 1rem;
   align-items: center;
   padding: 0.85rem 1rem;
@@ -311,6 +311,87 @@
   gap: 0.45rem;
 }
 
+.site-printer-card__actions {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 0.4rem;
+}
+
+.site-printer-card__visibility {
+  min-height: 2rem;
+  padding: 0.35rem 0.65rem;
+  color: #f2f3f5;
+  background: #3f4147;
+  border: 1px solid #5b5f66;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.site-printer-card__visibility:hover:not(:disabled) {
+  background: #4e5058;
+}
+
+.site-printer-card__visibility:disabled {
+  opacity: 0.65;
+  cursor: wait;
+}
+
+.site-printer-card__visibility--restore {
+  background: rgba(35, 165, 90, 0.22);
+  border-color: rgba(87, 242, 135, 0.45);
+  color: #b8ffd0;
+}
+
+.site-detail-printers--old {
+  background: #222429;
+}
+
+.site-detail-printers--old details {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.site-detail-printers--old summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  color: #b5bac1;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.site-detail-printers--old summary strong {
+  min-width: 1.8rem;
+  min-height: 1.8rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: rgba(181, 186, 193, 0.12);
+  color: #dcddde;
+  font-size: 0.82rem;
+}
+
+.site-printer-card--old {
+  opacity: 0.86;
+  background: #2b2d31;
+  border-style: dashed;
+}
+
+.site-printer-card__old-badge {
+  padding: 0.2rem 0.5rem;
+  border-radius: 6px;
+  background: rgba(181, 186, 193, 0.16);
+  color: #b5bac1;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
 .site-printer-level {
   display: flex;
   align-items: center;
@@ -356,6 +437,29 @@
 
 .site-printer-level__fill--waste {
   background: linear-gradient(90deg, #7b1fa2, #ab47bc);
+}
+
+.site-printer-level--low {
+  flex: 0 0 auto;
+  min-width: 4.6rem;
+}
+
+.site-printer-level__warning {
+  width: 1.25rem;
+  height: 1.1rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #1e1f22;
+  background: #f0b429;
+  clip-path: polygon(50% 0, 100% 100%, 0 100%);
+  font-size: 0.68rem;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.site-printer-level__warning span {
+  transform: translateY(0.16rem);
 }
 
 .site-printer-level__value {

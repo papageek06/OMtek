@@ -1165,6 +1165,7 @@ export interface SiteDetail {
   hasTAlert?: boolean
   createdAt: string
   imprimantes: Imprimante[]
+  anciennesImprimantes?: Imprimante[]
   stocks: StockItem[]
   piecesAvecStocks: PieceAvecStocks[]
 }
@@ -1852,8 +1853,12 @@ export async function fetchPiecesByModele(modeleId: number): Promise<PieceItem[]
   return res.json()
 }
 
-export async function fetchImprimantes(siteId?: number): Promise<Imprimante[]> {
-  const url = siteId != null ? `${API_BASE}/imprimantes?siteId=${siteId}` : `${API_BASE}/imprimantes`
+export async function fetchImprimantes(siteId?: number, opts?: { includeInactive?: boolean }): Promise<Imprimante[]> {
+  const params = new URLSearchParams()
+  if (siteId != null) params.set('siteId', String(siteId))
+  if (opts?.includeInactive) params.set('includeInactive', '1')
+  const qs = params.toString()
+  const url = `${API_BASE}/imprimantes${qs ? `?${qs}` : ''}`
   const res = await apiFetch(url)
   if (!res.ok) throw new Error('Erreur chargement des imprimantes')
   return res.json()
@@ -1862,6 +1867,22 @@ export async function fetchImprimantes(siteId?: number): Promise<Imprimante[]> {
 export async function fetchImprimante(id: number): Promise<Imprimante> {
   const res = await apiFetch(`${API_BASE}/imprimantes/${id}`)
   if (!res.ok) throw new Error('Imprimante non trouvée')
+  return res.json()
+}
+
+export async function updateImprimante(
+  id: number,
+  update: { siteId?: number | null; emplacement?: string | null; gerer?: boolean; ipAddress?: string | null }
+): Promise<Imprimante> {
+  const res = await apiFetch(`${API_BASE}/imprimantes/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(update),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data?.error as string) || 'Erreur mise a jour imprimante')
+  }
   return res.json()
 }
 

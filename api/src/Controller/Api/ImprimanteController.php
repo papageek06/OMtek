@@ -33,6 +33,7 @@ class ImprimanteController extends AbstractController
     public function list(Request $request): JsonResponse
     {
         $siteId = $request->query->get('siteId');
+        $includeInactive = filter_var($request->query->get('includeInactive', false), FILTER_VALIDATE_BOOL);
         $qb = $this->em->getRepository(Imprimante::class)->createQueryBuilder('imprimante')
             ->leftJoin('imprimante.site', 'site')
             ->orderBy('imprimante.numeroSerie', 'ASC');
@@ -48,6 +49,9 @@ class ImprimanteController extends AbstractController
 
         if (!$this->isAdmin()) {
             $qb->andWhere('site.id IS NULL OR site.isHidden = false');
+        }
+        if (!$includeInactive) {
+            $qb->andWhere('imprimante.gerer = true');
         }
 
         $imprimantes = $qb->getQuery()->getResult();
@@ -393,5 +397,4 @@ class ImprimanteController extends AbstractController
         return true;
     }
 }
-
 

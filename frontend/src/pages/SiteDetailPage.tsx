@@ -16,6 +16,7 @@ import {
   fetchRapports,
   fetchAlertes,
   fetchTonerReplacements,
+  updateImprimante,
   updateAlerteActive,
   upsertStock,
   updatePiece,
@@ -56,6 +57,11 @@ function parseLevelPercent(raw: string | null | undefined): number | null {
   return m ? Math.min(100, Math.max(0, parseInt(m[1], 10))) : null
 }
 
+function isLowLevel(raw: string | null | undefined): boolean {
+  if (raw == null) return false
+  return /^(low|bas|faible)$/i.test(String(raw).trim())
+}
+
 function parseCounter(raw: string | null | undefined): number | null {
   if (raw == null || raw === '') return null
   const n = parseInt(String(raw).replace(/\s/g, ''), 10)
@@ -88,7 +94,18 @@ function SitePrinterLevelBar({
   fillClass: string
 }) {
   const pct = parseLevelPercent(raw)
-  if (pct === null) return null
+  if (pct === null) {
+    if (!isLowLevel(raw)) return null
+    return (
+      <div className="site-printer-level site-printer-level--low" title={`${label}: niveau bas`}>
+        <span className="site-printer-level__label">{label}</span>
+        <span className="site-printer-level__warning" aria-label={`${label}: niveau bas`}>
+          <span aria-hidden>!</span>
+        </span>
+        <span className="site-printer-level__value">Bas</span>
+      </div>
+    )
+  }
 
   return (
     <div className="site-printer-level" title={`${label}: ${pct}%`}>
@@ -543,6 +560,7 @@ export default function SiteDetailPage() {
   const [modeleModal, setModeleModal] = useState<ModeleModalState | null>(null)
   const [saving, setSaving] = useState(false)
   const [quickSavingPieceId, setQuickSavingPieceId] = useState<number | null>(null)
+  const [printerVisibilityUpdatingId, setPrinterVisibilityUpdatingId] = useState<number | null>(null)
   const scrollPositionRef = useRef<number>(0)
   const shouldRestoreScrollRef = useRef<boolean>(false)
 
@@ -575,6 +593,8 @@ export default function SiteDetailPage() {
       }
       return acc
     }, [])
+
+  const anciennesImprimantes = site?.anciennesImprimantes ?? []
 
   const loadSite = useCallback(() => {
     if (!Number.isFinite(siteId)) return
@@ -1020,6 +1040,10 @@ export default function SiteDetailPage() {
   }
 
   const imprimantes = site.imprimantes
+  const allSiteImprimantes = [...imprimantes, ...anciennesImprimantes]
+  const selectedImprimante = typeof activeTab === 'number'
+    ? allSiteImprimantes.find((imprimante) => imprimante.id === activeTab)
+    : null
   const piecesAvecStocks = site.piecesAvecStocks ?? []
   const handleQuickStockSave = async (pieceId: number) => {
     if (!Number.isFinite(siteId)) return
@@ -1035,6 +1059,40 @@ export default function SiteDetailPage() {
       setError(e instanceof Error ? e.message : 'Erreur mise a jour stock')
     } finally {
       setQuickSavingPieceId(null)
+    }
+  }
+
+  const handlePrinterVisibilityChange = async (imprimante: Imprimante, gerer: boolean) => {
+    const message = gerer
+      ? `Remettre ${imprimante.numeroSerie} dans la vue du site ?`
+      : `Retirer ${imprimante.numeroSerie} de la vue du site ? Elle restera accessible dans les anciennes imprimantes.`
+    if (!window.confirm(message)) return
+
+    setPrinterVisibilityUpdatingId(imprimante.id)
+    setError(null)
+    try {
+      const updated = await updateImprimante(imprimante.id, { gerer })
+      setSite((prevSite) => {
+        if (!prevSite) return prevSite
+        const visibles = (prevSite.imprimantes ?? []).filter((imp) => imp.id !== updated.id)
+        const anciennes = (prevSite.anciennesImprimantes ?? []).filter((imp) => imp.id !== updated.id)
+        return {
+          ...prevSite,
+          imprimantes: updated.gerer
+            ? [...visibles, updated].sort((a, b) => a.numeroSerie.localeCompare(b.numeroSerie))
+            : visibles,
+          anciennesImprimantes: updated.gerer
+            ? anciennes
+            : [...anciennes, updated].sort((a, b) => a.numeroSerie.localeCompare(b.numeroSerie)),
+        }
+      })
+      if (!updated.gerer && activeTab === updated.id) {
+        setActiveTab(null)
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour imprimante')
+    } finally {
+      setPrinterVisibilityUpdatingId(null)
     }
   }
 
@@ -1071,17 +1129,26 @@ export default function SiteDetailPage() {
               const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
 
               return (
-                <button
+                <article
                   key={imp.id}
-                  type="button"
                   className={
                     'site-printer-card'
                     + (activeTab === imp.id ? ' site-printer-card--active' : '')
                     + (hasPrinterAlert ? ' site-printer-card--alert' : '')
                   }
+                  role="button"
+                  tabIndex={0}
                   onClick={() => {
                     setActiveTab(imp.id)
                     loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.target !== e.currentTarget) return
+                    if (e.key === 'Enter' || e.key === ' ') {
+                      e.preventDefault()
+                      setActiveTab(imp.id)
+                      loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+                    }
                   }}
                 >
                   <span className="site-printer-card__top">
@@ -1116,12 +1183,92 @@ export default function SiteDetailPage() {
                       <SitePrinterLevelBar label="Bac" raw={imp.lastReport.wasteLevel} fillClass="site-printer-level__fill--waste" />
                     </div>
                   )}
-                </button>
+                  <span className="site-printer-card__actions">
+                    <button
+                      type="button"
+                      className="site-printer-card__visibility"
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        void handlePrinterVisibilityChange(imp, false)
+                      }}
+                      disabled={printerVisibilityUpdatingId === imp.id}
+                    >
+                      {printerVisibilityUpdatingId === imp.id ? '...' : 'Retirer'}
+                    </button>
+                  </span>
+                </article>
               )
             })}
           </div>
         )}
       </section>
+
+      {anciennesImprimantes.length > 0 && (
+        <section className="site-detail-printers site-detail-printers--old" aria-label="Anciennes imprimantes du site">
+          <details>
+            <summary>
+              <span>Anciennes imprimantes du site</span>
+              <strong>{anciennesImprimantes.length}</strong>
+            </summary>
+            <div className="site-detail-printers__grid site-detail-printers__grid--old">
+              {anciennesImprimantes.map((imp) => {
+                const lastScan = imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
+                return (
+                  <article
+                    key={imp.id}
+                    className={'site-printer-card site-printer-card--old' + (activeTab === imp.id ? ' site-printer-card--active' : '')}
+                    role="button"
+                    tabIndex={0}
+                    onClick={() => {
+                      setActiveTab(imp.id)
+                      loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.target !== e.currentTarget) return
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault()
+                        setActiveTab(imp.id)
+                        loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+                      }
+                    }}
+                  >
+                    <span className="site-printer-card__top">
+                      <span className="site-printer-card__serial">{imp.numeroSerie}</span>
+                      <span className="site-printer-card__badges">
+                        <span className="site-printer-card__old-badge">Ancienne</span>
+                        <span className={imp.color ? 'site-printer-card__type site-printer-card__type--color' : 'site-printer-card__type'}>
+                          {imp.color ? 'Couleur' : 'Mono'}
+                        </span>
+                      </span>
+                    </span>
+                    <span className="site-printer-card__meta">
+                      {imp.ipAddress && <span className="site-printer-card__ip">{imp.ipAddress}</span>}
+                      <span className="site-printer-card__model">
+                        {imp.modele || '-'}
+                        {imp.emplacement ? ' - ' + imp.emplacement : ''}
+                      </span>
+                    </span>
+                    <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
+                    <span className="site-printer-card__actions">
+                      <button
+                        type="button"
+                        className="site-printer-card__visibility site-printer-card__visibility--restore"
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          void handlePrinterVisibilityChange(imp, true)
+                        }}
+                        disabled={printerVisibilityUpdatingId === imp.id}
+                      >
+                        {printerVisibilityUpdatingId === imp.id ? '...' : 'Restaurer'}
+                      </button>
+                    </span>
+                  </article>
+                )
+              })}
+            </div>
+          </details>
+        </section>
+      )}
 
       {/* Onglets : Imprimantes en priorite, puis Stocks et Acces */}
       <div className="site-detail-tabs">
@@ -1834,27 +1981,23 @@ export default function SiteDetailPage() {
         </div>
       )}
 
-      {typeof activeTab === 'number' && (
+      {selectedImprimante && (
         <ImprimanteTab
-          imprimante={imprimantes.find((i) => i.id === activeTab)!}
-          rapports={rapportsByImp[activeTab] ?? []}
-          alertes={alertesByImp[activeTab] ?? []}
-          tonerEvents={tonerEventsByImp[activeTab] ?? []}
+          imprimante={selectedImprimante}
+          rapports={rapportsByImp[selectedImprimante.id] ?? []}
+          alertes={alertesByImp[selectedImprimante.id] ?? []}
+          tonerEvents={tonerEventsByImp[selectedImprimante.id] ?? []}
           piecesAvecStocks={piecesAvecStocks}
           stockMovementHistory={stockMovementHistory}
           isAdmin={isAdmin}
-          loading={!rapportsByImp[activeTab] || !alertesByImp[activeTab] || !tonerEventsByImp[activeTab]}
-          showInactiveAlerts={showInactiveAlertsByImp[activeTab] ?? false}
-          updatingAlerteId={updatingAlerteIdByImp[activeTab] ?? null}
+          loading={!rapportsByImp[selectedImprimante.id] || !alertesByImp[selectedImprimante.id] || !tonerEventsByImp[selectedImprimante.id]}
+          showInactiveAlerts={showInactiveAlertsByImp[selectedImprimante.id] ?? false}
+          updatingAlerteId={updatingAlerteIdByImp[selectedImprimante.id] ?? null}
           onToggleShowInactive={(checked) => {
-            const imp = imprimantes.find((i) => i.id === activeTab)
-            if (!imp) return
-            handleToggleShowInactiveAlerts(activeTab, imp.numeroSerie, checked)
+            handleToggleShowInactiveAlerts(selectedImprimante.id, selectedImprimante.numeroSerie, checked)
           }}
           onToggleAlerteInactive={(alerteId, inactiveChecked) => {
-            const imp = imprimantes.find((i) => i.id === activeTab)
-            if (!imp) return
-            void handleToggleAlerteInactive(activeTab, imp.numeroSerie, alerteId, inactiveChecked)
+            void handleToggleAlerteInactive(selectedImprimante.id, selectedImprimante.numeroSerie, alerteId, inactiveChecked)
           }}
         />
       )}
@@ -1994,7 +2137,7 @@ function ImprimanteTab({
       <div className="site-detail-chart-wrap">
           <div className="site-detail-chart-head">
             <div>
-              <h3>Consommation toner</h3>
+              <h3>Consommation toner - {imprimante.numeroSerie}</h3>
               <p>Vue sur les 12 derniers mois, avec marqueur sur les changements de cartouche.</p>
             </div>
             <span>{tonerChangeCount} changement{tonerChangeCount > 1 ? 's' : ''}</span>

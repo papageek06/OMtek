@@ -71,7 +71,19 @@ function InkLevelBar({
   compact?: boolean
 }) {
   const pct = parseLevelPercent(raw)
-  if (pct === null) return null
+  const low = /^(low|bas|faible)$/i.test(String(raw ?? '').trim())
+  if (pct === null) {
+    if (!low) return null
+    return (
+      <div className={'ink-level ink-level--low' + (compact ? ' ink-level--compact' : '')} title={`${label}: niveau bas`}>
+        {!compact && <span className="ink-level__label">{label}</span>}
+        <span className="ink-level__warning" aria-label={`${label}: niveau bas`}>
+          <span aria-hidden>!</span>
+        </span>
+        <span className="ink-level__value">Bas</span>
+      </div>
+    )
+  }
 
   return (
     <div className={'ink-level' + (compact ? ' ink-level--compact' : '')} title={`${label}: ${pct}%`}>

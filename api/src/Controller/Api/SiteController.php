@@ -84,17 +84,31 @@ class SiteController extends AbstractController
                 return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
             }
 
-            $imprimantes = $this->em->getRepository(Imprimante::class)->findBy(
+            $allImprimantes = $this->em->getRepository(Imprimante::class)->findBy(
                 ['site' => $site],
                 ['numeroSerie' => 'ASC']
             );
-            $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante($imprimantes);
+            $imprimantes = array_values(array_filter(
+                $allImprimantes,
+                static fn (Imprimante $imprimante): bool => $imprimante->isGerer()
+            ));
+            $anciennesImprimantes = array_values(array_filter(
+                $allImprimantes,
+                static fn (Imprimante $imprimante): bool => !$imprimante->isGerer()
+            ));
+            $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante($allImprimantes);
 
             $imprimantesData = [];
             foreach ($imprimantes as $imp) {
                 $imprimanteId = $imp->getId();
                 $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
                 $imprimantesData[] = $this->imprimanteToArray($imp, $lastRapport);
+            }
+            $anciennesImprimantesData = [];
+            foreach ($anciennesImprimantes as $imp) {
+                $imprimanteId = $imp->getId();
+                $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
+                $anciennesImprimantesData[] = $this->imprimanteToArray($imp, $lastRapport);
             }
 
             $stocks = $this->em->getRepository(Stock::class)->findBy(
@@ -128,7 +142,7 @@ class SiteController extends AbstractController
             $imprimanteId = is_numeric($imprimanteId) ? (int) $imprimanteId : null;
             $imprimanteFilter = null;
             if ($imprimanteId !== null) {
-                foreach ($imprimantes as $imp) {
+                foreach ($allImprimantes as $imp) {
                     if ($imp->getId() === $imprimanteId) {
                         $imprimanteFilter = $imp;
                         break;
@@ -214,6 +228,7 @@ class SiteController extends AbstractController
                 'hasTAlert' => $site->getId() !== null ? $this->hasActiveTAlertOnSite($site->getId()) : false,
                 'createdAt' => $site->getCreatedAt()->format(\DateTimeInterface::ATOM),
                 'imprimantes' => $imprimantesData,
+                'anciennesImprimantes' => $anciennesImprimantesData,
                 'stocks' => $stocksData,
                 'piecesAvecStocks' => $piecesAvecStocks,
             ], Response::HTTP_OK);
