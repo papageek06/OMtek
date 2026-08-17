@@ -320,6 +320,7 @@ const DAY_MS = 24 * 60 * 60 * 1000
 const MIN_FORECAST_SPAN_DAYS = 21
 const MAX_FORECAST_AGE_DAYS = 60
 const MIN_FORECAST_SLOPE_PER_DAY = 0.03
+const FORECAST_RESET_DELTA = 15
 const MISSING_DATA_GAP_DAYS = 45
 
 type ChartLevelKey = 'black' | 'cyan' | 'magenta' | 'yellow' | 'bacRecup'
@@ -379,6 +380,19 @@ function chartMonthTickFromTimestamp(value: number): string {
     month: 'short',
     year: '2-digit',
   })
+}
+
+function buildChartMonthTicks(window: ReturnType<typeof getCenteredChartWindow>): number[] {
+  const ticks = [window.startTs]
+  let cursor = new Date(window.start.getFullYear(), window.start.getMonth() + 1, 1)
+
+  while (cursor.getTime() < window.endTs) {
+    ticks.push(cursor.getTime())
+    cursor = addMonths(cursor, 1)
+  }
+
+  ticks.push(window.endTs)
+  return Array.from(new Set(ticks)).sort((a, b) => a - b)
 }
 
 function isWithinTwelveMonthWindow(isoDate: string | null | undefined): boolean {
@@ -474,14 +488,25 @@ function buildForecastProjector(points: ChartPoint[], levelKey: ChartLevelKey, t
 
   if (usable.length < 2) return null
 
-  const first = usable[0]
-  const last = usable[usable.length - 1]
+  const isWaste = levelKey === 'bacRecup'
+  let cycleStartIndex = 0
+  for (let index = 1; index < usable.length; index += 1) {
+    const delta = usable[index].value - usable[index - 1].value
+    if ((!isWaste && delta >= FORECAST_RESET_DELTA) || (isWaste && delta <= -FORECAST_RESET_DELTA)) {
+      cycleStartIndex = index
+    }
+  }
+
+  const cyclePoints = usable.slice(cycleStartIndex)
+  if (cyclePoints.length < 2) return null
+
+  const first = cyclePoints[0]
+  const last = cyclePoints[cyclePoints.length - 1]
   const spanDays = (last.x - first.x) / DAY_MS
   const ageDays = (todayTs - last.x) / DAY_MS
   if (spanDays < MIN_FORECAST_SPAN_DAYS || ageDays > MAX_FORECAST_AGE_DAYS) return null
 
   const slopePerDay = (last.value - first.value) / spanDays
-  const isWaste = levelKey === 'bacRecup'
   if (isWaste) {
     if (slopePerDay < MIN_FORECAST_SLOPE_PER_DAY) return null
   } else if (slopePerDay > -MIN_FORECAST_SLOPE_PER_DAY) {
@@ -2284,6 +2309,7 @@ function ImprimanteTab({
 }) {
   const chartData = buildChartData(rapports, alertes, tonerEvents, imprimante.color)
   const chartWindow = getCenteredChartWindow()
+  const chartMonthTicks = buildChartMonthTicks(chartWindow)
   const missingDataAreas = buildMissingDataAreas(chartData, chartWindow)
   const tonerStocksByDate = Object.fromEntries(
     chartData.map((point) => [
@@ -2354,6 +2380,8 @@ function ImprimanteTab({
                   fontSize={12}
                   minTickGap={18}
                   tickLine={false}
+                  ticks={chartMonthTicks}
+                  interval={0}
                   tickFormatter={(value) => chartMonthTickFromTimestamp(Number(value))}
                   allowDataOverflow
                 />
