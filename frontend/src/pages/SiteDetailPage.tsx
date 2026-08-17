@@ -8,6 +8,8 @@ import {
   CartesianGrid,
   Tooltip,
   Legend,
+  ReferenceArea,
+  ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
 import {
@@ -314,8 +316,55 @@ function isReportReplacementJump(before: number | null, after: number | null): b
   return before <= 30 && after >= 70 && after - before >= 40
 }
 
-function monthKey(date: Date): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`
+const DAY_MS = 24 * 60 * 60 * 1000
+const MIN_FORECAST_SPAN_DAYS = 21
+const MAX_FORECAST_AGE_DAYS = 60
+const MIN_FORECAST_SLOPE_PER_DAY = 0.03
+const MISSING_DATA_GAP_DAYS = 45
+
+type ChartLevelKey = 'black' | 'cyan' | 'magenta' | 'yellow' | 'bacRecup'
+type ChartForecastKey = 'blackForecast' | 'cyanForecast' | 'magentaForecast' | 'yellowForecast' | 'bacRecupForecast'
+
+const FORECAST_KEY_BY_LEVEL: Record<ChartLevelKey, ChartForecastKey> = {
+  black: 'blackForecast',
+  cyan: 'cyanForecast',
+  magenta: 'magentaForecast',
+  yellow: 'yellowForecast',
+  bacRecup: 'bacRecupForecast',
+}
+
+function startOfLocalDay(date: Date): Date {
+  return new Date(date.getFullYear(), date.getMonth(), date.getDate())
+}
+
+function addMonths(date: Date, months: number): Date {
+  return new Date(date.getFullYear(), date.getMonth() + months, date.getDate())
+}
+
+function dateKey(date: Date): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function parseChartDate(isoDate: string | null | undefined): Date | null {
+  if (!isoDate) return null
+  const parsed = new Date(isoDate)
+  if (!Number.isFinite(parsed.getTime())) return null
+  return startOfLocalDay(parsed)
+}
+
+function getCenteredChartWindow() {
+  const today = startOfLocalDay(new Date())
+  const start = addMonths(today, -6)
+  const end = addMonths(today, 6)
+
+  return {
+    start,
+    today,
+    end,
+    startTs: start.getTime(),
+    todayTs: today.getTime(),
+    endTs: end.getTime(),
+  }
 }
 
 function chartDateLabel(isoDate: string): string {
@@ -325,36 +374,31 @@ function chartDateLabel(isoDate: string): string {
   })
 }
 
-function chartMonthTick(isoDate: string): string {
-  return new Date(`${isoDate}T00:00:00`).toLocaleDateString('fr-FR', {
+function chartMonthTickFromTimestamp(value: number): string {
+  return new Date(value).toLocaleDateString('fr-FR', {
     month: 'short',
     year: '2-digit',
   })
 }
 
-function getTwelveMonthWindowStart(): Date {
-  const now = new Date()
-  return new Date(now.getFullYear(), now.getMonth() - 11, 1)
-}
-
 function isWithinTwelveMonthWindow(isoDate: string | null | undefined): boolean {
-  if (!isoDate) return false
-  const parsed = new Date(isoDate)
-  if (!Number.isFinite(parsed.getTime())) return false
-  return parsed >= getTwelveMonthWindowStart()
+  const parsed = parseChartDate(isoDate)
+  if (!parsed) return false
+  const window = getCenteredChartWindow()
+  const time = parsed.getTime()
+  return time >= window.startTs && time <= window.endTs
 }
 
 function findNearestChartPointIndex(points: ChartPoint[], isoDate: string | null | undefined): number | null {
   if (!isoDate || points.length === 0 || !isWithinTwelveMonthWindow(isoDate)) return null
-  const target = new Date(isoDate).getTime()
-  if (!Number.isFinite(target)) return null
+  const target = parseChartDate(isoDate)?.getTime()
+  if (target == null) return null
 
   let bestIndex: number | null = null
   let bestDelta = Number.POSITIVE_INFINITY
   points.forEach((point, index) => {
-    const pointTime = new Date(point.date).getTime()
-    if (!Number.isFinite(pointTime)) return
-    const delta = Math.abs(pointTime - target)
+    if (point.projected) return
+    const delta = Math.abs(point.x - target)
     if (delta < bestDelta) {
       bestIndex = index
       bestDelta = delta
@@ -386,6 +430,8 @@ function registerChangeMarker(
 interface ChartPoint {
   date: string
   dateLabel: string
+  x: number
+  projected: boolean
   compteurMono: number | null
   compteurColor: number | null
   black: number | null
@@ -393,17 +439,128 @@ interface ChartPoint {
   magenta: number | null
   yellow: number | null
   bacRecup: number | null
+  blackForecast: number | null
+  cyanForecast: number | null
+  magentaForecast: number | null
+  yellowForecast: number | null
+  bacRecupForecast: number | null
   changes: Partial<Record<TonerColorKey, ConsumptionChangeMarker>>
 }
 
-function chartTickFormatter(value: string, index: number, points: ChartPoint[]): string {
-  const point = points[index]
-  if (!point) return value
-  const previous = points[index - 1]
-  if (index !== 0 && previous && monthKey(new Date(point.date)) === monthKey(new Date(previous.date))) {
-    return ''
+interface MissingDataArea {
+  x1: number
+  x2: number
+}
+
+function emptyForecastFields(): Record<ChartForecastKey, number | null> {
+  return {
+    blackForecast: null,
+    cyanForecast: null,
+    magentaForecast: null,
+    yellowForecast: null,
+    bacRecupForecast: null,
   }
-  return chartMonthTick(point.date)
+}
+
+function clampChartLevel(value: number): number {
+  return Math.max(0, Math.min(100, Math.round(value)))
+}
+
+function buildForecastProjector(points: ChartPoint[], levelKey: ChartLevelKey, todayTs: number): ((targetTs: number) => number) | null {
+  const usable = points
+    .filter((point) => !point.projected && point[levelKey] != null)
+    .map((point) => ({ x: point.x, value: point[levelKey] as number }))
+    .sort((a, b) => a.x - b.x)
+
+  if (usable.length < 2) return null
+
+  const first = usable[0]
+  const last = usable[usable.length - 1]
+  const spanDays = (last.x - first.x) / DAY_MS
+  const ageDays = (todayTs - last.x) / DAY_MS
+  if (spanDays < MIN_FORECAST_SPAN_DAYS || ageDays > MAX_FORECAST_AGE_DAYS) return null
+
+  const slopePerDay = (last.value - first.value) / spanDays
+  const isWaste = levelKey === 'bacRecup'
+  if (isWaste) {
+    if (slopePerDay < MIN_FORECAST_SLOPE_PER_DAY) return null
+  } else if (slopePerDay > -MIN_FORECAST_SLOPE_PER_DAY) {
+    return null
+  }
+
+  return (targetTs: number) => clampChartLevel(last.value + slopePerDay * ((targetTs - last.x) / DAY_MS))
+}
+
+function buildForecastPoints(points: ChartPoint[], color: boolean, window: ReturnType<typeof getCenteredChartWindow>): ChartPoint[] {
+  const levelKeys: ChartLevelKey[] = color
+    ? ['black', 'cyan', 'magenta', 'yellow', 'bacRecup']
+    : ['black', 'bacRecup']
+  const projectors = levelKeys.reduce<Partial<Record<ChartLevelKey, (targetTs: number) => number>>>((acc, key) => {
+    const projector = buildForecastProjector(points, key, window.todayTs)
+    if (projector) acc[key] = projector
+    return acc
+  }, {})
+
+  if (Object.keys(projectors).length === 0) return points
+
+  const forecastPoints: ChartPoint[] = []
+  for (let monthOffset = 0; monthOffset <= 6; monthOffset += 1) {
+    const forecastDate = addMonths(window.today, monthOffset)
+    const forecastFields = emptyForecastFields()
+
+    levelKeys.forEach((key) => {
+      const projector = projectors[key]
+      if (!projector) return
+      forecastFields[FORECAST_KEY_BY_LEVEL[key]] = projector(forecastDate.getTime())
+    })
+
+    forecastPoints.push({
+      date: dateKey(forecastDate),
+      dateLabel: monthOffset === 0 ? "Aujourd'hui" : chartDateLabel(dateKey(forecastDate)),
+      x: forecastDate.getTime(),
+      projected: true,
+      compteurMono: null,
+      compteurColor: null,
+      black: null,
+      cyan: null,
+      magenta: null,
+      yellow: null,
+      bacRecup: null,
+      ...forecastFields,
+      changes: {},
+    })
+  }
+
+  return [...points, ...forecastPoints].sort((a, b) => a.x - b.x)
+}
+
+function buildMissingDataAreas(points: ChartPoint[], window: ReturnType<typeof getCenteredChartWindow>): MissingDataArea[] {
+  const thresholdMs = MISSING_DATA_GAP_DAYS * DAY_MS
+  const actualTimes = points
+    .filter((point) => !point.projected)
+    .map((point) => point.x)
+    .filter((value) => value >= window.startTs && value <= window.todayTs)
+    .sort((a, b) => a - b)
+
+  const areas: MissingDataArea[] = []
+  if (actualTimes.length === 0) {
+    if (window.todayTs - window.startTs > thresholdMs) {
+      areas.push({ x1: window.startTs, x2: window.todayTs })
+    }
+    return areas
+  }
+
+  const registerGap = (x1: number, x2: number) => {
+    if (x2 - x1 > thresholdMs) areas.push({ x1, x2 })
+  }
+
+  registerGap(window.startTs, actualTimes[0])
+  for (let index = 1; index < actualTimes.length; index += 1) {
+    registerGap(actualTimes[index - 1], actualTimes[index])
+  }
+  registerGap(actualTimes[actualTimes.length - 1], window.todayTs)
+
+  return areas
 }
 
 function reportLevelForColor(rapport: RapportImprimante, colorKey: TonerColorKey): number | null {
@@ -421,11 +578,17 @@ function buildChartData(
   tonerEvents: TonerReplacementEvent[],
   color: boolean
 ): ChartPoint[] {
+  const window = getCenteredChartWindow()
   const sortedRapports = [...rapports].sort((a, b) => {
     const da = a.lastScanDate || a.createdAt
     const db = b.lastScanDate || b.createdAt
     return new Date(da).getTime() - new Date(db).getTime()
-  }).filter((rapport) => isWithinTwelveMonthWindow(rapport.lastScanDate || rapport.createdAt))
+  }).filter((rapport) => {
+    const parsed = parseChartDate(rapport.lastScanDate || rapport.createdAt)
+    if (!parsed) return false
+    const time = parsed.getTime()
+    return time >= window.startTs && time <= window.todayTs
+  })
 
   const lastKnownLevels: Pick<ChartPoint, 'black' | 'cyan' | 'magenta' | 'yellow' | 'bacRecup'> = {
     black: null,
@@ -436,7 +599,8 @@ function buildChartData(
   }
 
   const points = sortedRapports.map((rapport): ChartPoint => {
-    const dateStr = (rapport.lastScanDate || rapport.createdAt)?.slice(0, 10) ?? ''
+    const parsedDate = parseChartDate(rapport.lastScanDate || rapport.createdAt) ?? window.today
+    const dateStr = dateKey(parsedDate)
     const black = parseLevelPercent(rapport.blackLevel)
     const cyan = color ? parseLevelPercent(rapport.cyanLevel) : null
     const magenta = color ? parseLevelPercent(rapport.magentaLevel) : null
@@ -451,7 +615,9 @@ function buildChartData(
 
     return {
       date: dateStr,
-      dateLabel: dateStr ? chartDateLabel(dateStr) : '',
+      dateLabel: chartDateLabel(dateStr),
+      x: parsedDate.getTime(),
+      projected: false,
       compteurMono: parseCounter(rapport.monoLifeCount),
       compteurColor: parseCounter(rapport.colorLifeCount),
       black: black ?? lastKnownLevels.black,
@@ -459,6 +625,7 @@ function buildChartData(
       magenta: color ? (magenta ?? lastKnownLevels.magenta) : null,
       yellow: color ? (yellow ?? lastKnownLevels.yellow) : null,
       bacRecup: bacRecup ?? lastKnownLevels.bacRecup,
+      ...emptyForecastFields(),
       changes: {},
     }
   })
@@ -517,7 +684,7 @@ function buildChartData(
     })
   })
 
-  return points
+  return buildForecastPoints(points, color, window)
 }
 
 export default function SiteDetailPage() {
@@ -2034,37 +2201,44 @@ function ConsumptionTooltip({
   const changes = point ? Object.values(point.changes) : []
   const tonerStocks = point ? (tonerStocksByDate[point.date] ?? {}) : {}
   const stockColors: TonerColorKey[] = isColor ? ['black', 'cyan', 'magenta', 'yellow'] : ['black']
+  const visiblePayload = payload.filter((item) => (
+    item.value != null
+    && item.name
+    && !item.name.toLowerCase().includes('halo')
+  ))
 
   return (
     <div className="site-detail-chart-tooltip">
-      <strong>{label}</strong>
+      <strong>{point?.dateLabel ?? label}</strong>
+      {point?.projected && <span className="site-detail-chart-tooltip__badge">Simulation</span>}
       <div className="site-detail-chart-tooltip__levels">
-        {payload
-          .filter((item) => item.value != null && item.name !== 'Noir halo')
+        {visiblePayload
           .map((item) => (
             <span key={item.name} style={{ color: item.color }}>
               {item.name}: {item.value} %
             </span>
           ))}
       </div>
-      {point && (
+      {point && !point.projected && (
         <div className="site-detail-chart-tooltip__counters">
           <span>Mono: {point.compteurMono ?? '-'}</span>
           <span>Couleur: {point.compteurColor ?? '-'}</span>
         </div>
       )}
-      <div className="site-detail-chart-tooltip__stock">
-        <strong>Stock cartouches a cette date</strong>
-        {stockColors.map((colorKey) => {
-          const stock = tonerStocks[colorKey]
-          return (
-            <span key={colorKey}>
-              {TONER_COLOR_LABELS[colorKey]}: {stock?.visible ?? 0}
-              {isAdmin && stock?.adminOnly ? ` (+${stock.adminOnly} reserve)` : ''}
-            </span>
-          )
-        })}
-      </div>
+      {point && !point.projected && (
+        <div className="site-detail-chart-tooltip__stock">
+          <strong>Stock cartouches a cette date</strong>
+          {stockColors.map((colorKey) => {
+            const stock = tonerStocks[colorKey]
+            return (
+              <span key={colorKey}>
+                {TONER_COLOR_LABELS[colorKey]}: {stock?.visible ?? 0}
+                {isAdmin && stock?.adminOnly ? ` (+${stock.adminOnly} reserve)` : ''}
+              </span>
+            )
+          })}
+        </div>
+      )}
       {changes.length > 0 && (
         <div className="site-detail-chart-tooltip__changes">
           {changes.map((change) => (
@@ -2109,6 +2283,8 @@ function ImprimanteTab({
   onToggleAlerteInactive: (alerteId: number, inactiveChecked: boolean) => void
 }) {
   const chartData = buildChartData(rapports, alertes, tonerEvents, imprimante.color)
+  const chartWindow = getCenteredChartWindow()
+  const missingDataAreas = buildMissingDataAreas(chartData, chartWindow)
   const tonerStocksByDate = Object.fromEntries(
     chartData.map((point) => [
       point.date,
@@ -2117,10 +2293,11 @@ function ImprimanteTab({
   )
   const tonerChangeCount = chartData.reduce((count, point) => count + Object.keys(point.changes).length, 0)
   const chartUsefulPointCount = chartData.filter((point) => (
-    point.black != null
+    !point.projected
+    && (point.black != null
     || point.cyan != null
     || point.magenta != null
-    || point.yellow != null
+    || point.yellow != null)
   )).length
   const tableRapports = rapports.slice(0, 10)
 
@@ -2141,7 +2318,7 @@ function ImprimanteTab({
           <div className="site-detail-chart-head">
             <div>
               <h3>Consommation toner - {imprimante.numeroSerie}</h3>
-              <p>Vue sur les 12 derniers mois, avec marqueur sur les changements de cartouche.</p>
+              <p>6 mois d'historique a gauche, aujourd'hui au centre, simulation prudente a droite.</p>
             </div>
             <span>{tonerChangeCount} changement{tonerChangeCount > 1 ? 's' : ''}</span>
           </div>
@@ -2149,29 +2326,60 @@ function ImprimanteTab({
             <p className="site-detail-empty">Pas assez de rapports pour afficher le graphique.</p>
           ) : (
             <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={chartData} margin={{ top: 8, right: 16, left: 8, bottom: 8 }}>
+              <LineChart data={chartData} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
                 <CartesianGrid strokeDasharray="3 3" stroke="#3f4147" />
+                {missingDataAreas.map((area) => (
+                  <ReferenceArea
+                    key={`${area.x1}-${area.x2}`}
+                    x1={area.x1}
+                    x2={area.x2}
+                    fill="#f59e0b"
+                    fillOpacity={0.16}
+                    strokeOpacity={0}
+                    ifOverflow="hidden"
+                  />
+                ))}
+                <ReferenceLine
+                  x={chartWindow.todayTs}
+                  stroke="#00a8fc"
+                  strokeWidth={2}
+                  label={{ value: "Aujourd'hui", position: 'top', fill: '#bde7ff', fontSize: 12 }}
+                />
                 <XAxis
-                  dataKey="dateLabel"
+                  dataKey="x"
+                  type="number"
+                  scale="time"
+                  domain={[chartWindow.startTs, chartWindow.endTs]}
                   stroke="#b5bac1"
                   fontSize={12}
                   minTickGap={18}
                   tickLine={false}
-                  tickFormatter={(value, index) => chartTickFormatter(String(value), index, chartData)}
+                  tickFormatter={(value) => chartMonthTickFromTimestamp(Number(value))}
+                  allowDataOverflow
                 />
                 <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} tickLine={false} />
                 <Tooltip content={<ConsumptionTooltip tonerStocksByDate={tonerStocksByDate} isAdmin={isAdmin} isColor={imprimante.color} />} />
                 <Legend />
-                <Line type="monotone" dataKey="black" name="Noir halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" connectNulls />
-                <Line type="monotone" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} connectNulls />
+                <Line type="stepAfter" dataKey="black" name="Noir halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" connectNulls />
+                <Line type="stepAfter" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} connectNulls />
                 {imprimante.color && (
                   <>
-                    <Line type="monotone" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
-                    <Line type="monotone" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
-                    <Line type="monotone" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+                    <Line type="stepAfter" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+                    <Line type="stepAfter" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+                    <Line type="stepAfter" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
                   </>
                 )}
-                <Line type="monotone" dataKey="bacRecup" name="Bac recup" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="4 4" connectNulls />
+                <Line type="stepAfter" dataKey="bacRecup" name="Bac recup" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="4 4" connectNulls />
+                <Line type="monotone" dataKey="blackForecast" name="Noir simulation halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" strokeDasharray="6 5" connectNulls />
+                <Line type="monotone" dataKey="blackForecast" name="Noir simulation" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} legendType="none" strokeDasharray="6 5" connectNulls />
+                {imprimante.color && (
+                  <>
+                    <Line type="monotone" dataKey="cyanForecast" name="Cyan simulation" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+                    <Line type="monotone" dataKey="magentaForecast" name="Magenta simulation" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+                    <Line type="monotone" dataKey="yellowForecast" name="Jaune simulation" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+                  </>
+                )}
+                <Line type="monotone" dataKey="bacRecupForecast" name="Bac recup simulation" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
               </LineChart>
             </ResponsiveContainer>
           )}

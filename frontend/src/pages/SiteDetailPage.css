@@ -1308,6 +1308,17 @@
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.28);
 }
 
+.site-detail-chart-tooltip__badge {
+  width: fit-content;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid rgba(0, 168, 252, 0.45);
+  border-radius: 999px;
+  color: #bde7ff;
+  background: rgba(0, 168, 252, 0.12);
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
 .site-detail-chart-tooltip__levels,
 .site-detail-chart-tooltip__counters,
 .site-detail-chart-tooltip__stock,
