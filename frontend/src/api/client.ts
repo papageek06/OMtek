@@ -295,12 +295,25 @@ export async function deleteUser(userId: number): Promise<void> {
 // --- Contacts ---
 
 export interface ContactSiteLink {
+  linkId?: number | null
   id: number | null
   nom: string
   role: string | null
   favorite: boolean
   notes: string | null
 }
+
+export interface ContactEmailAddress {
+  label: string | null
+  address: string
+}
+
+export interface ContactPhoneNumber {
+  type: string
+  number: string
+}
+
+export type ContactAddress = Record<string, string>
 
 export interface ContactItem {
   id: number
@@ -309,10 +322,15 @@ export interface ContactItem {
   firstName: string | null
   lastName: string | null
   email: string | null
+  emailAddresses: ContactEmailAddress[]
   mobilePhone: string | null
   businessPhone: string | null
+  phoneNumbers: ContactPhoneNumber[]
   companyName: string | null
   jobTitle: string | null
+  businessAddress: ContactAddress | null
+  homeAddress: ContactAddress | null
+  otherAddress: ContactAddress | null
   notes: string | null
   syncedAt: string | null
   sites: ContactSiteLink[]
@@ -335,6 +353,48 @@ export interface ContactsPageResponse {
     total: number
     totalPages: number
   }
+}
+
+export interface ContactSyncConfigStatus {
+  enabled: boolean
+  configured: boolean
+  missing: string[]
+  contactsUserIdConfigured: boolean
+  contactsFolderIdConfigured: boolean
+  caCertPathConfigured: boolean
+  caCertPathValid: boolean | null
+}
+
+export interface ContactSyncStatus {
+  configured: ContactSyncConfigStatus
+  contacts: {
+    total: number
+    lastSyncedAt: string | null
+  }
+}
+
+export interface ContactSyncStats {
+  fetched: number
+  created: number
+  updated: number
+  unchanged: number
+  skipped: number
+}
+
+export interface ContactSyncResponse {
+  success: boolean
+  dryRun: boolean
+  message?: string
+  error?: string
+  stats?: ContactSyncStats
+  configured: ContactSyncConfigStatus
+  syncedAt?: string
+}
+
+export interface ContactSyncRequest {
+  dryRun?: boolean
+  batchSize?: number
+  maxContacts?: number | null
 }
 
 export async function fetchContacts(params?: ContactSearchParams): Promise<ContactsPageResponse> {
@@ -364,6 +424,29 @@ export async function fetchContacts(params?: ContactSearchParams): Promise<Conta
     data: Array.isArray(body?.data) ? body.data : [],
     pagination: body?.pagination ?? { page: 1, limit: params?.limit ?? 20, total: 0, totalPages: 1 },
   }
+}
+
+export async function fetchContactSyncStatus(): Promise<ContactSyncStatus> {
+  const res = await apiFetch(`${API_BASE}/contacts/sync-status`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur statut synchronisation contacts')
+  }
+
+  return body as ContactSyncStatus
+}
+
+export async function syncContacts(data: ContactSyncRequest = {}): Promise<ContactSyncResponse> {
+  const res = await apiFetch(`${API_BASE}/contacts/sync`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur synchronisation contacts')
+  }
+
+  return body as ContactSyncResponse
 }
 
 // --- Items (legacy, pour compat) ---
@@ -721,6 +804,9 @@ export interface InterventionCreatePayload {
   notesTech?: string | null
   source?: string
   priorite?: string
+  statut?: string
+  startedAt?: string | null
+  closedAt?: string | null
   billingStatus?: string
   interventionDurationMinutes?: number | null
   interventionLaborCostHt?: string | null
@@ -737,6 +823,8 @@ export interface InterventionUpdatePayload {
   priorite?: string
   billingStatus?: string
   statut?: string
+  startedAt?: string | null
+  closedAt?: string | null
   archived?: boolean
   interventionDurationMinutes?: number | null
   interventionLaborCostHt?: string | null
@@ -1168,6 +1256,28 @@ export interface SiteDetail {
   anciennesImprimantes?: Imprimante[]
   stocks: StockItem[]
   piecesAvecStocks: PieceAvecStocks[]
+  contacts?: SiteContactLink[]
+}
+
+export interface SiteContactLink {
+  linkId: number | null
+  id: number
+  displayName: string
+  email: string | null
+  mobilePhone: string | null
+  businessPhone: string | null
+  companyName: string | null
+  jobTitle: string | null
+  role: string | null
+  favorite: boolean
+  notes: string | null
+}
+
+export interface SiteContactLinkPayload {
+  contactId?: number
+  role?: string | null
+  favorite?: boolean
+  notes?: string | null
 }
 
 export interface StockItem {
@@ -1365,6 +1475,46 @@ export async function fetchSiteDetail(id: number, params?: StockSearchParams): P
     throw new Error(msg)
   }
   return data
+}
+
+export async function addSiteContact(siteId: number, data: SiteContactLinkPayload & { contactId: number }): Promise<SiteContactLink> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/contacts`, {
+    method: 'POST',
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur liaison contact')
+  }
+
+  return body as SiteContactLink
+}
+
+export async function updateSiteContact(
+  siteId: number,
+  contactId: number,
+  data: Omit<SiteContactLinkPayload, 'contactId'>
+): Promise<SiteContactLink> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/contacts/${contactId}`, {
+    method: 'PATCH',
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur modification liaison contact')
+  }
+
+  return body as SiteContactLink
+}
+
+export async function removeSiteContact(siteId: number, contactId: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/contacts/${contactId}`, {
+    method: 'DELETE',
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur suppression liaison contact')
+  }
 }
 
 export interface SiteNotscanItem {

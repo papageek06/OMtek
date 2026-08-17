@@ -47,6 +47,15 @@ function statusClass(value: string): string {
   return value.toLowerCase().replace(/_/g, '-')
 }
 
+function extractInterventionPieces(description: string | null): string[] {
+  if (!description) return []
+  return description
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('- '))
+    .map((line) => line.slice(2).replace(/\s+\((?:stock client incremente|pose directe, stock client non incremente)\)$/i, ''))
+}
+
 export default function InterventionsPage() {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
@@ -63,6 +72,7 @@ export default function InterventionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(initialCreate)
+  const [selectedIntervention, setSelectedIntervention] = useState<InterventionItem | null>(null)
   const [form, setForm] = useState({
     siteId: initialSiteId ?? '',
     type: 'DEPANNAGE',
@@ -147,6 +157,9 @@ export default function InterventionsPage() {
     try {
       await updateIntervention(intervention.id, patch)
       await loadData()
+      setSelectedIntervention((current) => (
+        current?.id === intervention.id ? { ...current, ...patch } as InterventionItem : current
+      ))
       setMessage('Intervention mise a jour')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur mise a jour intervention')
@@ -484,47 +497,106 @@ export default function InterventionsPage() {
       ) : (
         <div className="interventions-list">
           {interventions.map((intervention) => {
-            const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
-            const billingStatus = intervention.billingStatus ?? 'NON_FACTURE'
-            const canSubmitForApproval =
-              !userIsAdmin &&
-              intervention.statut === 'TERMINEE' &&
-              (approvalStatus === 'DRAFT' || approvalStatus === 'REJECTED')
-            const canApprove = userIsAdmin && approvalStatus === 'SUBMITTED'
-            const canReject = userIsAdmin && (approvalStatus === 'SUBMITTED' || approvalStatus === 'APPROVED')
+            const pieces = extractInterventionPieces(intervention.description)
 
             return (
-              <article key={intervention.id} className="intervention-card">
-              <div className="intervention-card__top">
-                <div>
-                  <div className="intervention-card__eyebrow">
-                    <span className={`intervention-chip intervention-chip--${statusClass(intervention.statut)}`}>
-                      {STATUS_LABELS[intervention.statut] ?? intervention.statut}
+              <article
+                key={intervention.id}
+                className="intervention-card intervention-card--summary"
+                role="button"
+                tabIndex={0}
+                onClick={() => setSelectedIntervention(intervention)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    setSelectedIntervention(intervention)
+                  }
+                }}
+              >
+                <div className="intervention-card__summary-main">
+                  <div>
+                    <span className="intervention-card__summary-type">
+                      {TYPE_LABELS[intervention.type] ?? intervention.type}
                     </span>
-                    <span className={`intervention-chip intervention-chip--${statusClass(intervention.priorite)}`}>
-                      {PRIORITY_LABELS[intervention.priorite] ?? intervention.priorite}
-                    </span>
-                    {userIsAdmin && (
-                      <span className={`intervention-chip intervention-chip--${statusClass(billingStatus)}`}>
-                        {BILLING_LABELS[billingStatus] ?? billingStatus}
-                      </span>
-                    )}
-                    <span className={`intervention-chip intervention-chip--${statusClass(approvalStatus)}`}>
-                      Validation: {APPROVAL_LABELS[approvalStatus] ?? approvalStatus}
-                    </span>
-                    {intervention.archived && (
-                      <span className="intervention-chip intervention-chip--archived">Archivee</span>
-                    )}
+                    <h2>{intervention.site.nom}</h2>
                   </div>
-                  <h2>{intervention.title}</h2>
-                  <p className="intervention-card__meta">
-                    {intervention.site.nom} · {TYPE_LABELS[intervention.type] ?? intervention.type} · {SOURCE_LABELS[intervention.source] ?? intervention.source}
-                  </p>
+                  <label className="intervention-card__status-control" onClick={(e) => e.stopPropagation()}>
+                    <span>Statut</span>
+                    <select
+                      value={intervention.statut}
+                      onChange={(e) => handlePatch(intervention, { statut: e.target.value })}
+                      disabled={submitting}
+                    >
+                      {STATUS_OPTIONS.map((value) => (
+                        <option key={value} value={value}>
+                          {STATUS_LABELS[value]}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
                 </div>
-                <div className="intervention-card__dates">
-                  <span>Creee {formatDate(intervention.createdAt)}</span>
-                  <span>Maj {formatDate(intervention.updatedAt)}</span>
+
+                {pieces.length > 0 && (
+                  <div className="intervention-card__pieces" aria-label="Pieces livrees">
+                    {pieces.map((piece) => (
+                      <span key={piece} title={piece}>{piece}</span>
+                    ))}
+                  </div>
+                )}
+              </article>
+            )
+          })}
+        </div>
+      )}
+
+      {selectedIntervention && (() => {
+        const intervention = selectedIntervention
+        const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
+        const billingStatus = intervention.billingStatus ?? 'NON_FACTURE'
+        const canSubmitForApproval =
+          !userIsAdmin &&
+          intervention.statut === 'TERMINEE' &&
+          (approvalStatus === 'DRAFT' || approvalStatus === 'REJECTED')
+        const canApprove = userIsAdmin && approvalStatus === 'SUBMITTED'
+        const canReject = userIsAdmin && (approvalStatus === 'SUBMITTED' || approvalStatus === 'APPROVED')
+
+        return (
+          <div
+            className="intervention-detail-backdrop"
+            role="presentation"
+            onMouseDown={(e) => {
+              if (e.target === e.currentTarget) setSelectedIntervention(null)
+            }}
+          >
+            <section className="intervention-detail-modal" role="dialog" aria-modal="true" aria-labelledby="intervention-detail-title">
+              <header className="intervention-detail-modal__header">
+                <div>
+                  <h2 id="intervention-detail-title">{intervention.title}</h2>
+                  <p>{intervention.site.nom} - {TYPE_LABELS[intervention.type] ?? intervention.type}</p>
                 </div>
+                <button type="button" onClick={() => setSelectedIntervention(null)} aria-label="Fermer">
+                  x
+                </button>
+              </header>
+
+              <div className="intervention-card__eyebrow">
+                <span className={`intervention-chip intervention-chip--${statusClass(intervention.statut)}`}>
+                  {STATUS_LABELS[intervention.statut] ?? intervention.statut}
+                </span>
+                <span className={`intervention-chip intervention-chip--${statusClass(intervention.priorite)}`}>
+                  {PRIORITY_LABELS[intervention.priorite] ?? intervention.priorite}
+                </span>
+                {userIsAdmin && (
+                  <span className={`intervention-chip intervention-chip--${statusClass(billingStatus)}`}>
+                    {BILLING_LABELS[billingStatus] ?? billingStatus}
+                  </span>
+                )}
+                <span className={`intervention-chip intervention-chip--${statusClass(approvalStatus)}`}>
+                  Validation: {APPROVAL_LABELS[approvalStatus] ?? approvalStatus}
+                </span>
+                {intervention.archived && (
+                  <span className="intervention-chip intervention-chip--archived">Archivee</span>
+                )}
               </div>
 
               {intervention.description && (
@@ -646,11 +718,10 @@ export default function InterventionsPage() {
                   </button>
                 )}
               </div>
-              </article>
-            )
-          })}
-        </div>
-      )}
+            </section>
+          </div>
+        )
+      })()}
     </div>
   )
 }

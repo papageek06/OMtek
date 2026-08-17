@@ -5,16 +5,57 @@ declare(strict_types=1);
 namespace App\Service;
 
 use App\Entity\Contact;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Doctrine\ORM\EntityManagerInterface;
 
 final class MicrosoftGraphContactSyncService
 {
     private const GRAPH_BASE_URL = 'https://graph.microsoft.com/v1.0';
     private const TOKEN_SCOPE = 'https://graph.microsoft.com/.default';
+    private const MAX_EXCHANGE_ID_LENGTH = 512;
 
     public function __construct(
         private readonly EntityManagerInterface $em,
     ) {
+    }
+
+    /**
+     * @return array{
+     *     enabled:bool,
+     *     configured:bool,
+     *     missing:list<string>,
+     *     contactsUserIdConfigured:bool,
+     *     contactsFolderIdConfigured:bool,
+     *     caCertPathConfigured:bool,
+     *     caCertPathValid:bool|null
+     * }
+     */
+    public function configurationStatus(): array
+    {
+        $required = [
+            'MICROSOFT_GRAPH_TENANT_ID',
+            'MICROSOFT_GRAPH_CLIENT_ID',
+            'MICROSOFT_GRAPH_CLIENT_SECRET',
+            'MICROSOFT_GRAPH_CONTACTS_USER_ID',
+        ];
+        $missing = [];
+        foreach ($required as $name) {
+            if ($this->env($name) === '') {
+                $missing[] = $name;
+            }
+        }
+
+        $caCertPath = $this->env('MICROSOFT_GRAPH_CA_CERT_PATH');
+
+        return [
+            'enabled' => $this->boolEnv('MICROSOFT_GRAPH_SYNC_ENABLED'),
+            'configured' => $missing === [],
+            'missing' => $missing,
+            'contactsUserIdConfigured' => $this->env('MICROSOFT_GRAPH_CONTACTS_USER_ID') !== '',
+            'contactsFolderIdConfigured' => $this->env('MICROSOFT_GRAPH_CONTACTS_FOLDER_ID') !== '',
+            'caCertPathConfigured' => $caCertPath !== '',
+            'caCertPathValid' => $caCertPath === '' ? null : is_file($caCertPath),
+        ];
     }
 
     /**
@@ -33,6 +74,7 @@ final class MicrosoftGraphContactSyncService
             'unchanged' => 0,
             'skipped' => 0,
         ];
+        $seenExchangeIds = [];
 
         while ($url !== null) {
             $payload = $this->requestJson('GET', $url, [
@@ -56,16 +98,29 @@ final class MicrosoftGraphContactSyncService
                 }
 
                 $stats['fetched']++;
-                $status = $this->upsertContact($item, $dryRun);
+                $exchangeId = $this->graphExchangeId($item['id'] ?? null);
+                if ($exchangeId === null || isset($seenExchangeIds[$exchangeId])) {
+                    $stats['skipped']++;
+                    continue;
+                }
+
+                $seenExchangeIds[$exchangeId] = true;
+                try {
+                    $status = $this->upsertContact($item, $dryRun, $exchangeId);
+                    if (!$dryRun) {
+                        $this->em->flush();
+                    }
+                } catch (UniqueConstraintViolationException) {
+                    $stats['skipped']++;
+                    $this->em->clear();
+                    continue;
+                }
                 $stats[$status]++;
             }
 
             $nextLink = $payload['@odata.nextLink'] ?? null;
             $url = is_string($nextLink) && $nextLink !== '' ? $nextLink : null;
 
-            if (!$dryRun) {
-                $this->em->flush();
-            }
         }
 
         if (!$dryRun) {
@@ -80,20 +135,14 @@ final class MicrosoftGraphContactSyncService
      *
      * @return 'created'|'updated'|'unchanged'|'skipped'
      */
-    private function upsertContact(array $item, bool $dryRun): string
+    private function upsertContact(array $item, bool $dryRun, string $exchangeId): string
     {
-        $exchangeId = $this->stringOrNull($item['id'] ?? null, 255);
-        if ($exchangeId === null) {
-            return 'skipped';
-        }
-
         $mapped = $this->mapGraphContact($item, $exchangeId);
         if ($mapped['displayName'] === '') {
             return 'skipped';
         }
 
-        /** @var Contact|null $contact */
-        $contact = $this->em->getRepository(Contact::class)->findOneBy(['exchangeId' => $exchangeId]);
+        $contact = $this->findExistingContact($exchangeId);
         $created = false;
 
         if (!$contact instanceof Contact) {
@@ -113,10 +162,15 @@ final class MicrosoftGraphContactSyncService
                 ->setFirstName($mapped['firstName'])
                 ->setLastName($mapped['lastName'])
                 ->setEmail($mapped['email'])
+                ->setEmailAddresses($mapped['emailAddresses'])
                 ->setMobilePhone($mapped['mobilePhone'])
                 ->setBusinessPhone($mapped['businessPhone'])
+                ->setPhoneNumbers($mapped['phoneNumbers'])
                 ->setCompanyName($mapped['companyName'])
                 ->setJobTitle($mapped['jobTitle'])
+                ->setBusinessAddress($mapped['businessAddress'])
+                ->setHomeAddress($mapped['homeAddress'])
+                ->setOtherAddress($mapped['otherAddress'])
                 ->setNotes($mapped['notes']);
         }
 
@@ -142,10 +196,15 @@ final class MicrosoftGraphContactSyncService
      *     firstName:string|null,
      *     lastName:string|null,
      *     email:string|null,
+     *     emailAddresses:list<array{label:string|null, address:string}>|null,
      *     mobilePhone:string|null,
      *     businessPhone:string|null,
+     *     phoneNumbers:list<array{type:string, number:string}>|null,
      *     companyName:string|null,
      *     jobTitle:string|null,
+     *     businessAddress:array<string, string>|null,
+     *     homeAddress:array<string, string>|null,
+     *     otherAddress:array<string, string>|null,
      *     notes:string|null
      * }
      */
@@ -154,8 +213,14 @@ final class MicrosoftGraphContactSyncService
         $firstName = $this->stringOrNull($item['givenName'] ?? null, 100);
         $lastName = $this->stringOrNull($item['surname'] ?? null, 100);
         $email = $this->firstEmail($item['emailAddresses'] ?? null);
+        $emailAddresses = $this->emailAddresses($item['emailAddresses'] ?? null);
         $mobilePhone = $this->stringOrNull($item['mobilePhone'] ?? null, 60);
         $businessPhone = $this->firstString($item['businessPhones'] ?? null, 60);
+        $phoneNumbers = $this->phoneNumbers(
+            $mobilePhone,
+            $item['businessPhones'] ?? null,
+            $item['homePhones'] ?? null
+        );
 
         $displayName = $this->stringOrNull($item['displayName'] ?? null, 180)
             ?? $this->stringOrNull(trim((string) $firstName . ' ' . (string) $lastName), 180)
@@ -170,10 +235,15 @@ final class MicrosoftGraphContactSyncService
             'firstName' => $firstName,
             'lastName' => $lastName,
             'email' => $email,
+            'emailAddresses' => $emailAddresses,
             'mobilePhone' => $mobilePhone,
             'businessPhone' => $businessPhone,
+            'phoneNumbers' => $phoneNumbers,
             'companyName' => $this->stringOrNull($item['companyName'] ?? null, 180),
             'jobTitle' => $this->stringOrNull($item['jobTitle'] ?? null, 180),
+            'businessAddress' => $this->postalAddress($item['businessAddress'] ?? null),
+            'homeAddress' => $this->postalAddress($item['homeAddress'] ?? null),
+            'otherAddress' => $this->postalAddress($item['otherAddress'] ?? null),
             'notes' => $this->stringOrNull($item['personalNotes'] ?? null),
         ];
     }
@@ -250,6 +320,10 @@ final class MicrosoftGraphContactSyncService
                 'emailAddresses',
                 'mobilePhone',
                 'businessPhones',
+                'homePhones',
+                'businessAddress',
+                'homeAddress',
+                'otherAddress',
                 'companyName',
                 'jobTitle',
                 'personalNotes',
@@ -387,6 +461,55 @@ final class MicrosoftGraphContactSyncService
         return is_string($value) ? trim($value) : '';
     }
 
+    private function graphExchangeId(mixed $value): ?string
+    {
+        if (!is_scalar($value)) {
+            return null;
+        }
+
+        $string = trim((string) $value);
+        if ($string === '') {
+            return null;
+        }
+
+        if (mb_strlen($string) <= self::MAX_EXCHANGE_ID_LENGTH) {
+            return $string;
+        }
+
+        return 'graph-sha256:' . hash('sha256', $string);
+    }
+
+    private function findExistingContact(string $exchangeId): ?Contact
+    {
+        $legacyExchangeId = mb_substr($exchangeId, 0, 255);
+        $qb = $this->em->getRepository(Contact::class)
+            ->createQueryBuilder('contact')
+            ->andWhere('contact.exchangeId = :exchangeId')
+            ->setParameter('exchangeId', $exchangeId)
+            ->setMaxResults(1);
+
+        if ($legacyExchangeId !== $exchangeId) {
+            $qb
+                ->orWhere('contact.exchangeId = :legacyExchangeId')
+                ->setParameter('legacyExchangeId', $legacyExchangeId);
+        }
+
+        /** @var Contact|null $contact */
+        $contact = $qb->getQuery()->getOneOrNullResult();
+
+        return $contact;
+    }
+
+    private function boolEnv(string $name): bool
+    {
+        $value = $this->env($name);
+        if ($value === '') {
+            return false;
+        }
+
+        return filter_var($value, FILTER_VALIDATE_BOOL);
+    }
+
     private function caCertPath(): ?string
     {
         $path = $this->env('MICROSOFT_GRAPH_CA_CERT_PATH');
@@ -438,6 +561,110 @@ final class MicrosoftGraphContactSyncService
         }
 
         return null;
+    }
+
+    /**
+     * @return list<array{label:string|null, address:string}>|null
+     */
+    private function emailAddresses(mixed $value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $items = [];
+        foreach ($value as $emailAddress) {
+            if (!is_array($emailAddress)) {
+                continue;
+            }
+
+            $address = $this->stringOrNull($emailAddress['address'] ?? null, 180);
+            if ($address === null) {
+                continue;
+            }
+
+            $items[] = [
+                'label' => $this->stringOrNull($emailAddress['name'] ?? null, 180),
+                'address' => $address,
+            ];
+        }
+
+        return $items === [] ? null : $items;
+    }
+
+    /**
+     * @return list<array{type:string, number:string}>|null
+     */
+    private function phoneNumbers(?string $mobilePhone, mixed $businessPhones, mixed $homePhones): ?array
+    {
+        $items = [];
+        if ($mobilePhone !== null) {
+            $items[] = ['type' => 'Mobile', 'number' => $mobilePhone];
+        }
+
+        foreach ($this->strings($businessPhones, 60) as $phone) {
+            $items[] = ['type' => 'Professionnel', 'number' => $phone];
+        }
+
+        foreach ($this->strings($homePhones, 60) as $phone) {
+            $items[] = ['type' => 'Personnel', 'number' => $phone];
+        }
+
+        $unique = [];
+        foreach ($items as $item) {
+            $key = mb_strtolower($item['type'] . ':' . $item['number']);
+            $unique[$key] = $item;
+        }
+
+        $items = array_values($unique);
+
+        return $items === [] ? null : $items;
+    }
+
+    /**
+     * @return list<string>
+     */
+    private function strings(mixed $value, int $maxLength): array
+    {
+        if (!is_array($value)) {
+            return [];
+        }
+
+        $items = [];
+        foreach ($value as $item) {
+            $string = $this->stringOrNull($item, $maxLength);
+            if ($string !== null) {
+                $items[] = $string;
+            }
+        }
+
+        return $items;
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function postalAddress(mixed $value): ?array
+    {
+        if (!is_array($value)) {
+            return null;
+        }
+
+        $address = [];
+        foreach ([
+            'street' => 'Rue',
+            'city' => 'Ville',
+            'state' => 'Region',
+            'postalCode' => 'Code postal',
+            'countryOrRegion' => 'Pays',
+        ] as $key => $label) {
+            $string = $this->stringOrNull($value[$key] ?? null, 255);
+            if ($string !== null) {
+                $address[$label] = $string;
+            }
+        }
+
+        return $address === [] ? null : $address;
     }
 
     private function firstString(mixed $value, int $maxLength): ?string

@@ -21,7 +21,7 @@ class Contact
     #[ORM\Column(type: Types::INTEGER)]
     private ?int $id = null;
 
-    #[ORM\Column(name: 'exchange_id', type: Types::STRING, length: 255, nullable: true)]
+    #[ORM\Column(name: 'exchange_id', type: Types::STRING, length: 512, nullable: true)]
     private ?string $exchangeId = null;
 
     #[ORM\Column(name: 'exchange_change_key', type: Types::STRING, length: 255, nullable: true)]
@@ -39,17 +39,32 @@ class Contact
     #[ORM\Column(type: Types::STRING, length: 180, nullable: true)]
     private ?string $email = null;
 
+    #[ORM\Column(name: 'email_addresses', type: Types::JSON, nullable: true)]
+    private ?array $emailAddresses = null;
+
     #[ORM\Column(name: 'mobile_phone', type: Types::STRING, length: 60, nullable: true)]
     private ?string $mobilePhone = null;
 
     #[ORM\Column(name: 'business_phone', type: Types::STRING, length: 60, nullable: true)]
     private ?string $businessPhone = null;
 
+    #[ORM\Column(name: 'phone_numbers', type: Types::JSON, nullable: true)]
+    private ?array $phoneNumbers = null;
+
     #[ORM\Column(name: 'company_name', type: Types::STRING, length: 180, nullable: true)]
     private ?string $companyName = null;
 
     #[ORM\Column(name: 'job_title', type: Types::STRING, length: 180, nullable: true)]
     private ?string $jobTitle = null;
+
+    #[ORM\Column(name: 'business_address', type: Types::JSON, nullable: true)]
+    private ?array $businessAddress = null;
+
+    #[ORM\Column(name: 'home_address', type: Types::JSON, nullable: true)]
+    private ?array $homeAddress = null;
+
+    #[ORM\Column(name: 'other_address', type: Types::JSON, nullable: true)]
+    private ?array $otherAddress = null;
 
     #[ORM\Column(type: Types::TEXT, nullable: true)]
     private ?string $notes = null;
@@ -152,6 +167,18 @@ class Contact
         return $this;
     }
 
+    public function getEmailAddresses(): ?array
+    {
+        return $this->emailAddresses;
+    }
+
+    public function setEmailAddresses(?array $emailAddresses): static
+    {
+        $this->emailAddresses = $emailAddresses;
+        $this->touch();
+        return $this;
+    }
+
     public function getMobilePhone(): ?string
     {
         return $this->mobilePhone;
@@ -176,6 +203,18 @@ class Contact
         return $this;
     }
 
+    public function getPhoneNumbers(): ?array
+    {
+        return $this->phoneNumbers;
+    }
+
+    public function setPhoneNumbers(?array $phoneNumbers): static
+    {
+        $this->phoneNumbers = $phoneNumbers;
+        $this->touch();
+        return $this;
+    }
+
     public function getCompanyName(): ?string
     {
         return $this->companyName;
@@ -196,6 +235,42 @@ class Contact
     public function setJobTitle(?string $jobTitle): static
     {
         $this->jobTitle = $jobTitle;
+        $this->touch();
+        return $this;
+    }
+
+    public function getBusinessAddress(): ?array
+    {
+        return $this->businessAddress;
+    }
+
+    public function setBusinessAddress(?array $businessAddress): static
+    {
+        $this->businessAddress = $businessAddress;
+        $this->touch();
+        return $this;
+    }
+
+    public function getHomeAddress(): ?array
+    {
+        return $this->homeAddress;
+    }
+
+    public function setHomeAddress(?array $homeAddress): static
+    {
+        $this->homeAddress = $homeAddress;
+        $this->touch();
+        return $this;
+    }
+
+    public function getOtherAddress(): ?array
+    {
+        return $this->otherAddress;
+    }
+
+    public function setOtherAddress(?array $otherAddress): static
+    {
+        $this->otherAddress = $otherAddress;
         $this->touch();
         return $this;
     }

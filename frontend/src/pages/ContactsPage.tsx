@@ -1,12 +1,47 @@
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { fetchContacts, UnauthorizedError, type ContactItem } from '../api/client'
+import {
+  fetchContacts,
+  fetchContactSyncStatus,
+  fetchSites,
+  addSiteContact,
+  updateSiteContact,
+  removeSiteContact,
+  syncContacts,
+  UnauthorizedError,
+  type ContactItem,
+  type ContactAddress,
+  type ContactSyncResponse,
+  type ContactSyncStats,
+  type ContactSyncStatus,
+  type Site,
+} from '../api/client'
 import { useAuth } from '../context/AuthContext'
+import { isAdmin } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import './ContactsPage.css'
 
 function contactPhone(contact: ContactItem): string {
   return contact.mobilePhone || contact.businessPhone || '-'
+}
+
+function contactEmails(contact: ContactItem): Array<{ label: string | null; address: string }> {
+  if ((contact.emailAddresses ?? []).length > 0) {
+    return contact.emailAddresses
+  }
+
+  return contact.email ? [{ label: null, address: contact.email }] : []
+}
+
+function contactPhones(contact: ContactItem): Array<{ type: string; number: string }> {
+  if ((contact.phoneNumbers ?? []).length > 0) {
+    return contact.phoneNumbers
+  }
+
+  return [
+    contact.mobilePhone ? { type: 'Mobile', number: contact.mobilePhone } : null,
+    contact.businessPhone ? { type: 'Professionnel', number: contact.businessPhone } : null,
+  ].filter((item): item is { type: string; number: string } => item !== null)
 }
 
 function siteRoles(contact: ContactItem): string {
@@ -16,16 +51,81 @@ function siteRoles(contact: ContactItem): string {
   return roles.length > 0 ? Array.from(new Set(roles)).join(', ') : '-'
 }
 
+function formatAddress(address: ContactAddress | null): string[] {
+  if (!address) return []
+  return Object.entries(address)
+    .map(([label, value]) => `${label}: ${value}`)
+    .filter(Boolean)
+}
+
+function highlightSearch(value: string | null | undefined, query: string): ReactNode {
+  const text = value ?? ''
+  const needle = query.trim()
+  if (!needle || !text) return text
+
+  const lowerText = text.toLocaleLowerCase()
+  const lowerNeedle = needle.toLocaleLowerCase()
+  const parts: ReactNode[] = []
+  let cursor = 0
+  let index = lowerText.indexOf(lowerNeedle)
+
+  while (index !== -1) {
+    if (index > cursor) {
+      parts.push(text.slice(cursor, index))
+    }
+    const end = index + needle.length
+    parts.push(
+      <mark key={`${index}-${end}`} className="contacts-search-mark">
+        {text.slice(index, end)}
+      </mark>
+    )
+    cursor = end
+    index = lowerText.indexOf(lowerNeedle, cursor)
+  }
+
+  if (cursor < text.length) {
+    parts.push(text.slice(cursor))
+  }
+
+  return parts.length > 0 ? parts : text
+}
+
+function formatSyncStats(stats?: ContactSyncStats): string {
+  if (!stats) return 'Aucun compteur disponible'
+
+  return [
+    `${stats.fetched} lus`,
+    `${stats.created} crees`,
+    `${stats.updated} maj`,
+    `${stats.unchanged} inchanges`,
+    `${stats.skipped} ignores`,
+  ].join(' - ')
+}
+
 export default function ContactsPage() {
   const { user } = useAuth()
+  const userIsAdmin = isAdmin(user)
   const [contacts, setContacts] = useState<ContactItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const [reloadToken, setReloadToken] = useState(0)
+  const [sites, setSites] = useState<Site[]>([])
   const [search, setSearch] = useState('')
   const [debouncedSearch, setDebouncedSearch] = useState('')
   const [onlyFavorites, setOnlyFavorites] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
+  const [selectedContactId, setSelectedContactId] = useState<number | null>(null)
+  const [syncStatus, setSyncStatus] = useState<ContactSyncStatus | null>(null)
+  const [syncStep, setSyncStep] = useState<'idle' | 'checking' | 'syncing' | 'success' | 'error'>('idle')
+  const [syncMessage, setSyncMessage] = useState<string | null>(null)
+  const [syncCheck, setSyncCheck] = useState<ContactSyncResponse | null>(null)
+  const [syncResult, setSyncResult] = useState<ContactSyncResponse | null>(null)
+  const [contactSiteId, setContactSiteId] = useState('')
+  const [contactSiteRole, setContactSiteRole] = useState('')
+  const [contactSiteFavorite, setContactSiteFavorite] = useState(false)
+  const [contactSiteNotes, setContactSiteNotes] = useState('')
+  const [contactSiteBusy, setContactSiteBusy] = useState(false)
   const [pagination, setPagination] = useState({
     page: 1,
     limit: 20,
@@ -43,6 +143,17 @@ export default function ContactsPage() {
   useEffect(() => {
     setCurrentPage(1)
   }, [debouncedSearch, onlyFavorites, pageSize])
+
+  useEffect(() => {
+    if (contacts.length === 0) {
+      setSelectedContactId(null)
+      return
+    }
+
+    if (!selectedContactId || !contacts.some((contact) => contact.id === selectedContactId)) {
+      setSelectedContactId(contacts[0].id)
+    }
+  }, [contacts, selectedContactId])
 
   useEffect(() => {
     let cancelled = false
@@ -77,11 +188,136 @@ export default function ContactsPage() {
     return () => {
       cancelled = true
     }
-  }, [currentPage, debouncedSearch, onlyFavorites, pageSize])
+  }, [currentPage, debouncedSearch, onlyFavorites, pageSize, reloadToken])
+
+  useEffect(() => {
+    if (!userIsAdmin) return
+
+    let cancelled = false
+    fetchSites()
+      .then((items) => {
+        if (!cancelled) setSites(items)
+      })
+      .catch(() => {
+        if (!cancelled) setSites([])
+      })
+
+    fetchContactSyncStatus()
+      .then((status) => {
+        if (!cancelled) setSyncStatus(status)
+      })
+      .catch((e) => {
+        if (!cancelled) {
+          setSyncMessage(e instanceof Error ? e.message : 'Statut synchro contacts indisponible')
+        }
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [userIsAdmin, reloadToken])
+
+  useEffect(() => {
+    setContactSiteId('')
+    setContactSiteRole('')
+    setContactSiteFavorite(false)
+    setContactSiteNotes('')
+  }, [selectedContactId])
+
+  async function handleSyncContacts(): Promise<void> {
+    setSyncStep('checking')
+    setSyncMessage('Verification Microsoft Graph en cours...')
+    setSyncCheck(null)
+    setSyncResult(null)
+
+    try {
+      const check = await syncContacts({ dryRun: true, batchSize: 50, maxContacts: 25 })
+      setSyncCheck(check)
+      setSyncStep('syncing')
+      setSyncMessage('Verification OK. Synchronisation des contacts en cours...')
+
+      const result = await syncContacts({ dryRun: false, batchSize: 50 })
+      setSyncResult(result)
+      setSyncStep('success')
+      setSyncMessage(result.message ?? 'Synchronisation terminee.')
+      setReloadToken((value) => value + 1)
+    } catch (e) {
+      setSyncStep('error')
+      setSyncMessage(e instanceof Error ? e.message : 'Synchronisation impossible')
+    }
+  }
+
+  async function handleAddSelectedContactToSite(contact: ContactItem): Promise<void> {
+    if (!contactSiteId) return
+
+    setContactSiteBusy(true)
+    setError(null)
+    try {
+      await addSiteContact(Number(contactSiteId), {
+        contactId: contact.id,
+        role: contactSiteRole.trim() || null,
+        favorite: contactSiteFavorite,
+        notes: contactSiteNotes.trim() || null,
+      })
+      setContactSiteId('')
+      setContactSiteRole('')
+      setContactSiteFavorite(false)
+      setContactSiteNotes('')
+      setReloadToken((value) => value + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur liaison site')
+    } finally {
+      setContactSiteBusy(false)
+    }
+  }
+
+  async function handleUpdateSelectedContactSite(contact: ContactItem, siteId: number | null, patch: { role?: string | null; favorite?: boolean; notes?: string | null }): Promise<void> {
+    if (!siteId) return
+
+    setContactSiteBusy(true)
+    setError(null)
+    try {
+      await updateSiteContact(siteId, contact.id, patch)
+      setReloadToken((value) => value + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur modification liaison site')
+    } finally {
+      setContactSiteBusy(false)
+    }
+  }
+
+  async function handleRemoveSelectedContactSite(contact: ContactItem, siteId: number | null): Promise<void> {
+    if (!siteId) return
+    if (!window.confirm('Retirer ce contact du site ?')) return
+
+    setContactSiteBusy(true)
+    setError(null)
+    try {
+      await removeSiteContact(siteId, contact.id)
+      setReloadToken((value) => value + 1)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur suppression liaison site')
+    } finally {
+      setContactSiteBusy(false)
+    }
+  }
 
   if (!user) {
     return <Navigate to="/login" replace />
   }
+
+  const selectedContact = contacts.find((contact) => contact.id === selectedContactId) ?? contacts[0] ?? null
+  const selectedEmails = selectedContact ? contactEmails(selectedContact) : []
+  const selectedPhones = selectedContact ? contactPhones(selectedContact) : []
+  const addressBlocks = selectedContact
+    ? [
+        { title: 'Adresse professionnelle', lines: formatAddress(selectedContact.businessAddress) },
+        { title: 'Adresse personnelle', lines: formatAddress(selectedContact.homeAddress) },
+        { title: 'Autre adresse', lines: formatAddress(selectedContact.otherAddress) },
+      ].filter((block) => block.lines.length > 0)
+    : []
+  const linkedSiteIds = new Set((selectedContact?.sites ?? []).map((site) => site.id).filter((siteId): siteId is number => siteId !== null))
+  const availableSites = sites.filter((site) => !linkedSiteIds.has(site.id))
 
   return (
     <div className="contacts-page">
@@ -96,9 +332,44 @@ export default function ContactsPage() {
         </div>
         <div className="contacts-page__sync">
           <span>Synchronisation Exchange</span>
-          <strong>Non activee</strong>
+          <strong>
+            {syncStatus?.configured.configured
+              ? syncStatus.configured.enabled ? 'Activee' : 'Config OK, auto inactive'
+              : 'A verifier'}
+          </strong>
+          {userIsAdmin && (
+            <button
+              type="button"
+              onClick={() => void handleSyncContacts()}
+              disabled={syncStep === 'checking' || syncStep === 'syncing'}
+            >
+              {syncStep === 'checking' ? 'Verification...' : syncStep === 'syncing' ? 'Synchronisation...' : 'Verifier et synchroniser'}
+            </button>
+          )}
+          {!userIsAdmin && <em>Reserve admin</em>}
         </div>
       </header>
+
+      {userIsAdmin && (
+        <section className={`contacts-sync-notice contacts-sync-notice--${syncStep}`} role="status">
+          <div>
+            <strong>{syncMessage ?? 'Pret pour une verification Exchange.'}</strong>
+            <span>
+              {syncStatus
+                ? `${syncStatus.contacts.total} contacts locaux - derniere synchro: ${formatDateTime(syncStatus.contacts.lastSyncedAt, 'Jamais')}`
+                : 'Statut Exchange en attente'}
+            </span>
+          </div>
+          {syncStatus && !syncStatus.configured.configured && (
+            <p>Variables manquantes: {syncStatus.configured.missing.join(', ')}</p>
+          )}
+          {syncStatus?.configured.caCertPathValid === false && (
+            <p>Certificat CA introuvable: verifier MICROSOFT_GRAPH_CA_CERT_PATH.</p>
+          )}
+          {syncCheck?.stats && <p>Verification: {formatSyncStats(syncCheck.stats)}</p>}
+          {syncResult?.stats && <p>Resultat: {formatSyncStats(syncResult.stats)}</p>}
+        </section>
+      )}
 
       <section className="contacts-page__filters">
         <input
@@ -148,43 +419,189 @@ export default function ContactsPage() {
       ) : contacts.length === 0 ? (
         <p className="contacts-page__empty">Aucun contact pour ces filtres.</p>
       ) : (
-        <div className="contacts-page__list">
-          {contacts.map((contact) => (
-            <article key={contact.id} className="contact-card">
-              <div className="contact-card__main">
-                <div>
-                  <h2>{contact.displayName}</h2>
-                  <p>
-                    {[contact.jobTitle, contact.companyName].filter(Boolean).join(' - ') || 'Contact client'}
-                  </p>
+        <div className="contacts-workspace">
+          <aside className="contacts-list-panel" aria-label="Liste des contacts">
+            {contacts.map((contact) => (
+              <button
+                key={contact.id}
+                type="button"
+                className={`contacts-list-row${selectedContact?.id === contact.id ? ' contacts-list-row--active' : ''}`}
+                onClick={() => setSelectedContactId(contact.id)}
+              >
+                {highlightSearch(contact.displayName, debouncedSearch)}
+              </button>
+            ))}
+          </aside>
+
+          <section className="contact-detail-panel">
+            {selectedContact && (
+              <>
+                <header className="contact-detail-header">
+                  <div>
+                    <h2>{highlightSearch(selectedContact.displayName, debouncedSearch)}</h2>
+                    <p>{highlightSearch([selectedContact.jobTitle, selectedContact.companyName].filter(Boolean).join(' - ') || 'Contact client', debouncedSearch)}</p>
+                  </div>
+                  {selectedContact.sites.some((site) => site.favorite) && (
+                    <span className="contact-card__favorite">Favori</span>
+                  )}
+                </header>
+
+                <div className="contact-detail-grid">
+                  <section className="contact-detail-box">
+                    <h3>Adresses mail</h3>
+                    {selectedEmails.length === 0 ? (
+                      <p className="contact-detail-empty">Aucune adresse mail</p>
+                    ) : (
+                      <ul>
+                        {selectedEmails.map((email, index) => (
+                          <li key={`${email.address}-${index}`}>
+                            <strong>{highlightSearch(email.address, debouncedSearch)}</strong>
+                            {email.label && <span>{highlightSearch(email.label, debouncedSearch)}</span>}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+
+                  <section className="contact-detail-box">
+                    <h3>Numeros</h3>
+                    {selectedPhones.length === 0 ? (
+                      <p className="contact-detail-empty">Aucun numero</p>
+                    ) : (
+                      <ul>
+                        {selectedPhones.map((phone, index) => (
+                          <li key={`${phone.type}-${phone.number}-${index}`}>
+                            <strong>{highlightSearch(phone.number, debouncedSearch)}</strong>
+                            <span>{highlightSearch(phone.type, debouncedSearch)}</span>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </section>
+
+                  <section className="contact-detail-box contact-detail-box--wide">
+                    <h3>Adresses</h3>
+                    {addressBlocks.length === 0 ? (
+                      <p className="contact-detail-empty">Aucune adresse renseignee</p>
+                    ) : (
+                      <div className="contact-address-list">
+                        {addressBlocks.map((block) => (
+                          <article key={block.title}>
+                            <strong>{block.title}</strong>
+                            {block.lines.map((line) => <span key={line}>{highlightSearch(line, debouncedSearch)}</span>)}
+                          </article>
+                        ))}
+                      </div>
+                    )}
+                  </section>
+
+                  <section className="contact-detail-box contact-detail-box--wide">
+                    <h3>Notes</h3>
+                    <p className="contact-notes">{highlightSearch(selectedContact.notes || 'Aucune note.', debouncedSearch)}</p>
+                  </section>
                 </div>
-                {contact.sites.some((site) => site.favorite) && (
-                  <span className="contact-card__favorite">Favori</span>
-                )}
-              </div>
 
-              <div className="contact-card__details">
-                <span>Email: {contact.email ?? '-'}</span>
-                <span>Telephone: {contactPhone(contact)}</span>
-                <span>Roles: {siteRoles(contact)}</span>
-                <span>Synchro: {formatDateTime(contact.syncedAt, 'Jamais')}</span>
-              </div>
+                <div className="contact-detail-meta">
+                  <span>Telephone principal: {highlightSearch(contactPhone(selectedContact), debouncedSearch)}</span>
+                  <span>Roles: {highlightSearch(siteRoles(selectedContact), debouncedSearch)}</span>
+                  <span>Synchro: {formatDateTime(selectedContact.syncedAt, 'Jamais')}</span>
+                </div>
 
-              <div className="contact-card__sites">
-                {contact.sites.length === 0 ? (
-                  <span className="contact-card__site-empty">Aucun site lie</span>
-                ) : (
-                  contact.sites.map((site) => (
-                    <Link key={`${contact.id}-${site.id}`} to={site.id ? `/sites/${site.id}` : '/sites'} className="contact-card__site">
-                      <strong>{site.nom}</strong>
-                      <span>{site.role || 'Role non precise'}</span>
-                      {site.favorite && <em>Favori</em>}
-                    </Link>
-                  ))
-                )}
-              </div>
-            </article>
-          ))}
+                <section className="contact-detail-box contact-detail-box--wide">
+                  <h3>Sites lies</h3>
+                  {userIsAdmin && (
+                    <div className="contact-site-linker">
+                      <select value={contactSiteId} onChange={(e) => setContactSiteId(e.target.value)} disabled={contactSiteBusy}>
+                        <option value="">Choisir un site a lier</option>
+                        {availableSites.map((site) => (
+                          <option key={site.id} value={site.id}>{site.nom}</option>
+                        ))}
+                      </select>
+                      <input
+                        type="text"
+                        value={contactSiteRole}
+                        onChange={(e) => setContactSiteRole(e.target.value)}
+                        placeholder="Role"
+                        disabled={contactSiteBusy}
+                      />
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={contactSiteFavorite}
+                          onChange={(e) => setContactSiteFavorite(e.target.checked)}
+                          disabled={contactSiteBusy}
+                        />
+                        Favori
+                      </label>
+                      <textarea
+                        value={contactSiteNotes}
+                        onChange={(e) => setContactSiteNotes(e.target.value)}
+                        placeholder="Notes de liaison"
+                        rows={2}
+                        disabled={contactSiteBusy}
+                      />
+                      <button
+                        type="button"
+                        onClick={() => void handleAddSelectedContactToSite(selectedContact)}
+                        disabled={contactSiteBusy || !contactSiteId}
+                      >
+                        Lier au site
+                      </button>
+                    </div>
+                  )}
+
+                  {selectedContact.sites.length === 0 ? (
+                    <p className="contact-detail-empty">Aucun site lie</p>
+                  ) : (
+                    <div className="contact-site-list">
+                      {selectedContact.sites.map((site) => (
+                        <article key={`${selectedContact.id}-${site.id}`} className="contact-site-row">
+                          <div className="contact-site-row__main">
+                            <Link to={site.id ? `/sites/${site.id}` : '/sites'}>
+                              {highlightSearch(site.nom, debouncedSearch)}
+                            </Link>
+                            {site.favorite && <em>Favori</em>}
+                          </div>
+                          {userIsAdmin ? (
+                            <div className="contact-site-row__edit">
+                              <input
+                                type="text"
+                                defaultValue={site.role ?? ''}
+                                placeholder="Role"
+                                onBlur={(e) => void handleUpdateSelectedContactSite(selectedContact, site.id, { role: e.currentTarget.value.trim() || null })}
+                                disabled={contactSiteBusy}
+                              />
+                              <label>
+                                <input
+                                  type="checkbox"
+                                  checked={site.favorite}
+                                  onChange={(e) => void handleUpdateSelectedContactSite(selectedContact, site.id, { favorite: e.target.checked })}
+                                  disabled={contactSiteBusy}
+                                />
+                                Favori
+                              </label>
+                              <textarea
+                                defaultValue={site.notes ?? ''}
+                                placeholder="Notes"
+                                rows={2}
+                                onBlur={(e) => void handleUpdateSelectedContactSite(selectedContact, site.id, { notes: e.currentTarget.value.trim() || null })}
+                                disabled={contactSiteBusy}
+                              />
+                              <button type="button" onClick={() => void handleRemoveSelectedContactSite(selectedContact, site.id)} disabled={contactSiteBusy}>
+                                Retirer
+                              </button>
+                            </div>
+                          ) : (
+                            <span>{highlightSearch(site.role || site.notes || 'Role non precise', debouncedSearch)}</span>
+                          )}
+                        </article>
+                      ))}
+                    </div>
+                  )}
+                </section>
+              </>
+            )}
+          </section>
         </div>
       )}
 

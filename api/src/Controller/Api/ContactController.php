@@ -8,6 +8,7 @@ use App\Entity\Contact;
 use App\Entity\Site;
 use App\Entity\SiteContact;
 use App\Entity\User;
+use App\Service\MicrosoftGraphContactSyncService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -20,6 +21,7 @@ class ContactController extends AbstractController
 {
     public function __construct(
         private readonly EntityManagerInterface $em,
+        private readonly MicrosoftGraphContactSyncService $syncService,
     ) {
     }
 
@@ -51,8 +53,10 @@ class ContactController extends AbstractController
                     OR LOWER(contact.businessPhone) LIKE :q
                     OR LOWER(contact.companyName) LIKE :q
                     OR LOWER(contact.jobTitle) LIKE :q
+                    OR LOWER(contact.notes) LIKE :q
                     OR LOWER(site.nom) LIKE :q
-                    OR LOWER(siteLink.role) LIKE :q'
+                    OR LOWER(siteLink.role) LIKE :q
+                    OR LOWER(siteLink.notes) LIKE :q'
                 )
                 ->setParameter('q', '%' . $q . '%');
         }
@@ -110,6 +114,79 @@ class ContactController extends AbstractController
         ], Response::HTTP_OK);
     }
 
+    #[Route('/sync-status', name: 'sync_status', methods: ['GET'])]
+    public function syncStatus(): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        /** @var Contact|null $lastSyncedContact */
+        $lastSyncedContact = $this->em->getRepository(Contact::class)
+            ->createQueryBuilder('contact')
+            ->andWhere('contact.syncedAt IS NOT NULL')
+            ->orderBy('contact.syncedAt', 'DESC')
+            ->setMaxResults(1)
+            ->getQuery()
+            ->getOneOrNullResult();
+
+        $total = (int) $this->em->getRepository(Contact::class)
+            ->createQueryBuilder('contact')
+            ->select('COUNT(contact.id)')
+            ->getQuery()
+            ->getSingleScalarResult();
+
+        return new JsonResponse([
+            'configured' => $this->syncService->configurationStatus(),
+            'contacts' => [
+                'total' => $total,
+                'lastSyncedAt' => $lastSyncedContact?->getSyncedAt()?->format(\DateTimeInterface::ATOM),
+            ],
+        ], Response::HTTP_OK);
+    }
+
+    #[Route('/sync', name: 'sync', methods: ['POST'])]
+    public function sync(Request $request): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if ($request->getContent() !== '' && !\is_array($data)) {
+            return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $dryRun = filter_var($data['dryRun'] ?? false, FILTER_VALIDATE_BOOL);
+        $batchSize = max(1, min(999, (int) ($data['batchSize'] ?? 50)));
+        $maxContacts = null;
+        if (isset($data['maxContacts']) && $data['maxContacts'] !== null && $data['maxContacts'] !== '') {
+            $maxContacts = max(1, (int) $data['maxContacts']);
+        }
+
+        try {
+            $stats = $this->syncService->sync($dryRun, $batchSize, $maxContacts);
+        } catch (\Throwable $exception) {
+            return new JsonResponse([
+                'success' => false,
+                'dryRun' => $dryRun,
+                'error' => $exception->getMessage(),
+                'configured' => $this->syncService->configurationStatus(),
+            ], Response::HTTP_BAD_GATEWAY);
+        }
+
+        return new JsonResponse([
+            'success' => true,
+            'dryRun' => $dryRun,
+            'message' => $dryRun
+                ? 'Verification Microsoft Graph terminee, aucune donnee ecrite.'
+                : 'Synchronisation Microsoft Graph terminee.',
+            'stats' => $stats,
+            'configured' => $this->syncService->configurationStatus(),
+            'syncedAt' => (new \DateTimeImmutable())->format(\DateTimeInterface::ATOM),
+        ], Response::HTTP_OK);
+    }
+
     private function contactToArray(Contact $contact): array
     {
         return [
@@ -119,10 +196,15 @@ class ContactController extends AbstractController
             'firstName' => $contact->getFirstName(),
             'lastName' => $contact->getLastName(),
             'email' => $contact->getEmail(),
+            'emailAddresses' => $contact->getEmailAddresses() ?? [],
             'mobilePhone' => $contact->getMobilePhone(),
             'businessPhone' => $contact->getBusinessPhone(),
+            'phoneNumbers' => $contact->getPhoneNumbers() ?? [],
             'companyName' => $contact->getCompanyName(),
             'jobTitle' => $contact->getJobTitle(),
+            'businessAddress' => $contact->getBusinessAddress(),
+            'homeAddress' => $contact->getHomeAddress(),
+            'otherAddress' => $contact->getOtherAddress(),
             'notes' => $contact->getNotes(),
             'syncedAt' => $contact->getSyncedAt()?->format(\DateTimeInterface::ATOM),
             'sites' => $this->siteLinksToArray($contact),
@@ -145,6 +227,7 @@ class ContactController extends AbstractController
                 continue;
             }
             $items[] = [
+                'linkId' => $link->getId(),
                 'id' => $site->getId(),
                 'nom' => $site->getNom(),
                 'role' => $link->getRole(),

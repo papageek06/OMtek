@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useMemo, useRef } from 'react'
+import { useEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link, useSearchParams } from 'react-router-dom'
 import {
   LineChart,
@@ -14,17 +14,20 @@ import {
 } from 'recharts'
 import {
   fetchSiteDetail,
+  fetchContacts,
   fetchSiteStockMovements,
   fetchRapports,
   fetchAlertes,
   fetchTonerReplacements,
+  addSiteContact,
+  updateSiteContact,
+  removeSiteContact,
   updateImprimante,
   updateAlerteActive,
   upsertStock,
   updatePiece,
-  deletePiece,
-  fetchPiecesByModele,
-  fetchModeles,
+  createIntervention,
+  createSiteStockMovement,
   UnauthorizedError,
   type SiteDetail,
   type Imprimante,
@@ -33,12 +36,18 @@ import {
   type TonerReplacementEvent,
   type StockSearchParams,
   type StockMovementItem,
-  type PieceItem,
   type PieceAvecStocks,
   type ModeleItem,
+  type ContactItem,
+  type ContactAddress,
+  type SiteContactLink,
 } from '../api/client'
 import { isAdmin as isUserAdmin } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
+import {
+  INTERVENTION_STATUS_LABELS,
+  INTERVENTION_STATUS_OPTIONS,
+} from '../domain/interventions/options'
 import SiteResourcesTab from './SiteResourcesTab'
 import './SiteDetailPage.css'
 
@@ -131,8 +140,6 @@ function SitePrinterLevelBar({
   )
 }
 
-const CATEGORIES = ['TONER', 'TAMBOUR', 'PCDU', 'FUSER', 'BAC_RECUP', 'COURROIE', 'ROULEAU', 'KIT_MAINTENANCE', 'AUTRE'] as const
-
 const CATEGORIE_LABELS: Record<string, string> = {
   TONER: 'Toner',
   TAMBOUR: 'Tambour',
@@ -196,12 +203,6 @@ interface TonerStockByColor {
   references: string[]
 }
 
-interface ModeleModalState {
-  pieceId: number
-  reference: string
-  selectedIds: number[]
-}
-
 const TONER_COLOR_LABELS: Record<TonerColorKey, string> = {
   black: 'Noir',
   cyan: 'Cyan',
@@ -218,6 +219,75 @@ const TONER_COLOR_STROKES: Record<TonerColorKey, string> = {
 
 function modeleLabel(modele: Pick<ModeleItem, 'constructeur' | 'nom'>): string {
   return `${modele.constructeur} ${modele.nom}`.trim()
+}
+
+function matchingSiteModeles(piece: PieceAvecStocks, imprimantes: Imprimante[]): string[] {
+  const siteModeleIds = new Set(
+    imprimantes
+      .map((imprimante) => imprimante.modeleId)
+      .filter((modeleId): modeleId is number => typeof modeleId === 'number')
+  )
+  const labels = (piece.modeles ?? [])
+    .filter((modele) => siteModeleIds.has(modele.id))
+    .map((modele) => modeleLabel(modele))
+
+  return Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
+}
+
+function matchingSiteModelesLabel(count: number): string {
+  if (count === 0) return '0 modele site'
+  return `${count} modele${count > 1 ? 's' : ''} site`
+}
+
+function dateInputValue(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function formatDateInputLabel(value: string): string {
+  if (!value) return '-'
+  return new Date(`${value}T00:00:00`).toLocaleDateString('fr-FR')
+}
+
+function contactEmails(contact: ContactItem): Array<{ label: string | null; address: string }> {
+  if ((contact.emailAddresses ?? []).length > 0) {
+    return contact.emailAddresses
+  }
+
+  return contact.email ? [{ label: null, address: contact.email }] : []
+}
+
+function contactPhones(contact: ContactItem): Array<{ type: string; number: string }> {
+  if ((contact.phoneNumbers ?? []).length > 0) {
+    return contact.phoneNumbers
+  }
+
+  return [
+    contact.mobilePhone ? { type: 'Mobile', number: contact.mobilePhone } : null,
+    contact.businessPhone ? { type: 'Professionnel', number: contact.businessPhone } : null,
+  ].filter((item): item is { type: string; number: string } => item !== null)
+}
+
+function contactAddressLines(address: ContactAddress | null): string[] {
+  if (!address) return []
+
+  return Object.entries(address)
+    .map(([label, value]) => `${label}: ${value}`)
+    .filter(Boolean)
+}
+
+function pieceNatureDisplay(piece: Pick<PieceAvecStocks, 'nature'>): string {
+  return piece.nature === 'CONSUMABLE' ? 'Consommable'
+    : piece.nature === 'SPARE_PART' ? 'Piece detachee'
+      : piece.nature === 'VENTE' ? 'Vente'
+        : piece.nature === 'LOCATION' ? 'Location'
+          : piece.nature === 'MOBILIER' ? 'Mobilier'
+            : '-'
+}
+
+function isConsumablePiece(piece: Pick<PieceAvecStocks, 'nature' | 'categorie' | 'type'>): boolean {
+  if (piece.nature) return piece.nature === 'CONSUMABLE'
+  const category = String(piece.categorie ?? piece.type ?? '').trim().toUpperCase()
+  return ['TONER', 'BAC_RECUP', 'FOURNITURES CONSOMMABLES'].includes(category)
 }
 
 function tonerSourceLabel(sourceType: string): string {
@@ -726,50 +796,30 @@ export default function SiteDetailPage() {
   const [showInactiveAlertsByImp, setShowInactiveAlertsByImp] = useState<Record<number, boolean>>({})
   const [updatingAlerteIdByImp, setUpdatingAlerteIdByImp] = useState<Record<number, number | null>>({})
   const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
-  const [adminStockQuantites, setAdminStockQuantites] = useState<Record<number, number>>({})
   const [stockMovements, setStockMovements] = useState<StockMovementItem[]>([])
   const [stockMovementHistory, setStockMovementHistory] = useState<StockMovementItem[]>([])
   const [search, setSearch] = useState<StockSearchParams>({})
   const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
-  const [editingRowId, setEditingRowId] = useState<number | null>(null)
-  const [editingValues, setEditingValues] = useState<{ 
-    libelle: string
-    refBis: string
-    quantite: number
-    quantiteAdmin: number
-    variant: string | null
-    nature: string | null
-    categorie: string | null
-  } | null>(null)
-  const [showAddForm, setShowAddForm] = useState(false)
-  const [addFormData, setAddFormData] = useState<{ modeleId: number | null; pieceId: number | null; quantite: number; scope: 'TECH_VISIBLE' | 'ADMIN_ONLY' }>({
-    modeleId: null,
-    pieceId: null,
-    quantite: 0,
-    scope: 'TECH_VISIBLE',
-  })
-  const [availablePieces, setAvailablePieces] = useState<PieceItem[]>([])
-  const [loadingPieces, setLoadingPieces] = useState(false)
-  const [allModeles, setAllModeles] = useState<ModeleItem[]>([])
-  const [modeleModal, setModeleModal] = useState<ModeleModalState | null>(null)
-  const [saving, setSaving] = useState(false)
+  const [deliveryOpen, setDeliveryOpen] = useState(false)
+  const [deliveryDate, setDeliveryDate] = useState(dateInputValue())
+  const [deliveryStatus, setDeliveryStatus] = useState('TERMINEE')
+  const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, number>>({})
+  const [deliveryShowAllPieces, setDeliveryShowAllPieces] = useState(false)
+  const [deliverySubmitting, setDeliverySubmitting] = useState(false)
+  const [siteContactSearch, setSiteContactSearch] = useState('')
+  const [siteContactResults, setSiteContactResults] = useState<ContactItem[]>([])
+  const [siteContactSelectedId, setSiteContactSelectedId] = useState('')
+  const [siteContactRole, setSiteContactRole] = useState('')
+  const [siteContactFavorite, setSiteContactFavorite] = useState(false)
+  const [siteContactNotes, setSiteContactNotes] = useState('')
+  const [siteContactBusy, setSiteContactBusy] = useState(false)
   const [quickSavingPieceId, setQuickSavingPieceId] = useState<number | null>(null)
   const [printerVisibilityUpdatingId, setPrinterVisibilityUpdatingId] = useState<number | null>(null)
   const scrollPositionRef = useRef<number>(0)
   const shouldRestoreScrollRef = useRef<boolean>(false)
 
   const isAdmin = isUserAdmin(user)
-
-  const sortedAllModeles = useMemo(
-    () => [...allModeles].sort((a, b) => modeleLabel(a).localeCompare(modeleLabel(b), 'fr', { sensitivity: 'base' })),
-    [allModeles]
-  )
-
-  const allModelesById = useMemo(
-    () => new Map(allModeles.map((modele) => [modele.id, modele])),
-    [allModeles]
-  )
 
   const siteId = id ? parseInt(id, 10) : NaN
   const requestedImprimanteId = searchParams.get('imprimanteId')
@@ -797,25 +847,20 @@ export default function SiteDetailPage() {
     setError(null)
     Promise.all([
       fetchSiteDetail(siteId, appliedSearch),
-      fetchModeles(),
       fetchSiteStockMovements(siteId, { limit: 20 }),
       fetchSiteStockMovements(siteId, { limit: 5000 }),
     ])
-      .then(([data, modelesData, movementsData, movementHistoryData]) => {
+      .then(([data, movementsData, movementHistoryData]) => {
         setSite(data)
-        setAllModeles(modelesData)
         setStockMovements(movementsData)
         setStockMovementHistory(movementHistoryData)
         const qty: Record<number, number> = {}
-        const adminQty: Record<number, number> = {}
         const refBis: Record<number, string> = {}
         for (const p of data.piecesAvecStocks ?? []) {
           qty[p.pieceId] = p.quantiteStockSite
-          adminQty[p.pieceId] = p.quantiteStockSiteAdminOnly ?? 0
           refBis[p.pieceId] = p.refBis ?? ''
         }
         setStockQuantites(qty)
-        setAdminStockQuantites(adminQty)
         setRefBisValues(refBis)
       })
       .catch((e) => {
@@ -937,283 +982,69 @@ export default function SiteDetailPage() {
 
   const handleSearch = useCallback(() => setAppliedSearch({ ...search }), [search])
 
-  const handleStartEdit = useCallback((piece: { pieceId: number; libelle: string; refBis?: string | null; quantiteStockSite: number; quantiteStockSiteAdminOnly?: number; variant?: string | null; nature?: string | null; categorie?: string | null }) => {
-    setEditingRowId(piece.pieceId)
-    setEditingValues({
-      libelle: piece.libelle,
-      refBis: refBisValues[piece.pieceId] ?? piece.refBis ?? '',
-      quantite: stockQuantites[piece.pieceId] ?? piece.quantiteStockSite,
-      quantiteAdmin: adminStockQuantites[piece.pieceId] ?? piece.quantiteStockSiteAdminOnly ?? 0,
-      variant: piece.variant ?? null,
-      nature: piece.nature ?? null,
-      categorie: piece.categorie ?? null,
-    })
-  }, [refBisValues, stockQuantites, adminStockQuantites])
-
-  const handleCancelEdit = useCallback(() => {
-    setEditingRowId(null)
-    setEditingValues(null)
-  }, [])
-
-  const handleSaveEdit = useCallback(async (piece: { pieceId: number; libelle: string; refBis?: string | null; variant?: string | null; nature?: string | null; categorie?: string | null; quantiteStockSiteAdminOnly?: number }) => {
-    if (!editingValues || !site || !Number.isFinite(siteId)) {
-      console.error('Conditions non remplies pour la sauvegarde')
-      return
-    }
-    if (saving) {
-      console.log('Sauvegarde déjà en cours...')
-      return
-    }
-    setSaving(true)
-    setError(null)
-    try {
-      const pieceUpdates: { libelle?: string; refBis?: string | null; variant?: string | null; nature?: string | null; categorie?: string } = {}
-      let pieceChanged = false
-
-      if (editingValues.libelle !== piece.libelle) {
-        pieceUpdates.libelle = editingValues.libelle
-        pieceChanged = true
-      }
-      if (editingValues.refBis !== (refBisValues[piece.pieceId] ?? piece.refBis ?? '')) {
-        pieceUpdates.refBis = editingValues.refBis.trim() || null
-        pieceChanged = true
-      }
-      // Ne traiter la catégorie que si elle a vraiment changé ET est valide
-      // Normaliser les valeurs pour la comparaison
-      const currentCategorieRaw = editingValues.categorie ? String(editingValues.categorie).trim().toUpperCase() : null
-      const pieceCategorieRaw = piece.categorie ? String(piece.categorie).trim().toUpperCase() : null
-      
-      // Vérifier que les valeurs sont valides (doivent être dans CATEGORIES)
-      const currentCategorieValid = currentCategorieRaw && CATEGORIES.includes(currentCategorieRaw as typeof CATEGORIES[number])
-      const pieceCategorieValid = pieceCategorieRaw && CATEGORIES.includes(pieceCategorieRaw as typeof CATEGORIES[number])
-      
-      // Comparer : si les deux sont valides et identiques, pas de changement
-      // Si l'une est invalide, on ne l'envoie pas
-      const categorieChanged = currentCategorieValid && pieceCategorieValid && currentCategorieRaw !== pieceCategorieRaw
-      
-      // Seulement envoyer la catégorie si elle a changé ET que la nouvelle valeur est valide
-      if (categorieChanged && currentCategorieValid) {
-        pieceUpdates.categorie = currentCategorieRaw
-        pieceChanged = true
-      }
-      // Si la catégorie n'a pas changé, n'est pas valide, ou si l'ancienne valeur était invalide, on ne l'inclut PAS dans pieceUpdates
-      
-      // Gérer le variant : normaliser et ne l'envoyer que s'il a changé
-      const currentVariant = editingValues.variant && editingValues.variant.trim() !== '' ? editingValues.variant.trim().toUpperCase() : null
-      const pieceVariant = piece.variant && String(piece.variant).trim() !== '' ? String(piece.variant).trim().toUpperCase() : null
-      const variantChanged = currentVariant !== pieceVariant
-      
-      if (variantChanged) {
-        // Les valeurs valides pour variant sont : BLACK, CYAN, MAGENTA, YELLOW, UNIT, KIT, NONE
-        const validVariants = ['BLACK', 'CYAN', 'MAGENTA', 'YELLOW', 'UNIT', 'KIT', 'NONE']
-        if (currentVariant && validVariants.includes(currentVariant)) {
-          pieceUpdates.variant = currentVariant
-          pieceChanged = true
-        } else if (currentVariant === null) {
-          // Si on passe à null, on l'envoie explicitement
-          pieceUpdates.variant = null
-          pieceChanged = true
-        }
-        // Si la valeur n'est pas valide, on ne l'envoie pas
-      }
-      
-      // Gérer la nature : normaliser et ne l'envoyer que si elle a changé
-      const currentNature = editingValues.nature && editingValues.nature.trim() !== '' ? editingValues.nature.trim().toUpperCase() : null
-      const pieceNature = piece.nature && String(piece.nature).trim() !== '' ? String(piece.nature).trim().toUpperCase() : null
-      const natureChanged = currentNature !== pieceNature
-      
-      if (natureChanged) {
-        // Les valeurs valides pour nature sont : CONSUMABLE, SPARE_PART, VENTE, LOCATION, MOBILIER
-        const validNatures = ['CONSUMABLE', 'SPARE_PART', 'VENTE', 'LOCATION', 'MOBILIER']
-        if (currentNature && validNatures.includes(currentNature)) {
-          pieceUpdates.nature = currentNature
-          pieceChanged = true
-        } else if (currentNature === null) {
-          // Si on passe à null, on l'envoie explicitement
-          pieceUpdates.nature = null
-          pieceChanged = true
-        }
-        // Si la valeur n'est pas valide, on ne l'envoie pas
-      }
-
-      // Sauvegarder la position de scroll avant le rechargement
-      scrollPositionRef.current = window.scrollY || document.documentElement.scrollTop
-      shouldRestoreScrollRef.current = true
-      
-      if (pieceChanged) {
-        await updatePiece(piece.pieceId, pieceUpdates)
-      }
-      
-      // Toujours mettre à jour le stock, même si la quantité n'a pas changé (au cas où)
-      await upsertStock(siteId, piece.pieceId, editingValues.quantite)
-      if (isAdmin) {
-        await upsertStock(siteId, piece.pieceId, editingValues.quantiteAdmin, 'ADMIN_ONLY')
-      }
-      
-      setRefBisValues((r) => ({ ...r, [piece.pieceId]: editingValues.refBis }))
-      setStockQuantites((q) => ({ ...q, [piece.pieceId]: editingValues.quantite }))
-      if (isAdmin) {
-        setAdminStockQuantites((q) => ({ ...q, [piece.pieceId]: editingValues.quantiteAdmin }))
-      }
-      setEditingRowId(null)
-      setEditingValues(null)
-      
-      // Mettre à jour les données localement au lieu de recharger toute la liste
-      if (site) {
-        setSite((prevSite) => {
-          if (!prevSite) return prevSite
-          return {
-            ...prevSite,
-            piecesAvecStocks: (prevSite.piecesAvecStocks ?? []).map((p) => {
-              if (p.pieceId === piece.pieceId) {
-                return {
-                  ...p,
-                  libelle: pieceChanged && pieceUpdates.libelle ? pieceUpdates.libelle : p.libelle,
-                  refBis: pieceChanged && pieceUpdates.refBis !== undefined ? pieceUpdates.refBis : p.refBis,
-                  categorie: pieceChanged && pieceUpdates.categorie ? pieceUpdates.categorie : p.categorie,
-                  variant: pieceChanged && pieceUpdates.variant !== undefined ? pieceUpdates.variant : p.variant,
-                  nature: pieceChanged && pieceUpdates.nature !== undefined ? pieceUpdates.nature : p.nature,
-                  quantiteStockSite: editingValues.quantite,
-                  quantiteStockSiteAdminOnly: isAdmin ? editingValues.quantiteAdmin : p.quantiteStockSiteAdminOnly,
-                }
-              }
-              return p
-            }),
-          }
-        })
-      }
-      
-      // Recharger les données en arrière-plan pour s'assurer que tout est à jour
-      // La position de scroll sera restaurée automatiquement par le useEffect
-      loadSite()
-    } catch (e) {
-      console.error('Erreur lors de la sauvegarde:', e)
-      const errorMessage = e instanceof Error ? e.message : 'Erreur lors de la sauvegarde'
-      setError(errorMessage)
-      alert(`Erreur: ${errorMessage}`)
-      // Ne pas réinitialiser l'édition en cas d'erreur pour que l'utilisateur puisse réessayer
-    } finally {
-      setSaving(false)
-    }
-  }, [editingValues, site, siteId, refBisValues, stockQuantites, loadSite, saving, isAdmin])
-
-  const handleModeleChange = useCallback(async (modeleId: number | null) => {
-    setAddFormData((prev) => ({ ...prev, modeleId, pieceId: null }))
-    if (!modeleId) {
-      setAvailablePieces([])
-      return
-    }
-    setLoadingPieces(true)
-    try {
-      const pieces = await fetchPiecesByModele(modeleId)
-      setAvailablePieces(pieces)
-    } catch (e) {
-      console.error('Erreur chargement des pièces:', e)
-      setAvailablePieces([])
-    } finally {
-      setLoadingPieces(false)
-    }
-  }, [])
-
-  const handleAddStock = useCallback(async () => {
-    if (!addFormData.pieceId || !site || !Number.isFinite(siteId)) return
-    try {
-      await upsertStock(siteId, addFormData.pieceId, addFormData.quantite, addFormData.scope)
-      setShowAddForm(false)
-      setAddFormData({ modeleId: null, pieceId: null, quantite: 0, scope: 'TECH_VISIBLE' })
-      setAvailablePieces([])
-      loadSite()
-    } catch (e) {
-      console.error('Erreur lors de l\'ajout:', e)
-    }
-  }, [addFormData, site, siteId, loadSite])
-
-  const handleOpenModeleModal = useCallback((piece: PieceAvecStocks) => {
-    setModeleModal({
-      pieceId: piece.pieceId,
-      reference: piece.reference,
-      selectedIds: (piece.modeles ?? []).map((modele) => modele.id),
-    })
-  }, [])
-
-  const handleToggleModalModele = useCallback((modeleId: number, checked: boolean) => {
-    setModeleModal((prev) => {
-      if (!prev) return prev
-      return {
-        ...prev,
-        selectedIds: checked
-          ? [...prev.selectedIds, modeleId]
-          : prev.selectedIds.filter((id) => id !== modeleId),
-      }
-    })
-  }, [])
-
-  const handleSaveModeleModal = useCallback(async () => {
-    if (!modeleModal || saving) return
-
-    setSaving(true)
-    setError(null)
-    try {
-      scrollPositionRef.current = window.scrollY || document.documentElement.scrollTop
-      shouldRestoreScrollRef.current = true
-
-      await updatePiece(modeleModal.pieceId, { modeleIds: modeleModal.selectedIds })
-      setSite((prevSite) => {
-        if (!prevSite) return prevSite
-        return {
-          ...prevSite,
-          piecesAvecStocks: (prevSite.piecesAvecStocks ?? []).map((piece) => {
-            if (piece.pieceId !== modeleModal.pieceId) return piece
-            return {
-              ...piece,
-              modeles: modeleModal.selectedIds
-                .map((id) => allModelesById.get(id))
-                .filter((modele): modele is ModeleItem => Boolean(modele)),
-            }
-          }),
-        }
-      })
-      setModeleModal(null)
-      loadSite()
-    } catch (e) {
-      const errorMessage = e instanceof Error ? e.message : 'Erreur lors de la mise a jour des modeles'
-      setError(errorMessage)
-      alert(errorMessage)
-    } finally {
-      setSaving(false)
-    }
-  }, [allModelesById, loadSite, modeleModal, saving])
-
-  const handleDeleteStock = useCallback(async (pieceId: number) => {
+  const handleCreateDelivery = useCallback(async () => {
     if (!site || !Number.isFinite(siteId)) return
-    if (!window.confirm('Êtes-vous sûr de vouloir supprimer ce stock ET cette pièce ? Cette action est irréversible. Les modèles et sites ne seront pas affectés.')) {
+
+    const deliveredRows = (site.piecesAvecStocks ?? [])
+      .map((piece) => ({
+        piece,
+        quantity: Math.max(0, deliveryQuantities[piece.pieceId] ?? 0),
+        isConsumable: isConsumablePiece(piece),
+      }))
+      .filter((row) => row.quantity > 0)
+
+    if (deliveredRows.length === 0) {
+      setError('Renseignez au moins une quantite livree')
       return
     }
+
+    setDeliverySubmitting(true)
+    setError(null)
     try {
-      // Sauvegarder la position de scroll avant le rechargement
-      scrollPositionRef.current = window.scrollY || document.documentElement.scrollTop
-      shouldRestoreScrollRef.current = true
-      
-      // Supprimer la pièce (cela supprimera automatiquement tous les stocks associés, y compris celui du site)
-      await deletePiece(pieceId)
-      // Retirer la ligne de la liste localement
-      if (site) {
-        setSite((prevSite) => {
-          if (!prevSite) return prevSite
-          return {
-            ...prevSite,
-            piecesAvecStocks: (prevSite.piecesAvecStocks ?? []).filter((p) => p.pieceId !== pieceId),
-          }
+      const selectedDate = deliveryDate || dateInputValue()
+      const deliveryDateTime = `${selectedDate}T12:00:00`
+      const deliveryLabel = formatDateInputLabel(selectedDate)
+      const lines = deliveredRows.map(({ piece, quantity, isConsumable }) => (
+        `- ${piece.reference}${piece.refBis ? ` / ${piece.refBis}` : ''} - ${piece.libelle}: ${quantity}`
+        + (isConsumable ? ' (stock client incremente)' : ' (pose directe, stock client non incremente)')
+      ))
+      const intervention = await createIntervention({
+        siteId,
+        type: 'LIVRAISON_TONER',
+        source: 'MANUEL',
+        priorite: 'NORMALE',
+        statut: deliveryStatus,
+        startedAt: deliveryDateTime,
+        closedAt: deliveryStatus === 'TERMINEE' ? deliveryDateTime : null,
+        title: `Livraison - ${site.nom}`,
+        description: [
+          `Livraison du ${deliveryLabel}`,
+          `Site: ${site.nom}`,
+          '',
+          ...lines,
+        ].join('\n'),
+      })
+
+      for (const { piece, quantity, isConsumable } of deliveredRows) {
+        if (!isConsumable) continue
+        await createSiteStockMovement(siteId, {
+          pieceId: piece.pieceId,
+          quantityDelta: quantity,
+          reason: 'LIVRAISON',
+          commentaire: `Livraison du ${deliveryLabel}`,
+          interventionId: intervention.id,
         })
       }
-      // Recharger les données en arrière-plan
+
+      setDeliveryOpen(false)
+      setDeliveryQuantities({})
       loadSite()
     } catch (e) {
-      console.error('Erreur lors de la suppression du stock et de la pièce:', e)
-      alert(e instanceof Error ? e.message : 'Erreur lors de la suppression du stock et de la pièce')
+      setError(e instanceof Error ? e.message : 'Erreur creation livraison')
+    } finally {
+      setDeliverySubmitting(false)
     }
-  }, [site, siteId, loadSite])
-
+  }, [deliveryDate, deliveryQuantities, deliveryStatus, loadSite, site, siteId])
   if (loading) {
     return (
       <div className="site-detail-page">
@@ -1240,15 +1071,50 @@ export default function SiteDetailPage() {
     ? allSiteImprimantes.find((imprimante) => imprimante.id === activeTab)
     : null
   const piecesAvecStocks = site.piecesAvecStocks ?? []
-  const handleQuickStockSave = async (pieceId: number) => {
+  const deliveryPieces = piecesAvecStocks.filter((piece) => deliveryShowAllPieces || isConsumablePiece(piece))
+  const deliveryTotalQuantity = Object.values(deliveryQuantities).reduce((total, quantity) => total + Math.max(0, quantity), 0)
+  const updateLocalPiece = (pieceId: number, updates: Partial<PieceAvecStocks>) => {
+    setSite((prevSite) => {
+      if (!prevSite) return prevSite
+      return {
+        ...prevSite,
+        piecesAvecStocks: (prevSite.piecesAvecStocks ?? []).map((piece) => (
+          piece.pieceId === pieceId ? { ...piece, ...updates } : piece
+        )),
+      }
+    })
+  }
+
+  const handleRefBisSave = async (piece: PieceAvecStocks) => {
+    const nextRefBis = (refBisValues[piece.pieceId] ?? '').trim()
+    const currentRefBis = (piece.refBis ?? '').trim()
+    if (nextRefBis === currentRefBis) return
+
+    setQuickSavingPieceId(piece.pieceId)
+    setError(null)
+    try {
+      await updatePiece(piece.pieceId, { refBis: nextRefBis || null })
+      updateLocalPiece(piece.pieceId, { refBis: nextRefBis || null })
+      loadSite()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour ref-bis')
+    } finally {
+      setQuickSavingPieceId(null)
+    }
+  }
+
+  const handleQuickStockSave = async (pieceId: number, nextQuantity?: number) => {
     if (!Number.isFinite(siteId)) return
+    const piece = piecesAvecStocks.find((item) => item.pieceId === pieceId)
+    const quantity = Math.max(0, nextQuantity ?? stockQuantites[pieceId] ?? piece?.quantiteStockSite ?? 0)
+    if (piece && quantity === piece.quantiteStockSite) return
+
     setQuickSavingPieceId(pieceId)
     setError(null)
     try {
-      await upsertStock(siteId, pieceId, Math.max(0, stockQuantites[pieceId] ?? 0))
-      if (isAdmin) {
-        await upsertStock(siteId, pieceId, Math.max(0, adminStockQuantites[pieceId] ?? 0), 'ADMIN_ONLY')
-      }
+      await upsertStock(siteId, pieceId, quantity)
+      setStockQuantites((prev) => ({ ...prev, [pieceId]: quantity }))
+      updateLocalPiece(pieceId, { quantiteStockSite: quantity })
       loadSite()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur mise a jour stock')
@@ -1291,6 +1157,111 @@ export default function SiteDetailPage() {
     }
   }
 
+  const linkedContactIds = new Set((site.contacts ?? []).map((contact) => contact.id))
+  const selectedContactCandidate = siteContactResults.find((contact) => String(contact.id) === siteContactSelectedId) ?? null
+  const selectedCandidateEmails = selectedContactCandidate ? contactEmails(selectedContactCandidate) : []
+  const selectedCandidatePhones = selectedContactCandidate ? contactPhones(selectedContactCandidate) : []
+  const selectedCandidateAddressBlocks = selectedContactCandidate
+    ? [
+        { title: 'Adresse professionnelle', lines: contactAddressLines(selectedContactCandidate.businessAddress) },
+        { title: 'Adresse personnelle', lines: contactAddressLines(selectedContactCandidate.homeAddress) },
+        { title: 'Autre adresse', lines: contactAddressLines(selectedContactCandidate.otherAddress) },
+      ].filter((block) => block.lines.length > 0)
+    : []
+
+  const handleSearchContactsForSite = async () => {
+    if (!siteContactSearch.trim()) {
+      setSiteContactResults([])
+      return
+    }
+
+    setSiteContactBusy(true)
+    setError(null)
+    try {
+      const response = await fetchContacts({ q: siteContactSearch.trim(), limit: 25 })
+      const results = response.data.filter((contact) => !linkedContactIds.has(contact.id))
+      setSiteContactResults(results)
+      setSiteContactSelectedId(results[0]?.id ? String(results[0].id) : '')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur recherche contacts')
+    } finally {
+      setSiteContactBusy(false)
+    }
+  }
+
+  const handleAddContactToSite = async () => {
+    if (!Number.isFinite(siteId) || !siteContactSelectedId) return
+
+    setSiteContactBusy(true)
+    setError(null)
+    try {
+      await addSiteContact(siteId, {
+        contactId: Number(siteContactSelectedId),
+        role: siteContactRole.trim() || null,
+        favorite: siteContactFavorite,
+        notes: siteContactNotes.trim() || null,
+      })
+      setSiteContactSearch('')
+      setSiteContactResults([])
+      setSiteContactSelectedId('')
+      setSiteContactRole('')
+      setSiteContactFavorite(false)
+      setSiteContactNotes('')
+      loadSite()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur liaison contact')
+    } finally {
+      setSiteContactBusy(false)
+    }
+  }
+
+  const updateLocalSiteContact = (contactId: number, updates: Partial<SiteContactLink>) => {
+    setSite((prevSite) => {
+      if (!prevSite) return prevSite
+      return {
+        ...prevSite,
+        contacts: (prevSite.contacts ?? []).map((contact) => (
+          contact.id === contactId ? { ...contact, ...updates } : contact
+        )),
+      }
+    })
+  }
+
+  const handleUpdateSiteContact = async (contactId: number, updates: Partial<Pick<SiteContactLink, 'role' | 'favorite' | 'notes'>>) => {
+    if (!Number.isFinite(siteId)) return
+
+    setSiteContactBusy(true)
+    setError(null)
+    try {
+      const updated = await updateSiteContact(siteId, contactId, updates)
+      updateLocalSiteContact(contactId, updated)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur modification liaison contact')
+      loadSite()
+    } finally {
+      setSiteContactBusy(false)
+    }
+  }
+
+  const handleRemoveSiteContact = async (contactId: number) => {
+    if (!Number.isFinite(siteId)) return
+    if (!window.confirm('Retirer ce contact du site ?')) return
+
+    setSiteContactBusy(true)
+    setError(null)
+    try {
+      await removeSiteContact(siteId, contactId)
+      setSite((prevSite) => prevSite ? {
+        ...prevSite,
+        contacts: (prevSite.contacts ?? []).filter((contact) => contact.id !== contactId),
+      } : prevSite)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur suppression liaison contact')
+    } finally {
+      setSiteContactBusy(false)
+    }
+  }
+
   return (
     <div className="site-detail-page">
       <nav className="site-detail-nav">
@@ -1300,7 +1271,7 @@ export default function SiteDetailPage() {
         <div className="site-detail-header__top">
           <div>
             <h1>{site.nom}</h1>
-            <p className="site-detail-header__subtitle">Vue site terrain: imprimantes, stock visible et reserve admin.</p>
+            <p className="site-detail-header__subtitle">Vue site terrain: imprimantes et stock visible.</p>
           </div>
           <Link to={`/interventions?siteId=${site.id}&create=1`} className="site-detail-header__cta">
             Créer une intervention
@@ -1512,7 +1483,7 @@ export default function SiteDetailPage() {
         <section className="site-detail-section">
           <h2>Pièces compatibles (modèles des imprimantes du site)</h2>
           <p className="site-detail-section-desc">
-            Tableau des pièces liées aux modèles des imprimantes présentes sur le site. Stock général = stock agent (site null). Modifiez le stock site et ref-bis, enregistrez (blur ou Entrée).
+            Tableau des pièces liées aux modèles des imprimantes présentes sur le site. Stock général = stock agent (site null). Modifiez le stock site directement, puis sortez du champ ou appuyez sur Entrée.
           </p>
 
           <div className="site-detail-stock-search">
@@ -1565,86 +1536,21 @@ export default function SiteDetailPage() {
             </button>
           </div>
 
-          <div style={{ marginBottom: '1rem' }}>
+          <div className="site-detail-stock-actions">
             <button
               type="button"
-              onClick={() => setShowAddForm(!showAddForm)}
+              onClick={() => {
+                setDeliveryDate(dateInputValue())
+                setDeliveryStatus('TERMINEE')
+                setDeliveryQuantities({})
+                setDeliveryShowAllPieces(false)
+                setDeliveryOpen(true)
+              }}
               className="site-detail-add-btn"
             >
-              {showAddForm ? 'Annuler' : '+ Ajouter une ligne'}
+              Livraison
             </button>
           </div>
-
-          {showAddForm && (
-            <div className="site-detail-add-form" style={{ marginBottom: '1rem', padding: '1rem', border: '1px solid #3f4147', borderRadius: '4px' }}>
-              <h3 style={{ marginTop: 0 }}>Ajouter un stock</h3>
-              <div style={{ display: 'grid', gridTemplateColumns: isAdmin ? '1fr 1fr 1fr 1fr auto' : '1fr 1fr 1fr auto', gap: '0.5rem', alignItems: 'end' }}>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.25rem' }}>Modèle</label>
-                  <select
-                    value={addFormData.modeleId ?? ''}
-                    onChange={(e) => handleModeleChange(e.target.value ? Number(e.target.value) : null)}
-                    style={{ width: '100%', padding: '0.5rem' }}
-                  >
-                    <option value="">Sélectionner un modèle</option>
-                    {modelesSite.map((m) => (
-                      <option key={m.id} value={m.id}>
-                        {m.nom}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.25rem' }}>Pièce</label>
-                  <select
-                    value={addFormData.pieceId ?? ''}
-                    onChange={(e) => setAddFormData((prev) => ({ ...prev, pieceId: e.target.value ? Number(e.target.value) : null }))}
-                    disabled={!addFormData.modeleId || loadingPieces}
-                    style={{ width: '100%', padding: '0.5rem' }}
-                  >
-                    <option value="">Sélectionner une pièce</option>
-                    {availablePieces.map((piece) => (
-                      <option key={piece.id} value={piece.id}>
-                        {piece.reference} - {piece.libelle}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label style={{ display: 'block', marginBottom: '0.25rem' }}>Quantité</label>
-                  <input
-                    type="number"
-                    min={0}
-                    value={addFormData.quantite}
-                    onChange={(e) => setAddFormData((prev) => ({ ...prev, quantite: parseInt(e.target.value, 10) || 0 }))}
-                    style={{ width: '100%', padding: '0.5rem' }}
-                  />
-                </div>
-                {isAdmin && (
-                  <div>
-                    <label style={{ display: 'block', marginBottom: '0.25rem' }}>Portée</label>
-                    <select
-                      value={addFormData.scope}
-                      onChange={(e) => setAddFormData((prev) => ({ ...prev, scope: e.target.value as 'TECH_VISIBLE' | 'ADMIN_ONLY' }))}
-                      style={{ width: '100%', padding: '0.5rem' }}
-                    >
-                      <option value="TECH_VISIBLE">Visible technicien</option>
-                      <option value="ADMIN_ONLY">Réserve admin</option>
-                    </select>
-                  </div>
-                )}
-                <button
-                  type="button"
-                  onClick={handleAddStock}
-                  disabled={!addFormData.pieceId}
-                  style={{ padding: '0.5rem 1rem' }}
-                >
-                  Ajouter
-                </button>
-              </div>
-            </div>
-          )}
-
           {piecesAvecStocks.length === 0 ? (
             <p className="site-detail-empty">
               Aucune pièce. Associez des modèles aux imprimantes du site et liez des pièces à ces modèles (table modele_piece).
@@ -1652,12 +1558,14 @@ export default function SiteDetailPage() {
           ) : (
             <>
             <div className="pieces-cards">
-              {piecesAvecStocks.map((p) => (
+              {piecesAvecStocks.map((p) => {
+                const matchedModeles = matchingSiteModeles(p, imprimantes)
+                return (
                 <article key={`mobile-${p.pieceId}`} className="piece-card">
                   <div className="piece-card__header">
                     <div>
                       <strong className="piece-card__ref">{p.reference}</strong>
-                      <h3>{p.libelle}</h3>
+                      <h3 title={p.libelle}>{p.libelle}</h3>
                     </div>
                     <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
                       {pieceTypeLabel(p.categorie ?? p.type)}
@@ -1668,30 +1576,9 @@ export default function SiteDetailPage() {
                     <span>Stock général: {p.quantiteStockGeneral}</span>
                   </div>
                   <div className="piece-card__modeles piece-card__modeles--compact">
-                    <select value="" onChange={() => undefined} aria-label={`Modeles lies a ${p.reference}`}>
-                      {(p.modeles ?? []).length === 0 ? (
-                        <option value="">Aucun modele</option>
-                      ) : (
-                        <>
-                          <option value="">
-                            {p.modeles?.length} modele{(p.modeles?.length ?? 0) > 1 ? 's' : ''} lie{(p.modeles?.length ?? 0) > 1 ? 's' : ''}
-                          </option>
-                          {[...(p.modeles ?? [])]
-                            .sort((a, b) => modeleLabel(a).localeCompare(modeleLabel(b), 'fr', { sensitivity: 'base' }))
-                            .map((modele) => (
-                              <option key={modele.id} value={modele.id}>{modeleLabel(modele)}</option>
-                            ))}
-                        </>
-                      )}
-                    </select>
-                    <button
-                      type="button"
-                      className="piece-card__modele-add"
-                      onClick={() => handleOpenModeleModal(p)}
-                      aria-label={`Modifier les modeles de ${p.reference}`}
-                    >
-                      +
-                    </button>
+                    <span className="pieces-table__site-model-count" title={matchedModeles.join(', ') || 'Aucun modele du site'}>
+                      {matchingSiteModelesLabel(matchedModeles.length)}
+                    </span>
                   </div>
                   <div className="piece-card__stock-grid">
                     <label>
@@ -1701,37 +1588,24 @@ export default function SiteDetailPage() {
                         min={0}
                         value={stockQuantites[p.pieceId] ?? p.quantiteStockSite}
                         onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
+                        onBlur={(e) => void handleQuickStockSave(p.pieceId, parseInt(e.currentTarget.value, 10) || 0)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur()
+                        }}
                         className="pieces-table__input"
+                        disabled={quickSavingPieceId === p.pieceId}
                       />
                     </label>
-                    {isAdmin && (
-                      <label>
-                        <span>Réserve admin</span>
-                        <input
-                          type="number"
-                          min={0}
-                          value={adminStockQuantites[p.pieceId] ?? p.quantiteStockSiteAdminOnly ?? 0}
-                          onChange={(e) => setAdminStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
-                          className="pieces-table__input"
-                        />
-                      </label>
-                    )}
                   </div>
                   <div className="piece-card__actions">
-                    <button
-                      type="button"
-                      className="piece-card__save-btn"
-                      disabled={quickSavingPieceId === p.pieceId}
-                      onClick={() => handleQuickStockSave(p.pieceId)}
-                    >
-                      {quickSavingPieceId === p.pieceId ? 'Enregistrement...' : 'Enregistrer'}
-                    </button>
+                    {quickSavingPieceId === p.pieceId && <span className="piece-card__save-status">Enregistrement...</span>}
                     <Link to={`/interventions?siteId=${site.id}&create=1`} className="piece-card__link-btn">
                       Intervention
                     </Link>
                   </div>
                 </article>
-              ))}
+                )
+              })}
             </div>
             <div className="pieces-table-wrap pieces-table-wrap--desktop">
               <table className="pieces-table">
@@ -1743,288 +1617,69 @@ export default function SiteDetailPage() {
                     <th>Catégorie</th>
                     <th>Variant</th>
                     <th>Nature</th>
-                    <th>Modèles</th>
+                    <th className="pieces-table__th--models-site">Modèles site</th>
                     <th className="pieces-table__th--num">Stock général (agent)</th>
                     <th className="pieces-table__th--num">Stock site</th>
-                    {isAdmin && <th className="pieces-table__th--num">Réserve admin</th>}
-                    <th>Actions</th>
                   </tr>
                 </thead>
                 <tbody>
                   {piecesAvecStocks.map((p) => {
-                    const isEditing = editingRowId === p.pieceId
+                    const matchedModeles = matchingSiteModeles(p, imprimantes)
+                    const stockValue = stockQuantites[p.pieceId] ?? p.quantiteStockSite
                     return (
                       <tr key={p.pieceId}>
                         <td className="pieces-table__ref">{p.reference}</td>
                         <td>
-                          {isEditing && editingValues ? (
-                            <input
-                              type="text"
-                              value={editingValues.refBis}
-                              onChange={(e) => setEditingValues((v) => v ? { ...v, refBis: e.target.value } : null)}
-                              placeholder="Ref entreprise"
-                              className="pieces-table__ref-bis-input"
-                            />
-                          ) : (
-                            <input
-                              type="text"
-                              value={refBisValues[p.pieceId] ?? p.refBis ?? ''}
-                              readOnly
-                              placeholder="Ref entreprise"
-                              className="pieces-table__ref-bis-input"
-                              style={{ backgroundColor: '#2b2d31' }}
-                            />
-                          )}
+                          <input
+                            type="text"
+                            value={refBisValues[p.pieceId] ?? p.refBis ?? ''}
+                            onChange={(e) => setRefBisValues((prev) => ({ ...prev, [p.pieceId]: e.target.value }))}
+                            onBlur={() => void handleRefBisSave(p)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur()
+                            }}
+                            placeholder="Ref entreprise"
+                            className="pieces-table__ref-bis-input"
+                            disabled={quickSavingPieceId === p.pieceId}
+                          />
+                        </td>
+                        <td className="pieces-table__label-cell">
+                          <span className="pieces-table__label-text" title={p.libelle}>{p.libelle}</span>
                         </td>
                         <td>
-                          {isEditing && editingValues ? (
-                            <input
-                              type="text"
-                              value={editingValues.libelle}
-                              onChange={(e) => setEditingValues((v) => v ? { ...v, libelle: e.target.value } : null)}
-                              style={{ width: '100%', padding: '0.25rem' }}
-                            />
-                          ) : (
-                            p.libelle
-                          )}
+                          <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
+                            {pieceTypeLabel(p.categorie ?? p.type)}
+                          </span>
                         </td>
+                        <td><span>{p.variant ?? '-'}</span></td>
                         <td>
-                          {isEditing && editingValues ? (
-                            <select
-                              value={editingValues.categorie ?? ''}
-                              onChange={(e) => {
-                                const newValue = e.target.value.trim() === '' ? null : e.target.value
-                                setEditingValues((v) => v ? { ...v, categorie: newValue } : null)
-                              }}
-                              style={{ padding: '0.25rem', fontSize: '0.875rem', width: '100%' }}
-                            >
-                              <option value="">-</option>
-                              {CATEGORIES.map((c) => (
-                                <option key={c} value={c}>
-                                  {CATEGORIE_LABELS[c] ?? c}
-                                </option>
-                              ))}
-                            </select>
-                          ) : (
-                            <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
-                              {pieceTypeLabel(p.categorie ?? p.type)}
-                            </span>
-                          )}
+                          <span>
+                            {p.nature === 'CONSUMABLE' ? 'Consommable' :
+                             p.nature === 'SPARE_PART' ? 'Piece detachee' :
+                             p.nature === 'VENTE' ? 'Vente' :
+                             p.nature === 'LOCATION' ? 'Location' :
+                             p.nature === 'MOBILIER' ? 'Mobilier' : '-'}
+                          </span>
                         </td>
-                        <td>
-                          {isEditing && editingValues ? (
-                            <select
-                              value={editingValues.variant ?? ''}
-                              onChange={(e) => {
-                                const newValue = e.target.value.trim() === '' ? null : e.target.value.trim().toUpperCase()
-                                setEditingValues((v) => v ? { ...v, variant: newValue } : null)
-                              }}
-                              style={{ padding: '0.25rem', fontSize: '0.875rem', width: '100%' }}
-                            >
-                              <option value="">-</option>
-                              <option value="BLACK">Noir</option>
-                              <option value="CYAN">Cyan</option>
-                              <option value="MAGENTA">Magenta</option>
-                              <option value="YELLOW">Jaune</option>
-                              <option value="UNIT">Unité</option>
-                              <option value="KIT">Kit</option>
-                              <option value="NONE">Aucun</option>
-                            </select>
-                          ) : (
-                            <span>{p.variant ?? '—'}</span>
-                          )}
-                        </td>
-                        <td>
-                          {isEditing && editingValues ? (
-                            <select
-                              value={editingValues.nature ?? ''}
-                              onChange={(e) => {
-                                const newValue = e.target.value.trim() === '' ? null : e.target.value.trim().toUpperCase()
-                                setEditingValues((v) => v ? { ...v, nature: newValue } : null)
-                              }}
-                              style={{ padding: '0.25rem', fontSize: '0.875rem', width: '100%' }}
-                            >
-                              <option value="">-</option>
-                              <option value="CONSUMABLE">Consommable</option>
-                              <option value="SPARE_PART">Pièce détachée</option>
-                              <option value="VENTE">Vente</option>
-                              <option value="LOCATION">Location</option>
-                              <option value="MOBILIER">Mobilier</option>
-                            </select>
-                          ) : (
-                            <span>
-                              {p.nature === 'CONSUMABLE' ? 'Consommable' :
-                               p.nature === 'SPARE_PART' ? 'Pièce détachée' :
-                               p.nature === 'VENTE' ? 'Vente' :
-                               p.nature === 'LOCATION' ? 'Location' :
-                               p.nature === 'MOBILIER' ? 'Mobilier' : '—'}
-                            </span>
-                          )}
-                        </td>
-                        <td>
-                          <div className="pieces-table__modeles-row">
-                            <select value="" onChange={() => undefined} aria-label={`Modeles lies a ${p.reference}`}>
-                              {(p.modeles ?? []).length === 0 ? (
-                                <option value="">Aucun modele</option>
-                              ) : (
-                                <>
-                                  <option value="">
-                                    {p.modeles?.length} modele{(p.modeles?.length ?? 0) > 1 ? 's' : ''} lie{(p.modeles?.length ?? 0) > 1 ? 's' : ''}
-                                  </option>
-                                  {[...(p.modeles ?? [])]
-                                    .sort((a, b) => modeleLabel(a).localeCompare(modeleLabel(b), 'fr', { sensitivity: 'base' }))
-                                    .map((modele) => (
-                                      <option key={modele.id} value={modele.id}>{modeleLabel(modele)}</option>
-                                    ))}
-                                </>
-                              )}
-                            </select>
-                            <button
-                              type="button"
-                              className="pieces-table__modele-add"
-                              onClick={() => handleOpenModeleModal(p)}
-                              aria-label={`Modifier les modeles de ${p.reference}`}
-                            >
-                              +
-                            </button>
-                          </div>
+                        <td className="pieces-table__models-count-cell">
+                          <span className="pieces-table__site-model-count" title={matchedModeles.join(', ') || 'Aucun modele du site'}>
+                            {matchingSiteModelesLabel(matchedModeles.length)}
+                          </span>
                         </td>
                         <td className="pieces-table__num">{p.quantiteStockGeneral}</td>
                         <td className="pieces-table__num">
-                          {isEditing && editingValues ? (
-                            <input
-                              type="number"
-                              min={0}
-                              value={editingValues.quantite}
-                              onChange={(e) => {
-                                const v = parseInt(e.target.value, 10)
-                                if (!Number.isNaN(v) && v >= 0) setEditingValues((prev) => prev ? { ...prev, quantite: v } : null)
-                              }}
-                              className="pieces-table__input"
-                            />
-                          ) : (
-                            <input
-                              type="number"
-                              min={0}
-                              value={stockQuantites[p.pieceId] ?? p.quantiteStockSite}
-                              readOnly
-                              className="pieces-table__input"
-                              style={{ backgroundColor: '#2b2d31' }}
-                            />
-                          )}
-                        </td>
-                        {isAdmin && (
-                          <td className="pieces-table__num">
-                            {isEditing && editingValues ? (
-                              <input
-                                type="number"
-                                min={0}
-                                value={editingValues.quantiteAdmin}
-                                onChange={(e) => {
-                                  const v = parseInt(e.target.value, 10)
-                                  if (!Number.isNaN(v) && v >= 0) setEditingValues((prev) => prev ? { ...prev, quantiteAdmin: v } : null)
-                                }}
-                                className="pieces-table__input"
-                              />
-                            ) : (
-                              <input
-                                type="number"
-                                min={0}
-                                value={adminStockQuantites[p.pieceId] ?? p.quantiteStockSiteAdminOnly ?? 0}
-                                readOnly
-                                className="pieces-table__input"
-                                style={{ backgroundColor: '#2b2d31' }}
-                              />
-                            )}
-                          </td>
-                        )}
-                        <td style={{ backgroundColor: isEditing ? '#35373c' : 'inherit' }}>
-                          {isEditing ? (
-                            <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'nowrap' }}>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleSaveEdit(p)
-                                }}
-                                disabled={saving}
-                                style={{
-                                  padding: '0.375rem 0.75rem',
-                                  backgroundColor: saving ? '#80848e' : '#23a55a',
-                                  color: '#fff',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: saving ? 'not-allowed' : 'pointer',
-                                  fontSize: '0.875rem',
-                                  whiteSpace: 'nowrap',
-                                  opacity: saving ? 0.6 : 1,
-                                }}
-                              >
-                                {saving ? '⏳ Enregistrement...' : '✓ Valider'}
-                              </button>
-                              <button
-                                type="button"
-                                onClick={handleCancelEdit}
-                                style={{
-                                  padding: '0.375rem 0.75rem',
-                                  backgroundColor: '#f23f42',
-                                  color: '#fff',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.875rem',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                ✕ Annuler
-                              </button>
-                            </div>
-                          ) : (
-                            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
-                              <button
-                                type="button"
-                                onClick={() => handleStartEdit(p)}
-                                style={{
-                                  padding: '0.375rem 0.75rem',
-                                  backgroundColor: '#5865f2',
-                                  color: '#fff',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.875rem',
-                                  whiteSpace: 'nowrap',
-                                }}
-                              >
-                                Modifier
-                              </button>
-                              <button
-                                type="button"
-                                onClick={(e) => {
-                                  e.preventDefault()
-                                  e.stopPropagation()
-                                  handleDeleteStock(p.pieceId)
-                                }}
-                                style={{
-                                  padding: '0.375rem 0.5rem',
-                                  backgroundColor: '#f23f42',
-                                  color: '#fff',
-                                  border: 'none',
-                                  borderRadius: '4px',
-                                  cursor: 'pointer',
-                                  fontSize: '0.875rem',
-                                  whiteSpace: 'nowrap',
-                                  minWidth: '32px',
-                                  display: 'flex',
-                                  alignItems: 'center',
-                                  justifyContent: 'center',
-                                }}
-                                title="Supprimer ce stock"
-                              >
-                                ✕
-                              </button>
-                            </div>
-                          )}
+                          <input
+                            type="number"
+                            min={0}
+                            value={stockValue}
+                            onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
+                            onBlur={(e) => void handleQuickStockSave(p.pieceId, parseInt(e.currentTarget.value, 10) || 0)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') e.currentTarget.blur()
+                            }}
+                            className="pieces-table__input"
+                            disabled={quickSavingPieceId === p.pieceId}
+                          />
                         </td>
                       </tr>
                     )
@@ -2108,68 +1763,345 @@ export default function SiteDetailPage() {
       )}
 
       {activeTab === 'resources' && Number.isFinite(siteId) && (
-        <SiteResourcesTab siteId={siteId} />
+        <>
+          <section className="site-detail-contacts" aria-label="Contacts du site">
+            <div className="site-detail-contacts__header">
+              <div>
+                <h2>Contacts du site</h2>
+                <p>{(site.contacts ?? []).length} contact{(site.contacts ?? []).length > 1 ? 's' : ''} lie{(site.contacts ?? []).length > 1 ? 's' : ''}</p>
+              </div>
+            </div>
+
+            {isAdmin && (
+              <div className="site-contact-linker">
+                <div className="site-contact-linker__search">
+                  <input
+                    type="search"
+                    value={siteContactSearch}
+                    onChange={(e) => setSiteContactSearch(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void handleSearchContactsForSite()
+                    }}
+                    placeholder="Rechercher un contact par nom, email, note..."
+                  />
+                  <button type="button" onClick={() => void handleSearchContactsForSite()} disabled={siteContactBusy}>
+                    Rechercher
+                  </button>
+                </div>
+
+                {siteContactResults.length > 0 && (
+                  <div className="site-contact-linker__form">
+                    <select value={siteContactSelectedId} onChange={(e) => setSiteContactSelectedId(e.target.value)}>
+                      {siteContactResults.map((contact) => (
+                        <option key={contact.id} value={contact.id}>
+                          {contact.displayName}{contact.email ? ` - ${contact.email}` : ''}
+                        </option>
+                      ))}
+                    </select>
+                    <input
+                      type="text"
+                      value={siteContactRole}
+                      onChange={(e) => setSiteContactRole(e.target.value)}
+                      placeholder="Role sur le site"
+                    />
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={siteContactFavorite}
+                        onChange={(e) => setSiteContactFavorite(e.target.checked)}
+                      />
+                      Favori
+                    </label>
+                    <textarea
+                      value={siteContactNotes}
+                      onChange={(e) => setSiteContactNotes(e.target.value)}
+                      placeholder="Notes de liaison"
+                      rows={2}
+                    />
+                    <button type="button" onClick={() => void handleAddContactToSite()} disabled={siteContactBusy || !siteContactSelectedId}>
+                      Lier au site
+                    </button>
+                  </div>
+                )}
+
+                {selectedContactCandidate && (
+                  <article className="site-contact-preview">
+                    <header>
+                      <div>
+                        <h3>{selectedContactCandidate.displayName}</h3>
+                        <p>{[selectedContactCandidate.jobTitle, selectedContactCandidate.companyName].filter(Boolean).join(' - ') || 'Contact client'}</p>
+                      </div>
+                      <span>{selectedContactCandidate.sites.length} site{selectedContactCandidate.sites.length > 1 ? 's' : ''} deja lie{selectedContactCandidate.sites.length > 1 ? 's' : ''}</span>
+                    </header>
+                    <div className="site-contact-preview__grid">
+                      <section>
+                        <h4>Emails</h4>
+                        {selectedCandidateEmails.length === 0 ? (
+                          <p>Aucun email</p>
+                        ) : (
+                          selectedCandidateEmails.map((email, index) => (
+                            <p key={`${email.address}-${index}`}>
+                              <strong>{email.address}</strong>
+                              {email.label && <span>{email.label}</span>}
+                            </p>
+                          ))
+                        )}
+                      </section>
+                      <section>
+                        <h4>Numeros</h4>
+                        {selectedCandidatePhones.length === 0 ? (
+                          <p>Aucun numero</p>
+                        ) : (
+                          selectedCandidatePhones.map((phone, index) => (
+                            <p key={`${phone.type}-${phone.number}-${index}`}>
+                              <strong>{phone.number}</strong>
+                              <span>{phone.type}</span>
+                            </p>
+                          ))
+                        )}
+                      </section>
+                      <section className="site-contact-preview__wide">
+                        <h4>Adresses</h4>
+                        {selectedCandidateAddressBlocks.length === 0 ? (
+                          <p>Aucune adresse</p>
+                        ) : (
+                          selectedCandidateAddressBlocks.map((block) => (
+                            <p key={block.title}>
+                              <strong>{block.title}</strong>
+                              {block.lines.map((line) => <span key={line}>{line}</span>)}
+                            </p>
+                          ))
+                        )}
+                      </section>
+                      <section className="site-contact-preview__wide">
+                        <h4>Notes</h4>
+                        <p>{selectedContactCandidate.notes || 'Aucune note.'}</p>
+                      </section>
+                      <section className="site-contact-preview__wide">
+                        <h4>Sites deja lies</h4>
+                        {selectedContactCandidate.sites.length === 0 ? (
+                          <p>Aucun site lie</p>
+                        ) : (
+                          selectedContactCandidate.sites.map((linkedSite) => (
+                            <p key={`${selectedContactCandidate.id}-${linkedSite.id}`}>
+                              <strong>{linkedSite.nom}</strong>
+                              <span>{linkedSite.role || 'Role non precise'}</span>
+                            </p>
+                          ))
+                        )}
+                      </section>
+                    </div>
+                  </article>
+                )}
+              </div>
+            )}
+
+            {(site.contacts ?? []).length === 0 ? (
+              <p className="site-detail-empty">Aucun contact lie a ce site.</p>
+            ) : (
+              <div className="site-contact-list">
+                {(site.contacts ?? []).map((contact) => (
+                  <article key={contact.id} className="site-contact-card">
+                    <div className="site-contact-card__main">
+                      <div>
+                        <strong>{contact.displayName}</strong>
+                        <span>
+                          {[contact.jobTitle, contact.companyName].filter(Boolean).join(' - ') || contact.email || 'Contact client'}
+                        </span>
+                      </div>
+                      {contact.favorite && <em>Favori</em>}
+                    </div>
+                    <div className="site-contact-card__meta">
+                      <span>{contact.email ?? '-'}</span>
+                      <span>{contact.mobilePhone || contact.businessPhone || '-'}</span>
+                    </div>
+                    {isAdmin ? (
+                      <div className="site-contact-card__edit">
+                        <input
+                          type="text"
+                          defaultValue={contact.role ?? ''}
+                          placeholder="Role"
+                          onBlur={(e) => void handleUpdateSiteContact(contact.id, { role: e.currentTarget.value.trim() || null })}
+                          disabled={siteContactBusy}
+                        />
+                        <label>
+                          <input
+                            type="checkbox"
+                            checked={contact.favorite}
+                            onChange={(e) => void handleUpdateSiteContact(contact.id, { favorite: e.target.checked })}
+                            disabled={siteContactBusy}
+                          />
+                          Favori
+                        </label>
+                        <textarea
+                          defaultValue={contact.notes ?? ''}
+                          placeholder="Notes"
+                          rows={2}
+                          onBlur={(e) => void handleUpdateSiteContact(contact.id, { notes: e.currentTarget.value.trim() || null })}
+                          disabled={siteContactBusy}
+                        />
+                        <button type="button" onClick={() => void handleRemoveSiteContact(contact.id)} disabled={siteContactBusy}>
+                          Retirer
+                        </button>
+                      </div>
+                    ) : (
+                      <p className="site-contact-card__notes">{contact.notes || contact.role || 'Aucune note.'}</p>
+                    )}
+                  </article>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <SiteResourcesTab siteId={siteId} />
+        </>
       )}
 
-      {modeleModal && (
+      {deliveryOpen && (
         <div
           className="site-detail-modal-backdrop"
           role="presentation"
           onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !saving) setModeleModal(null)
+            if (e.target === e.currentTarget && !deliverySubmitting) setDeliveryOpen(false)
           }}
         >
-          <section className="site-detail-modal" role="dialog" aria-modal="true" aria-labelledby="site-detail-modele-modal-title">
+          <section className="site-detail-modal site-detail-modal--delivery" role="dialog" aria-modal="true" aria-labelledby="site-detail-delivery-modal-title">
             <header className="site-detail-modal__header">
               <div>
-                <h2 id="site-detail-modele-modal-title">Modeles compatibles</h2>
-                <p>{modeleModal.reference}</p>
+                <h2 id="site-detail-delivery-modal-title">Livraison</h2>
+                <p>{site.nom}</p>
               </div>
               <button
                 type="button"
                 className="site-detail-modal__close"
-                onClick={() => setModeleModal(null)}
-                disabled={saving}
+                onClick={() => setDeliveryOpen(false)}
+                disabled={deliverySubmitting}
                 aria-label="Fermer"
               >
                 x
               </button>
             </header>
 
-            <div className="site-detail-modal__modeles">
-              {sortedAllModeles.length === 0 ? (
-                <span className="site-detail-modal__muted">Aucun modele enregistre.</span>
-              ) : (
-                sortedAllModeles.map((modele) => (
-                  <label key={modele.id} className="site-detail-modal__modele-check">
-                    <input
-                      type="checkbox"
-                      checked={modeleModal.selectedIds.includes(modele.id)}
-                      onChange={(e) => handleToggleModalModele(modele.id, e.target.checked)}
-                      disabled={saving}
-                    />
-                    <span>{modeleLabel(modele)}</span>
-                  </label>
-                ))
-              )}
+            <div className="site-detail-delivery-meta">
+              <label>
+                <span>Date de livraison</span>
+                <input
+                  type="date"
+                  value={deliveryDate}
+                  onChange={(e) => setDeliveryDate(e.target.value)}
+                  disabled={deliverySubmitting}
+                />
+              </label>
+              <label>
+                <span>Statut</span>
+                <select
+                  value={deliveryStatus}
+                  onChange={(e) => setDeliveryStatus(e.target.value)}
+                  disabled={deliverySubmitting}
+                >
+                  {INTERVENTION_STATUS_OPTIONS.map((status) => (
+                    <option key={status} value={status}>
+                      {INTERVENTION_STATUS_LABELS[status] ?? status}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label className="site-detail-delivery-toggle">
+                <input
+                  type="checkbox"
+                  checked={deliveryShowAllPieces}
+                  onChange={(e) => setDeliveryShowAllPieces(e.target.checked)}
+                  disabled={deliverySubmitting}
+                />
+                <span>Afficher aussi les pieces non consommables</span>
+              </label>
+            </div>
+
+            <div className="site-detail-delivery-table-wrap">
+              <table className="pieces-table site-detail-delivery-table">
+                <thead>
+                  <tr>
+                    <th>Reference</th>
+                    <th>Ref-bis</th>
+                    <th>Libelle</th>
+                    <th>Categorie</th>
+                    <th>Variant</th>
+                    <th>Nature</th>
+                    <th className="pieces-table__th--models-site">Modeles site</th>
+                    <th className="pieces-table__th--num">Stock site</th>
+                    <th className="pieces-table__th--num">Livre</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {deliveryPieces.length === 0 ? (
+                    <tr>
+                      <td colSpan={9}>Aucune piece compatible a livrer.</td>
+                    </tr>
+                  ) : (
+                    deliveryPieces.map((p) => {
+                      const matchedModeles = matchingSiteModeles(p, imprimantes)
+                      const isConsumable = isConsumablePiece(p)
+                      return (
+                        <tr key={`delivery-${p.pieceId}`} className={isConsumable ? undefined : 'site-detail-delivery-table__direct-row'}>
+                          <td className="pieces-table__ref">{p.reference}</td>
+                          <td>{refBisValues[p.pieceId] ?? p.refBis ?? '-'}</td>
+                          <td className="pieces-table__label-cell">
+                            <span className="pieces-table__label-text" title={p.libelle}>{p.libelle}</span>
+                          </td>
+                          <td>
+                            <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
+                              {pieceTypeLabel(p.categorie ?? p.type)}
+                            </span>
+                          </td>
+                          <td>{p.variant ?? '-'}</td>
+                          <td>
+                            <span title={isConsumable ? 'Cette livraison incrementera le stock client' : 'Pose directe: le stock client ne sera pas incremente'}>
+                              {pieceNatureDisplay(p)}
+                            </span>
+                          </td>
+                          <td className="pieces-table__models-count-cell">
+                            <span className="pieces-table__site-model-count" title={matchedModeles.join(', ') || 'Aucun modele du site'}>
+                              {matchingSiteModelesLabel(matchedModeles.length)}
+                            </span>
+                          </td>
+                          <td className="pieces-table__num">{p.quantiteStockSite}</td>
+                          <td className="pieces-table__num">
+                            <input
+                              type="number"
+                              min={0}
+                              value={deliveryQuantities[p.pieceId] ?? 0}
+                              onChange={(e) => {
+                                const quantity = Math.max(0, parseInt(e.target.value, 10) || 0)
+                                setDeliveryQuantities((prev) => ({ ...prev, [p.pieceId]: quantity }))
+                              }}
+                              className="pieces-table__input"
+                              disabled={deliverySubmitting}
+                            />
+                          </td>
+                        </tr>
+                      )
+                    })
+                  )}
+                </tbody>
+              </table>
             </div>
 
             <footer className="site-detail-modal__actions">
               <button
                 type="button"
                 className="site-detail-modal__cancel"
-                onClick={() => setModeleModal(null)}
-                disabled={saving}
+                onClick={() => setDeliveryOpen(false)}
+                disabled={deliverySubmitting}
               >
                 Annuler
               </button>
               <button
                 type="button"
                 className="site-detail-modal__save"
-                onClick={() => void handleSaveModeleModal()}
-                disabled={saving}
+                onClick={() => void handleCreateDelivery()}
+                disabled={deliverySubmitting || deliveryTotalQuantity <= 0}
               >
-                {saving ? 'Enregistrement...' : 'Valider'}
+                {deliverySubmitting ? 'Enregistrement...' : 'Creer la livraison'}
               </button>
             </footer>
           </section>

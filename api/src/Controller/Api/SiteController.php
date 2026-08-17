@@ -7,10 +7,12 @@ namespace App\Controller\Api;
 use App\Entity\Alerte;
 use App\Entity\Enum\NaturePiece;
 use App\Entity\Enum\StockScope;
+use App\Entity\Contact;
 use App\Entity\Imprimante;
 use App\Entity\Piece;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
+use App\Entity\SiteContact;
 use App\Entity\Stock;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
@@ -231,6 +233,7 @@ class SiteController extends AbstractController
                 'anciennesImprimantes' => $anciennesImprimantesData,
                 'stocks' => $stocksData,
                 'piecesAvecStocks' => $piecesAvecStocks,
+                'contacts' => $this->siteContactsToArray($site),
             ], Response::HTTP_OK);
         } catch (\Throwable $e) {
             return new JsonResponse([
@@ -266,6 +269,94 @@ class SiteController extends AbstractController
             'nom' => $site->getNom(),
             'isHidden' => $site->isHidden(),
         ], Response::HTTP_OK);
+    }
+
+    #[Route('/{id}/contacts', name: 'contact_link_create', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function addContact(int $id, Request $request): JsonResponse|Response
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        $site = $this->em->getRepository(Site::class)->find($id);
+        if (!$site instanceof Site || !$this->canAccessSite($site)) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!\is_array($data) || !isset($data['contactId']) || !is_numeric($data['contactId'])) {
+            return new JsonResponse(['error' => 'contactId requis'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $contact = $this->em->getRepository(Contact::class)->find((int) $data['contactId']);
+        if (!$contact instanceof Contact) {
+            return new JsonResponse(['error' => 'Contact introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $link = $this->findSiteContactLink($site, $contact);
+        if (!$link instanceof SiteContact) {
+            $link = new SiteContact();
+            $link->setSite($site)->setContact($contact);
+            $this->em->persist($link);
+        }
+
+        $this->hydrateSiteContactLink($link, $data);
+        $this->em->flush();
+
+        return new JsonResponse($this->siteContactToArray($link), Response::HTTP_OK);
+    }
+
+    #[Route('/{id}/contacts/{contactId}', name: 'contact_link_update', requirements: ['id' => '\d+', 'contactId' => '\d+'], methods: ['PATCH'])]
+    public function updateContactLink(int $id, int $contactId, Request $request): JsonResponse|Response
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        $site = $this->em->getRepository(Site::class)->find($id);
+        $contact = $this->em->getRepository(Contact::class)->find($contactId);
+        if (!$site instanceof Site || !$this->canAccessSite($site) || !$contact instanceof Contact) {
+            return new JsonResponse(['error' => 'Liaison introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $link = $this->findSiteContactLink($site, $contact);
+        if (!$link instanceof SiteContact) {
+            return new JsonResponse(['error' => 'Liaison introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!\is_array($data)) {
+            return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $this->hydrateSiteContactLink($link, $data);
+        $this->em->flush();
+
+        return new JsonResponse($this->siteContactToArray($link), Response::HTTP_OK);
+    }
+
+    #[Route('/{id}/contacts/{contactId}', name: 'contact_link_delete', requirements: ['id' => '\d+', 'contactId' => '\d+'], methods: ['DELETE'])]
+    public function removeContactLink(int $id, int $contactId): JsonResponse|Response
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        $site = $this->em->getRepository(Site::class)->find($id);
+        $contact = $this->em->getRepository(Contact::class)->find($contactId);
+        if (!$site instanceof Site || !$this->canAccessSite($site) || !$contact instanceof Contact) {
+            return new JsonResponse(['error' => 'Liaison introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $link = $this->findSiteContactLink($site, $contact);
+        if (!$link instanceof SiteContact) {
+            return new JsonResponse(['error' => 'Liaison introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $this->em->remove($link);
+        $this->em->flush();
+
+        return new JsonResponse(['ok' => true], Response::HTTP_OK);
     }
 
     private function pieceMatchesSearch(
@@ -412,6 +503,72 @@ class SiteController extends AbstractController
     private function isAdmin(): bool
     {
         return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+    }
+
+    private function hydrateSiteContactLink(SiteContact $link, array $data): void
+    {
+        if (array_key_exists('role', $data)) {
+            $role = trim((string) ($data['role'] ?? ''));
+            $link->setRole($role !== '' ? mb_substr($role, 0, 80) : null);
+        }
+        if (array_key_exists('favorite', $data)) {
+            $link->setFavorite((bool) $data['favorite']);
+        }
+        if (array_key_exists('notes', $data)) {
+            $notes = trim((string) ($data['notes'] ?? ''));
+            $link->setNotes($notes !== '' ? $notes : null);
+        }
+    }
+
+    private function findSiteContactLink(Site $site, Contact $contact): ?SiteContact
+    {
+        /** @var SiteContact|null $link */
+        $link = $this->em->getRepository(SiteContact::class)->findOneBy([
+            'site' => $site,
+            'contact' => $contact,
+        ]);
+
+        return $link;
+    }
+
+    /**
+     * @return list<array<string, mixed>>
+     */
+    private function siteContactsToArray(Site $site): array
+    {
+        $links = $this->em->getRepository(SiteContact::class)->findBy(['site' => $site]);
+        $data = array_map(fn (SiteContact $link): array => $this->siteContactToArray($link), $links);
+        usort($data, static function (array $a, array $b): int {
+            if ($a['favorite'] !== $b['favorite']) {
+                return $a['favorite'] ? -1 : 1;
+            }
+
+            return strcmp((string) $a['displayName'], (string) $b['displayName']);
+        });
+
+        return $data;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function siteContactToArray(SiteContact $link): array
+    {
+        $contact = $link->getContact();
+
+        return [
+            'linkId' => $link->getId(),
+            'id' => $contact->getId(),
+            'displayName' => $contact->getDisplayName(),
+            'email' => $contact->getEmail(),
+            'mobilePhone' => $contact->getMobilePhone(),
+            'businessPhone' => $contact->getBusinessPhone(),
+            'companyName' => $contact->getCompanyName(),
+            'jobTitle' => $contact->getJobTitle(),
+            'role' => $link->getRole(),
+            'favorite' => $link->isFavorite(),
+            'notes' => $link->getNotes(),
+        ];
     }
 
     private function canAccessSite(Site $site): bool
