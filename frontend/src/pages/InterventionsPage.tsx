@@ -56,6 +56,111 @@ function extractInterventionPieces(description: string | null): string[] {
     .map((line) => line.slice(2).replace(/\s+\((?:stock client incremente|pose directe, stock client non incremente)\)$/i, ''))
 }
 
+const PIECE_VARIANT_LABELS: Record<string, string> = {
+  BLACK: 'Noir',
+  CYAN: 'Cyan',
+  MAGENTA: 'Magenta',
+  YELLOW: 'Jaune',
+  BAC_RECUP: 'Bac recup',
+  UNIT: 'Unite',
+  KIT: 'Kit',
+}
+
+type InterventionPieceBadge = {
+  key: string
+  label: string
+  title: string
+  variant: string | null
+}
+
+function normalizePieceVariant(value: string | null | undefined): string | null {
+  if (!value || value === 'NONE') return null
+  return value.toUpperCase()
+}
+
+function inferPieceVariantFromText(text: string): string | null {
+  const lower = text.toLowerCase()
+  if (/\b(?:noir|black|bk)\b/.test(lower)) return 'BLACK'
+  if (/\bcyan\b/.test(lower)) return 'CYAN'
+  if (/\bmagenta\b/.test(lower)) return 'MAGENTA'
+  if (/\b(?:jaune|yellow|yel)\b/.test(lower)) return 'YELLOW'
+  if (/\b(?:bac|recup|waste)\b/.test(lower)) return 'BAC_RECUP'
+  return null
+}
+
+function pieceVariantLabel(variant: string | null): string | null {
+  if (!variant) return null
+  return PIECE_VARIANT_LABELS[variant] ?? variant
+}
+
+function formatInterventionPieceBadges(intervention: InterventionItem): InterventionPieceBadge[] {
+  const stockMovements = intervention.stockMovements ?? []
+  if (stockMovements.length > 0) {
+    const grouped = new Map<string, {
+      reference: string
+      modelLabel: string
+      libelle: string
+      variant: string | null
+      quantity: number
+    }>()
+
+    stockMovements.forEach((movement) => {
+      const piece = movement.piece
+      const variant = normalizePieceVariant(piece.variant)
+      const modelLabel = piece.refBis
+        || piece.modeles?.map((modele) => modele.nom).filter(Boolean).slice(0, 2).join(', ')
+        || ''
+      const key = [
+        piece.reference,
+        piece.refBis ?? '',
+        modelLabel,
+        piece.libelle,
+        variant ?? '',
+      ].join('|')
+      const current = grouped.get(key)
+      if (current) {
+        current.quantity += movement.quantityDelta
+        return
+      }
+      grouped.set(key, {
+        reference: piece.reference,
+        modelLabel,
+        libelle: piece.libelle,
+        variant,
+        quantity: movement.quantityDelta,
+      })
+    })
+
+    return Array.from(grouped.entries()).map(([key, item]) => {
+      const variantLabel = pieceVariantLabel(item.variant)
+      const modelOrLabel = item.modelLabel || item.libelle
+      const label = [
+        item.reference,
+        modelOrLabel ? ` / ${modelOrLabel}` : '',
+        variantLabel ? ` · ${variantLabel}` : '',
+        ` : ${item.quantity}`,
+      ].join('')
+
+      return {
+        key,
+        label,
+        title: `${item.reference}${modelOrLabel ? ` / ${modelOrLabel}` : ''}${variantLabel ? ` - ${variantLabel}` : ''}: ${item.quantity}`,
+        variant: item.variant,
+      }
+    })
+  }
+
+  return extractInterventionPieces(intervention.description).map((piece) => {
+    const variant = inferPieceVariantFromText(piece)
+    return {
+      key: piece,
+      label: piece,
+      title: piece,
+      variant,
+    }
+  })
+}
+
 export default function InterventionsPage() {
   const { user } = useAuth()
   const [searchParams] = useSearchParams()
@@ -155,10 +260,10 @@ export default function InterventionsPage() {
     setError(null)
     setMessage(null)
     try {
-      await updateIntervention(intervention.id, patch)
+      const updatedIntervention = await updateIntervention(intervention.id, patch)
       await loadData()
       setSelectedIntervention((current) => (
-        current?.id === intervention.id ? { ...current, ...patch } as InterventionItem : current
+        current?.id === intervention.id ? updatedIntervention : current
       ))
       setMessage('Intervention mise a jour')
     } catch (e) {
@@ -497,7 +602,7 @@ export default function InterventionsPage() {
       ) : (
         <div className="interventions-list">
           {interventions.map((intervention) => {
-            const pieces = extractInterventionPieces(intervention.description)
+            const pieces = formatInterventionPieceBadges(intervention)
 
             return (
               <article
@@ -539,7 +644,13 @@ export default function InterventionsPage() {
                 {pieces.length > 0 && (
                   <div className="intervention-card__pieces" aria-label="Pieces livrees">
                     {pieces.map((piece) => (
-                      <span key={piece} title={piece}>{piece}</span>
+                      <span
+                        key={piece.key}
+                        className={`intervention-card__piece intervention-card__piece--${statusClass(piece.variant ?? 'none')}`}
+                        title={piece.title}
+                      >
+                        {piece.label}
+                      </span>
                     ))}
                   </div>
                 )}
@@ -551,6 +662,7 @@ export default function InterventionsPage() {
 
       {selectedIntervention && (() => {
         const intervention = selectedIntervention
+        const pieces = formatInterventionPieceBadges(intervention)
         const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
         const billingStatus = intervention.billingStatus ?? 'NON_FACTURE'
         const canSubmitForApproval =
@@ -601,6 +713,20 @@ export default function InterventionsPage() {
 
               {intervention.description && (
                 <p className="intervention-card__description">{intervention.description}</p>
+              )}
+
+              {pieces.length > 0 && (
+                <div className="intervention-card__pieces intervention-card__pieces--detail" aria-label="Pieces livrees">
+                  {pieces.map((piece) => (
+                    <span
+                      key={piece.key}
+                      className={`intervention-card__piece intervention-card__piece--${statusClass(piece.variant ?? 'none')}`}
+                      title={piece.title}
+                    >
+                      {piece.label}
+                    </span>
+                  ))}
+                </div>
               )}
 
               <div className="intervention-card__details">

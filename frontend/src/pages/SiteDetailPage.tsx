@@ -27,7 +27,6 @@ import {
   upsertStock,
   updatePiece,
   createIntervention,
-  createSiteStockMovement,
   UnauthorizedError,
   type SiteDetail,
   type Imprimante,
@@ -187,6 +186,202 @@ const STOCK_MOVEMENT_REASON_LABELS: Record<string, string> = {
   TRANSFERT_RESERVE: 'Transfert reserve',
 }
 
+const PIECE_VARIANT_LABELS: Record<string, string> = {
+  BLACK: 'Noir',
+  CYAN: 'Cyan',
+  MAGENTA: 'Magenta',
+  YELLOW: 'Jaune',
+  WASTE: 'Bac recup',
+  BAC_RECUP: 'Bac recup',
+  UNIT: 'Unite',
+  KIT: 'Kit',
+}
+
+function localDateKey(iso: string): string {
+  const date = new Date(iso)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+}
+
+function localMinuteKey(iso: string): string {
+  const date = new Date(iso)
+  return [
+    date.getFullYear(),
+    String(date.getMonth() + 1).padStart(2, '0'),
+    String(date.getDate()).padStart(2, '0'),
+    String(date.getHours()).padStart(2, '0'),
+    String(date.getMinutes()).padStart(2, '0'),
+  ].join('-')
+}
+
+function formatMovementDay(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    weekday: 'long',
+    day: '2-digit',
+    month: 'long',
+    year: 'numeric',
+  })
+}
+
+function movementPieceVariantLabel(movement: StockMovementItem): string {
+  const variant = movement.piece.variant ?? ''
+  if (variant && PIECE_VARIANT_LABELS[variant]) return PIECE_VARIANT_LABELS[variant]
+  if (variant) return variant
+  return pieceTypeLabel(movement.piece.categorie)
+}
+
+function movementPieceVariantClass(movement: StockMovementItem): string {
+  const raw = movement.piece.variant ?? movement.piece.categorie ?? 'autre'
+  return raw.replace(/\s+/g, '_').toLowerCase()
+}
+
+function movementModelLabels(
+  movement: StockMovementItem,
+  pieces: PieceAvecStocks[],
+  imprimantes: Imprimante[]
+): string[] {
+  const piece = pieces.find((item) => item.pieceId === movement.piece.id)
+  if (piece) {
+    const labels = matchingSiteModeles(piece, imprimantes)
+    if (labels.length > 0) return labels
+  }
+
+  const siteModeleIds = new Set(
+    imprimantes
+      .map((imprimante) => imprimante.modeleId)
+      .filter((modeleId): modeleId is number => typeof modeleId === 'number')
+  )
+  const labels = (movement.piece.modeles ?? [])
+    .filter((modele) => siteModeleIds.size === 0 || siteModeleIds.has(modele.id))
+    .map((modele) => modeleLabel(modele))
+
+  return Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
+}
+
+interface StockMovementGroupColor {
+  label: string
+  className: string
+  quantityDelta: number
+  references: string[]
+}
+
+interface StockMovementGroup {
+  key: string
+  sortTime: number
+  dateKey: string
+  dateLabel: string
+  timeLabel: string
+  modelLabel: string
+  refBis: string | null
+  reason: string
+  movementType: string
+  userLabel: string
+  stockScope: string
+  intervention: StockMovementItem['intervention']
+  commentaire: string | null
+  quantityBefore: number
+  quantityAfter: number
+  totalDelta: number
+  colors: StockMovementGroupColor[]
+  movements: StockMovementItem[]
+}
+
+interface StockMovementDayGroup {
+  dateKey: string
+  dateLabel: string
+  groups: StockMovementGroup[]
+}
+
+function groupStockMovementsByDate(
+  movements: StockMovementItem[],
+  pieces: PieceAvecStocks[],
+  imprimantes: Imprimante[]
+): StockMovementDayGroup[] {
+  const groups = new Map<string, StockMovementGroup>()
+
+  for (const movement of movements) {
+    const modelLabels = movementModelLabels(movement, pieces, imprimantes)
+    const modelLabel = modelLabels.length > 0 ? modelLabels.join(', ') : 'Modele non precise'
+    const refBis = movement.piece.refBis?.trim() || null
+    const eventKey = movement.intervention
+      ? `intervention-${movement.intervention.id}`
+      : [
+          localMinuteKey(movement.createdAt),
+          movement.reason,
+          movement.movementType,
+          movement.user.id,
+          movement.commentaire ?? '',
+        ].join('|')
+    const key = [
+      localDateKey(movement.createdAt),
+      eventKey,
+      modelLabel,
+      refBis ?? '',
+    ].join('::')
+
+    let group = groups.get(key)
+    if (!group) {
+      group = {
+        key,
+        sortTime: new Date(movement.createdAt).getTime(),
+        dateKey: localDateKey(movement.createdAt),
+        dateLabel: formatMovementDay(movement.createdAt),
+        timeLabel: new Date(movement.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        modelLabel,
+        refBis,
+        reason: movement.reason,
+        movementType: movement.movementType,
+        userLabel: `${movement.user.firstName} ${movement.user.lastName}`.trim(),
+        stockScope: movement.stockScope,
+        intervention: movement.intervention,
+        commentaire: movement.commentaire,
+        quantityBefore: movement.quantityBefore,
+        quantityAfter: movement.quantityAfter,
+        totalDelta: 0,
+        colors: [],
+        movements: [],
+      }
+      groups.set(key, group)
+    }
+
+    group.movements.push(movement)
+    group.totalDelta += movement.quantityDelta
+    group.quantityBefore = Math.min(group.quantityBefore, movement.quantityBefore)
+    group.quantityAfter = Math.max(group.quantityAfter, movement.quantityAfter)
+
+    const colorLabel = movementPieceVariantLabel(movement)
+    let color = group.colors.find((item) => item.label === colorLabel)
+    if (!color) {
+      color = {
+        label: colorLabel,
+        className: movementPieceVariantClass(movement),
+        quantityDelta: 0,
+        references: [],
+      }
+      group.colors.push(color)
+    }
+    color.quantityDelta += movement.quantityDelta
+    if (!color.references.includes(movement.piece.reference)) {
+      color.references.push(movement.piece.reference)
+    }
+  }
+
+  const dayMap = new Map<string, StockMovementDayGroup>()
+  for (const group of Array.from(groups.values()).sort((a, b) => b.sortTime - a.sortTime)) {
+    let day = dayMap.get(group.dateKey)
+    if (!day) {
+      day = {
+        dateKey: group.dateKey,
+        dateLabel: group.dateLabel,
+        groups: [],
+      }
+      dayMap.set(group.dateKey, day)
+    }
+    group.colors.sort((a, b) => a.label.localeCompare(b.label, 'fr', { sensitivity: 'base' }))
+    day.groups.push(group)
+  }
+
+  return Array.from(dayMap.values())
+}
 /** Point de données pour le graphique consommation. */
 type TonerColorKey = 'black' | 'cyan' | 'magenta' | 'yellow'
 
@@ -248,17 +443,21 @@ function formatDateInputLabel(value: string): string {
   return new Date(`${value}T00:00:00`).toLocaleDateString('fr-FR')
 }
 
-function contactEmails(contact: ContactItem): Array<{ label: string | null; address: string }> {
+function contactEmails(
+  contact: Pick<ContactItem, 'emailAddresses' | 'email'> | Pick<SiteContactLink, 'emailAddresses' | 'email'>
+): Array<{ label: string | null; address: string }> {
   if ((contact.emailAddresses ?? []).length > 0) {
-    return contact.emailAddresses
+    return contact.emailAddresses ?? []
   }
 
   return contact.email ? [{ label: null, address: contact.email }] : []
 }
 
-function contactPhones(contact: ContactItem): Array<{ type: string; number: string }> {
+function contactPhones(
+  contact: Pick<ContactItem, 'phoneNumbers' | 'mobilePhone' | 'businessPhone'> | Pick<SiteContactLink, 'phoneNumbers' | 'mobilePhone' | 'businessPhone'>
+): Array<{ type: string; number: string }> {
   if ((contact.phoneNumbers ?? []).length > 0) {
-    return contact.phoneNumbers
+    return contact.phoneNumbers ?? []
   }
 
   return [
@@ -273,6 +472,16 @@ function contactAddressLines(address: ContactAddress | null): string[] {
   return Object.entries(address)
     .map(([label, value]) => `${label}: ${value}`)
     .filter(Boolean)
+}
+
+function contactAddressBlocks(
+  contact: Pick<ContactItem, 'businessAddress' | 'homeAddress' | 'otherAddress'> | Pick<SiteContactLink, 'businessAddress' | 'homeAddress' | 'otherAddress'>
+): Array<{ title: string; lines: string[] }> {
+  return [
+    { title: 'Adresse professionnelle', lines: contactAddressLines(contact.businessAddress ?? null) },
+    { title: 'Adresse personnelle', lines: contactAddressLines(contact.homeAddress ?? null) },
+    { title: 'Autre adresse', lines: contactAddressLines(contact.otherAddress ?? null) },
+  ].filter((block) => block.lines.length > 0)
 }
 
 function pieceNatureDisplay(piece: Pick<PieceAvecStocks, 'nature'>): string {
@@ -789,14 +998,14 @@ export default function SiteDetailPage() {
   const [site, setSite] = useState<SiteDetail | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<number | 'stocks' | 'resources' | null>(null)
+  const [activeTab, setActiveTab] = useState<number | 'stocks' | 'contacts' | 'resources' | null>(null)
   const [rapportsByImp, setRapportsByImp] = useState<Record<number, RapportImprimante[]>>({})
   const [alertesByImp, setAlertesByImp] = useState<Record<number, Alerte[]>>({})
   const [tonerEventsByImp, setTonerEventsByImp] = useState<Record<number, TonerReplacementEvent[]>>({})
   const [showInactiveAlertsByImp, setShowInactiveAlertsByImp] = useState<Record<number, boolean>>({})
   const [updatingAlerteIdByImp, setUpdatingAlerteIdByImp] = useState<Record<number, number | null>>({})
   const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
-  const [stockMovements, setStockMovements] = useState<StockMovementItem[]>([])
+  const [stockSaveSubmitting, setStockSaveSubmitting] = useState(false)
   const [stockMovementHistory, setStockMovementHistory] = useState<StockMovementItem[]>([])
   const [search, setSearch] = useState<StockSearchParams>({})
   const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
@@ -847,12 +1056,10 @@ export default function SiteDetailPage() {
     setError(null)
     Promise.all([
       fetchSiteDetail(siteId, appliedSearch),
-      fetchSiteStockMovements(siteId, { limit: 20 }),
       fetchSiteStockMovements(siteId, { limit: 5000 }),
     ])
-      .then(([data, movementsData, movementHistoryData]) => {
+      .then(([data, movementHistoryData]) => {
         setSite(data)
-        setStockMovements(movementsData)
         setStockMovementHistory(movementHistoryData)
         const qty: Record<number, number> = {}
         const refBis: Record<number, string> = {}
@@ -1004,11 +1211,16 @@ export default function SiteDetailPage() {
       const selectedDate = deliveryDate || dateInputValue()
       const deliveryDateTime = `${selectedDate}T12:00:00`
       const deliveryLabel = formatDateInputLabel(selectedDate)
-      const lines = deliveredRows.map(({ piece, quantity, isConsumable }) => (
-        `- ${piece.reference}${piece.refBis ? ` / ${piece.refBis}` : ''} - ${piece.libelle}: ${quantity}`
-        + (isConsumable ? ' (stock client incremente)' : ' (pose directe, stock client non incremente)')
-      ))
-      const intervention = await createIntervention({
+      const lines = deliveredRows.map(({ piece, quantity, isConsumable }) => {
+        const variantLabel = piece.variant ? (PIECE_VARIANT_LABELS[piece.variant] ?? piece.variant) : null
+        return (
+          `- ${piece.reference}${piece.refBis ? ` / ${piece.refBis}` : ''} - ${piece.libelle}`
+          + (variantLabel ? ` - ${variantLabel}` : '')
+          + `: ${quantity}`
+          + (isConsumable ? ' (stock client incremente)' : ' (pose directe, stock client non incremente)')
+        )
+      })
+      await createIntervention({
         siteId,
         type: 'LIVRAISON_TONER',
         source: 'MANUEL',
@@ -1024,17 +1236,6 @@ export default function SiteDetailPage() {
           ...lines,
         ].join('\n'),
       })
-
-      for (const { piece, quantity, isConsumable } of deliveredRows) {
-        if (!isConsumable) continue
-        await createSiteStockMovement(siteId, {
-          pieceId: piece.pieceId,
-          quantityDelta: quantity,
-          reason: 'LIVRAISON',
-          commentaire: `Livraison du ${deliveryLabel}`,
-          interventionId: intervention.id,
-        })
-      }
 
       setDeliveryOpen(false)
       setDeliveryQuantities({})
@@ -1103,23 +1304,38 @@ export default function SiteDetailPage() {
     }
   }
 
-  const handleQuickStockSave = async (pieceId: number, nextQuantity?: number) => {
-    if (!Number.isFinite(siteId)) return
-    const piece = piecesAvecStocks.find((item) => item.pieceId === pieceId)
-    const quantity = Math.max(0, nextQuantity ?? stockQuantites[pieceId] ?? piece?.quantiteStockSite ?? 0)
-    if (piece && quantity === piece.quantiteStockSite) return
+  const stockChanges = piecesAvecStocks
+    .map((piece) => ({
+      pieceId: piece.pieceId,
+      reference: piece.reference,
+      previousQuantity: piece.quantiteStockSite,
+      nextQuantity: Math.max(0, stockQuantites[piece.pieceId] ?? piece.quantiteStockSite),
+    }))
+    .filter((change) => change.nextQuantity !== change.previousQuantity)
+  const groupedStockMovementDays = groupStockMovementsByDate(stockMovementHistory, piecesAvecStocks, imprimantes)
 
-    setQuickSavingPieceId(pieceId)
+  const resetStockChanges = () => {
+    const qty: Record<number, number> = {}
+    for (const piece of piecesAvecStocks) {
+      qty[piece.pieceId] = piece.quantiteStockSite
+    }
+    setStockQuantites(qty)
+  }
+
+  const handleSaveStockChanges = async () => {
+    if (!Number.isFinite(siteId) || stockChanges.length === 0) return
+
+    setStockSaveSubmitting(true)
     setError(null)
     try {
-      await upsertStock(siteId, pieceId, quantity)
-      setStockQuantites((prev) => ({ ...prev, [pieceId]: quantity }))
-      updateLocalPiece(pieceId, { quantiteStockSite: quantity })
+      await Promise.all(stockChanges.map((change) => (
+        upsertStock(siteId, change.pieceId, change.nextQuantity)
+      )))
       loadSite()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur mise a jour stock')
     } finally {
-      setQuickSavingPieceId(null)
+      setStockSaveSubmitting(false)
     }
   }
 
@@ -1159,15 +1375,10 @@ export default function SiteDetailPage() {
 
   const linkedContactIds = new Set((site.contacts ?? []).map((contact) => contact.id))
   const selectedContactCandidate = siteContactResults.find((contact) => String(contact.id) === siteContactSelectedId) ?? null
+  const selectedContactAlreadyLinked = selectedContactCandidate ? linkedContactIds.has(selectedContactCandidate.id) : false
   const selectedCandidateEmails = selectedContactCandidate ? contactEmails(selectedContactCandidate) : []
   const selectedCandidatePhones = selectedContactCandidate ? contactPhones(selectedContactCandidate) : []
-  const selectedCandidateAddressBlocks = selectedContactCandidate
-    ? [
-        { title: 'Adresse professionnelle', lines: contactAddressLines(selectedContactCandidate.businessAddress) },
-        { title: 'Adresse personnelle', lines: contactAddressLines(selectedContactCandidate.homeAddress) },
-        { title: 'Autre adresse', lines: contactAddressLines(selectedContactCandidate.otherAddress) },
-      ].filter((block) => block.lines.length > 0)
-    : []
+  const selectedCandidateAddressBlocks = selectedContactCandidate ? contactAddressBlocks(selectedContactCandidate) : []
 
   const handleSearchContactsForSite = async () => {
     if (!siteContactSearch.trim()) {
@@ -1179,7 +1390,7 @@ export default function SiteDetailPage() {
     setError(null)
     try {
       const response = await fetchContacts({ q: siteContactSearch.trim(), limit: 25 })
-      const results = response.data.filter((contact) => !linkedContactIds.has(contact.id))
+      const results = response.data
       setSiteContactResults(results)
       setSiteContactSelectedId(results[0]?.id ? String(results[0].id) : '')
     } catch (e) {
@@ -1191,6 +1402,10 @@ export default function SiteDetailPage() {
 
   const handleAddContactToSite = async () => {
     if (!Number.isFinite(siteId) || !siteContactSelectedId) return
+    if (linkedContactIds.has(Number(siteContactSelectedId))) {
+      setError('Ce contact est deja lie a ce site')
+      return
+    }
 
     setSiteContactBusy(true)
     setError(null)
@@ -1221,7 +1436,11 @@ export default function SiteDetailPage() {
       return {
         ...prevSite,
         contacts: (prevSite.contacts ?? []).map((contact) => (
-          contact.id === contactId ? { ...contact, ...updates } : contact
+          contact.id === contactId
+            ? { ...contact, ...updates }
+            : updates.favorite
+              ? { ...contact, favorite: false }
+              : contact
         )),
       }
     })
@@ -1472,6 +1691,13 @@ export default function SiteDetailPage() {
         </button>
         <button
           type="button"
+          className={'site-detail-tab' + (activeTab === 'contacts' ? ' site-detail-tab--active' : '')}
+          onClick={() => setActiveTab('contacts')}
+        >
+          Contacts
+        </button>
+        <button
+          type="button"
           className={'site-detail-tab' + (activeTab === 'resources' ? ' site-detail-tab--active' : '')}
           onClick={() => setActiveTab('resources')}
         >
@@ -1550,6 +1776,27 @@ export default function SiteDetailPage() {
             >
               Livraison
             </button>
+            {stockChanges.length > 0 && (
+              <div className="site-detail-stock-savebar" role="status">
+                <span>{stockChanges.length} modification{stockChanges.length > 1 ? 's' : ''} en attente</span>
+                <button
+                  type="button"
+                  onClick={() => void handleSaveStockChanges()}
+                  disabled={stockSaveSubmitting}
+                  className="site-detail-stock-savebar__save"
+                >
+                  {stockSaveSubmitting ? 'Validation...' : 'Valider les stocks'}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetStockChanges}
+                  disabled={stockSaveSubmitting}
+                  className="site-detail-stock-savebar__cancel"
+                >
+                  Annuler
+                </button>
+              </div>
+            )}
           </div>
           {piecesAvecStocks.length === 0 ? (
             <p className="site-detail-empty">
@@ -1588,12 +1835,11 @@ export default function SiteDetailPage() {
                         min={0}
                         value={stockQuantites[p.pieceId] ?? p.quantiteStockSite}
                         onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
-                        onBlur={(e) => void handleQuickStockSave(p.pieceId, parseInt(e.currentTarget.value, 10) || 0)}
                         onKeyDown={(e) => {
-                          if (e.key === 'Enter') e.currentTarget.blur()
+                          if (e.key === 'Enter') void handleSaveStockChanges()
                         }}
                         className="pieces-table__input"
-                        disabled={quickSavingPieceId === p.pieceId}
+                        disabled={stockSaveSubmitting}
                       />
                     </label>
                   </div>
@@ -1673,12 +1919,11 @@ export default function SiteDetailPage() {
                             min={0}
                             value={stockValue}
                             onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
-                            onBlur={(e) => void handleQuickStockSave(p.pieceId, parseInt(e.currentTarget.value, 10) || 0)}
                             onKeyDown={(e) => {
-                              if (e.key === 'Enter') e.currentTarget.blur()
+                              if (e.key === 'Enter') void handleSaveStockChanges()
                             }}
                             className="pieces-table__input"
-                            disabled={quickSavingPieceId === p.pieceId}
+                            disabled={stockSaveSubmitting}
                           />
                         </td>
                       </tr>
@@ -1693,66 +1938,77 @@ export default function SiteDetailPage() {
                 <div>
                   <h3>Derniers mouvements de stock</h3>
                   <p className="site-detail-section-desc">
-                    Historique recent des mouvements visibles pour ce site.
+                    Historique complet des mouvements visibles pour ce site, groupes par date et par operation.
                   </p>
                 </div>
-                <span className="stock-movements__count">{stockMovements.length}</span>
+                <span className="stock-movements__count">{stockMovementHistory.length}</span>
               </div>
 
-              {stockMovements.length === 0 ? (
+              {groupedStockMovementDays.length === 0 ? (
                 <p className="site-detail-empty">Aucun mouvement enregistre pour le moment.</p>
               ) : (
                 <div className="stock-movements">
-                  {stockMovements.map((movement) => (
-                    <article key={movement.id} className="stock-movement-card">
-                      <div className="stock-movement-card__top">
-                        <div>
-                          <strong>{movement.piece.reference}</strong>
-                          <p>
-                            {movement.piece.libelle}
-                            {movement.piece.refBis ? ` - ${movement.piece.refBis}` : ''}
-                          </p>
-                        </div>
-                        <span
-                          className={
-                            'stock-movement-card__delta ' +
-                            (movement.quantityDelta > 0
-                              ? 'stock-movement-card__delta--positive'
-                              : 'stock-movement-card__delta--negative')
-                          }
-                        >
-                          {movement.quantityDelta > 0 ? '+' : ''}
-                          {movement.quantityDelta}
-                        </span>
+                  {groupedStockMovementDays.map((day) => (
+                    <section key={day.dateKey} className="stock-movement-day">
+                      <h4>{day.dateLabel}</h4>
+                      <div className="stock-movement-day__groups">
+                        {day.groups.map((group) => (
+                          <article key={group.key} className="stock-movement-card">
+                            <div className="stock-movement-card__top">
+                              <div>
+                                <strong>{group.modelLabel}</strong>
+                                <p>
+                                  {group.refBis ? `Ref-bis: ${group.refBis}` : 'Sans ref-bis'}
+                                  {' - '}
+                                  {STOCK_MOVEMENT_REASON_LABELS[group.reason] ?? group.reason}
+                                  {group.intervention ? ` - ${group.intervention.title}` : ''}
+                                </p>
+                              </div>
+                              <span
+                                className={
+                                  'stock-movement-card__delta ' +
+                                  (group.totalDelta > 0
+                                    ? 'stock-movement-card__delta--positive'
+                                    : 'stock-movement-card__delta--negative')
+                                }
+                              >
+                                {group.totalDelta > 0 ? '+' : ''}
+                                {group.totalDelta}
+                              </span>
+                            </div>
+
+                            <div className="stock-movement-card__colors">
+                              {group.colors.map((color) => (
+                                <span
+                                  key={`${group.key}-${color.label}`}
+                                  className={`stock-movement-color stock-movement-color--${color.className}`}
+                                  title={color.references.join(', ')}
+                                >
+                                  <strong>{color.label}</strong>
+                                  <em>{color.quantityDelta > 0 ? '+' : ''}{color.quantityDelta}</em>
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="stock-movement-card__meta">
+                              <span>{STOCK_MOVEMENT_TYPE_LABELS[group.movementType] ?? group.movementType}</span>
+                              <span>{group.userLabel || 'Utilisateur inconnu'}</span>
+                              <span>{group.timeLabel}</span>
+                              <span>{group.movements.length} ligne{group.movements.length > 1 ? 's' : ''}</span>
+                              {isAdmin && (
+                                <span>
+                                  {group.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
+                                </span>
+                              )}
+                            </div>
+
+                            {group.commentaire && (
+                              <p className="stock-movement-card__comment">{group.commentaire}</p>
+                            )}
+                          </article>
+                        ))}
                       </div>
-
-                      <div className="stock-movement-card__meta">
-                        <span>{STOCK_MOVEMENT_TYPE_LABELS[movement.movementType] ?? movement.movementType}</span>
-                        <span>{STOCK_MOVEMENT_REASON_LABELS[movement.reason] ?? movement.reason}</span>
-                        <span>
-                          {movement.quantityBefore} → {movement.quantityAfter}
-                        </span>
-                        <span>
-                          {movement.user.firstName} {movement.user.lastName}
-                        </span>
-                        <span>{formatDate(movement.createdAt)}</span>
-                        {isAdmin && (
-                          <span>
-                            {movement.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
-                          </span>
-                        )}
-                      </div>
-
-                      {movement.commentaire && (
-                        <p className="stock-movement-card__comment">{movement.commentaire}</p>
-                      )}
-
-                      {movement.intervention && (
-                        <p className="stock-movement-card__comment">
-                          Intervention liee: {movement.intervention.title}
-                        </p>
-                      )}
-                    </article>
+                    </section>
                   ))}
                 </div>
               )}
@@ -1762,7 +2018,7 @@ export default function SiteDetailPage() {
         </section>
       )}
 
-      {activeTab === 'resources' && Number.isFinite(siteId) && (
+      {activeTab === 'contacts' && Number.isFinite(siteId) && (
         <>
           <section className="site-detail-contacts" aria-label="Contacts du site">
             <div className="site-detail-contacts__header">
@@ -1794,7 +2050,7 @@ export default function SiteDetailPage() {
                     <select value={siteContactSelectedId} onChange={(e) => setSiteContactSelectedId(e.target.value)}>
                       {siteContactResults.map((contact) => (
                         <option key={contact.id} value={contact.id}>
-                          {contact.displayName}{contact.email ? ` - ${contact.email}` : ''}
+                          {contact.displayName}{contact.email ? ` - ${contact.email}` : ''}{linkedContactIds.has(contact.id) ? ' - deja lie' : ''}
                         </option>
                       ))}
                     </select>
@@ -1818,8 +2074,8 @@ export default function SiteDetailPage() {
                       placeholder="Notes de liaison"
                       rows={2}
                     />
-                    <button type="button" onClick={() => void handleAddContactToSite()} disabled={siteContactBusy || !siteContactSelectedId}>
-                      Lier au site
+                    <button type="button" onClick={() => void handleAddContactToSite()} disabled={siteContactBusy || !siteContactSelectedId || selectedContactAlreadyLinked}>
+                      {selectedContactAlreadyLinked ? 'Deja lie' : 'Lier au site'}
                     </button>
                   </div>
                 )}
@@ -1831,22 +2087,13 @@ export default function SiteDetailPage() {
                         <h3>{selectedContactCandidate.displayName}</h3>
                         <p>{[selectedContactCandidate.jobTitle, selectedContactCandidate.companyName].filter(Boolean).join(' - ') || 'Contact client'}</p>
                       </div>
-                      <span>{selectedContactCandidate.sites.length} site{selectedContactCandidate.sites.length > 1 ? 's' : ''} deja lie{selectedContactCandidate.sites.length > 1 ? 's' : ''}</span>
+                      <span>
+                        {selectedContactAlreadyLinked
+                          ? 'Deja lie a ce site'
+                          : `${selectedContactCandidate.sites.length} site${selectedContactCandidate.sites.length > 1 ? 's' : ''} deja lie${selectedContactCandidate.sites.length > 1 ? 's' : ''}`}
+                      </span>
                     </header>
                     <div className="site-contact-preview__grid">
-                      <section>
-                        <h4>Emails</h4>
-                        {selectedCandidateEmails.length === 0 ? (
-                          <p>Aucun email</p>
-                        ) : (
-                          selectedCandidateEmails.map((email, index) => (
-                            <p key={`${email.address}-${index}`}>
-                              <strong>{email.address}</strong>
-                              {email.label && <span>{email.label}</span>}
-                            </p>
-                          ))
-                        )}
-                      </section>
                       <section>
                         <h4>Numeros</h4>
                         {selectedCandidatePhones.length === 0 ? (
@@ -1856,6 +2103,19 @@ export default function SiteDetailPage() {
                             <p key={`${phone.type}-${phone.number}-${index}`}>
                               <strong>{phone.number}</strong>
                               <span>{phone.type}</span>
+                            </p>
+                          ))
+                        )}
+                      </section>
+                      <section>
+                        <h4>Emails</h4>
+                        {selectedCandidateEmails.length === 0 ? (
+                          <p>Aucun email</p>
+                        ) : (
+                          selectedCandidateEmails.map((email, index) => (
+                            <p key={`${email.address}-${index}`}>
+                              <strong>{email.address}</strong>
+                              {email.label && <span>{email.label}</span>}
                             </p>
                           ))
                         )}
@@ -1900,61 +2160,117 @@ export default function SiteDetailPage() {
               <p className="site-detail-empty">Aucun contact lie a ce site.</p>
             ) : (
               <div className="site-contact-list">
-                {(site.contacts ?? []).map((contact) => (
-                  <article key={contact.id} className="site-contact-card">
-                    <div className="site-contact-card__main">
-                      <div>
-                        <strong>{contact.displayName}</strong>
-                        <span>
-                          {[contact.jobTitle, contact.companyName].filter(Boolean).join(' - ') || contact.email || 'Contact client'}
-                        </span>
+                {(site.contacts ?? []).map((contact) => {
+                  const phones = contactPhones(contact)
+                  const emails = contactEmails(contact)
+                  const addressBlocks = contactAddressBlocks(contact)
+
+                  return (
+                    <article key={contact.id} className={'site-contact-card' + (contact.favorite ? ' site-contact-card--favorite' : '')}>
+                      <div className="site-contact-card__main">
+                        <div>
+                          {contact.favorite ? (
+                            <Link className="site-contact-card__favorite-link" to={`/contacts?q=${encodeURIComponent(contact.displayName)}`}>
+                              {contact.displayName}
+                            </Link>
+                          ) : (
+                            <strong>{contact.displayName}</strong>
+                          )}
+                          <span>
+                            {[contact.jobTitle, contact.companyName].filter(Boolean).join(' - ') || contact.email || 'Contact client'}
+                          </span>
+                        </div>
+                        {contact.favorite && <em>Favori</em>}
                       </div>
-                      {contact.favorite && <em>Favori</em>}
-                    </div>
-                    <div className="site-contact-card__meta">
-                      <span>{contact.email ?? '-'}</span>
-                      <span>{contact.mobilePhone || contact.businessPhone || '-'}</span>
-                    </div>
-                    {isAdmin ? (
-                      <div className="site-contact-card__edit">
-                        <input
-                          type="text"
-                          defaultValue={contact.role ?? ''}
-                          placeholder="Role"
-                          onBlur={(e) => void handleUpdateSiteContact(contact.id, { role: e.currentTarget.value.trim() || null })}
-                          disabled={siteContactBusy}
-                        />
-                        <label>
+
+                      <div className="site-contact-card__phones">
+                        <strong>Numeros</strong>
+                        {phones.length === 0 ? (
+                          <span>Aucun numero</span>
+                        ) : (
+                          phones.map((phone, index) => (
+                            <span key={`${contact.id}-${phone.type}-${phone.number}-${index}`}>
+                              {phone.type}: <b>{phone.number}</b>
+                            </span>
+                          ))
+                        )}
+                      </div>
+
+                      <div className="site-contact-card__meta">
+                        {emails.length === 0 ? (
+                          <span>Aucun email</span>
+                        ) : (
+                          emails.map((email, index) => (
+                            <span key={`${contact.id}-${email.address}-${index}`}>
+                              {email.label ? `${email.label}: ` : ''}{email.address}
+                            </span>
+                          ))
+                        )}
+                      </div>
+
+                      {addressBlocks.length > 0 && (
+                        <div className="site-contact-card__addresses">
+                          {addressBlocks.map((block) => (
+                            <p key={`${contact.id}-${block.title}`}>
+                              <strong>{block.title}</strong>
+                              {block.lines.map((line) => <span key={line}>{line}</span>)}
+                            </p>
+                          ))}
+                        </div>
+                      )}
+
+                      {isAdmin ? (
+                        <div className="site-contact-card__edit">
                           <input
-                            type="checkbox"
-                            checked={contact.favorite}
-                            onChange={(e) => void handleUpdateSiteContact(contact.id, { favorite: e.target.checked })}
+                            type="text"
+                            defaultValue={contact.role ?? ''}
+                            placeholder="Role"
+                            onBlur={(e) => void handleUpdateSiteContact(contact.id, { role: e.currentTarget.value.trim() || null })}
                             disabled={siteContactBusy}
                           />
-                          Favori
-                        </label>
-                        <textarea
-                          defaultValue={contact.notes ?? ''}
-                          placeholder="Notes"
-                          rows={2}
-                          onBlur={(e) => void handleUpdateSiteContact(contact.id, { notes: e.currentTarget.value.trim() || null })}
-                          disabled={siteContactBusy}
-                        />
-                        <button type="button" onClick={() => void handleRemoveSiteContact(contact.id)} disabled={siteContactBusy}>
-                          Retirer
-                        </button>
-                      </div>
-                    ) : (
-                      <p className="site-contact-card__notes">{contact.notes || contact.role || 'Aucune note.'}</p>
-                    )}
-                  </article>
-                ))}
+                          <label>
+                            <input
+                              type="checkbox"
+                              checked={contact.favorite}
+                              onChange={(e) => void handleUpdateSiteContact(contact.id, { favorite: e.target.checked })}
+                              disabled={siteContactBusy}
+                            />
+                            Favori unique
+                          </label>
+                          <textarea
+                            defaultValue={contact.notes ?? ''}
+                            placeholder="Notes de liaison"
+                            rows={2}
+                            onBlur={(e) => void handleUpdateSiteContact(contact.id, { notes: e.currentTarget.value.trim() || null })}
+                            disabled={siteContactBusy}
+                          />
+                          <button type="button" onClick={() => void handleRemoveSiteContact(contact.id)} disabled={siteContactBusy}>
+                            Retirer
+                          </button>
+                        </div>
+                      ) : (
+                        <p className="site-contact-card__notes">{contact.role || 'Role non precise'}</p>
+                      )}
+
+                      {(contact.notes || contact.contactNotes) && (
+                        <p className="site-contact-card__notes">
+                          {contact.notes ? `Site: ${contact.notes}` : ''}
+                          {contact.notes && contact.contactNotes ? '\n' : ''}
+                          {contact.contactNotes ? `Contact: ${contact.contactNotes}` : ''}
+                        </p>
+                      )}
+                    </article>
+                  )
+                })}
               </div>
             )}
           </section>
 
-          <SiteResourcesTab siteId={siteId} />
         </>
+      )}
+
+      {activeTab === 'resources' && Number.isFinite(siteId) && (
+        <SiteResourcesTab siteId={siteId} />
       )}
 
       {deliveryOpen && (
@@ -2239,6 +2555,7 @@ function ImprimanteTab({
   onToggleShowInactive: (checked: boolean) => void
   onToggleAlerteInactive: (alerteId: number, inactiveChecked: boolean) => void
 }) {
+  const [chartModalOpen, setChartModalOpen] = useState(false)
   const chartData = buildChartData(rapports, alertes, tonerEvents, imprimante.color)
   const chartWindow = getCenteredChartWindow()
   const chartMonthTicks = buildChartMonthTicks(chartWindow)
@@ -2258,6 +2575,67 @@ function ImprimanteTab({
     || point.yellow != null)
   )).length
   const tableRapports = rapports.slice(0, 10)
+  const renderTonerChart = (height: number) => (
+    <ResponsiveContainer width="100%" height={height}>
+      <LineChart data={chartData} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
+        <CartesianGrid strokeDasharray="3 3" stroke="#3f4147" />
+        {missingDataAreas.map((area) => (
+          <ReferenceArea
+            key={`${area.x1}-${area.x2}`}
+            x1={area.x1}
+            x2={area.x2}
+            fill="#f59e0b"
+            fillOpacity={0.16}
+            strokeOpacity={0}
+            ifOverflow="hidden"
+          />
+        ))}
+        <ReferenceLine
+          x={chartWindow.todayTs}
+          stroke="#00a8fc"
+          strokeWidth={2}
+          label={{ value: "Aujourd'hui", position: 'top', fill: '#bde7ff', fontSize: 12 }}
+        />
+        <XAxis
+          dataKey="x"
+          type="number"
+          scale="time"
+          domain={[chartWindow.startTs, chartWindow.endTs]}
+          stroke="#b5bac1"
+          fontSize={12}
+          minTickGap={18}
+          tickLine={false}
+          ticks={chartMonthTicks}
+          interval={0}
+          tickFormatter={(value) => chartMonthTickFromTimestamp(Number(value))}
+          allowDataOverflow
+        />
+        <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} tickLine={false} />
+        <Tooltip content={<ConsumptionTooltip tonerStocksByDate={tonerStocksByDate} isAdmin={isAdmin} isColor={imprimante.color} />} />
+        <Legend />
+        <Line type="stepAfter" dataKey="black" name="Noir halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" connectNulls />
+        <Line type="stepAfter" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} connectNulls />
+        {imprimante.color && (
+          <>
+            <Line type="stepAfter" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+            <Line type="stepAfter" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+            <Line type="stepAfter" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
+          </>
+        )}
+        <Line type="stepAfter" dataKey="bacRecup" name="Bac recup" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="4 4" connectNulls />
+        <Line type="monotone" dataKey="blackForecast" name="Noir simulation halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" strokeDasharray="6 5" connectNulls />
+        <Line type="monotone" dataKey="blackForecast" name="Noir simulation" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} legendType="none" strokeDasharray="6 5" connectNulls />
+        {imprimante.color && (
+          <>
+            <Line type="monotone" dataKey="cyanForecast" name="Cyan simulation" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+            <Line type="monotone" dataKey="magentaForecast" name="Magenta simulation" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+            <Line type="monotone" dataKey="yellowForecast" name="Jaune simulation" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+          </>
+        )}
+        <Line type="monotone" dataKey="bacRecupForecast" name="Bac recup simulation" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
+      </LineChart>
+    </ResponsiveContainer>
+  )
 
   return (
     <section className="site-detail-section imprimante-tab">
@@ -2283,67 +2661,46 @@ function ImprimanteTab({
           {chartUsefulPointCount < 2 ? (
             <p className="site-detail-empty">Pas assez de rapports pour afficher le graphique.</p>
           ) : (
-            <ResponsiveContainer width="100%" height={320}>
-              <LineChart data={chartData} margin={{ top: 20, right: 16, left: 8, bottom: 8 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#3f4147" />
-                {missingDataAreas.map((area) => (
-                  <ReferenceArea
-                    key={`${area.x1}-${area.x2}`}
-                    x1={area.x1}
-                    x2={area.x2}
-                    fill="#f59e0b"
-                    fillOpacity={0.16}
-                    strokeOpacity={0}
-                    ifOverflow="hidden"
-                  />
-                ))}
-                <ReferenceLine
-                  x={chartWindow.todayTs}
-                  stroke="#00a8fc"
-                  strokeWidth={2}
-                  label={{ value: "Aujourd'hui", position: 'top', fill: '#bde7ff', fontSize: 12 }}
-                />
-                <XAxis
-                  dataKey="x"
-                  type="number"
-                  scale="time"
-                  domain={[chartWindow.startTs, chartWindow.endTs]}
-                  stroke="#b5bac1"
-                  fontSize={12}
-                  minTickGap={18}
-                  tickLine={false}
-                  ticks={chartMonthTicks}
-                  interval={0}
-                  tickFormatter={(value) => chartMonthTickFromTimestamp(Number(value))}
-                  allowDataOverflow
-                />
-                <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} tickLine={false} />
-                <Tooltip content={<ConsumptionTooltip tonerStocksByDate={tonerStocksByDate} isAdmin={isAdmin} isColor={imprimante.color} />} />
-                <Legend />
-                <Line type="stepAfter" dataKey="black" name="Noir halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" connectNulls />
-                <Line type="stepAfter" dataKey="black" name="Noir" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} connectNulls />
-                {imprimante.color && (
-                  <>
-                    <Line type="stepAfter" dataKey="cyan" name="Cyan" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
-                    <Line type="stepAfter" dataKey="magenta" name="Magenta" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
-                    <Line type="stepAfter" dataKey="yellow" name="Jaune" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} connectNulls />
-                  </>
-                )}
-                <Line type="stepAfter" dataKey="bacRecup" name="Bac recup" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} strokeDasharray="4 4" connectNulls />
-                <Line type="monotone" dataKey="blackForecast" name="Noir simulation halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" strokeDasharray="6 5" connectNulls />
-                <Line type="monotone" dataKey="blackForecast" name="Noir simulation" stroke={TONER_COLOR_STROKES.black} strokeWidth={2.5} dot={false} activeDot={{ r: 5, stroke: '#ffffff', strokeWidth: 2 }} legendType="none" strokeDasharray="6 5" connectNulls />
-                {imprimante.color && (
-                  <>
-                    <Line type="monotone" dataKey="cyanForecast" name="Cyan simulation" stroke={TONER_COLOR_STROKES.cyan} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
-                    <Line type="monotone" dataKey="magentaForecast" name="Magenta simulation" stroke={TONER_COLOR_STROKES.magenta} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
-                    <Line type="monotone" dataKey="yellowForecast" name="Jaune simulation" stroke={TONER_COLOR_STROKES.yellow} strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
-                  </>
-                )}
-                <Line type="monotone" dataKey="bacRecupForecast" name="Bac recup simulation" stroke="#8e9297" strokeWidth={2} dot={false} activeDot={{ r: 5 }} legendType="none" strokeDasharray="6 5" connectNulls />
-              </LineChart>
-            </ResponsiveContainer>
+            <>
+              <button
+                type="button"
+                className="site-detail-graph-toggle"
+                onClick={() => setChartModalOpen(true)}
+              >
+                Voir le graphique plein écran
+              </button>
+              <div className="site-detail-chart-desktop">
+                {renderTonerChart(320)}
+              </div>
+            </>
           )}
       </div>
+
+      {chartModalOpen && chartUsefulPointCount >= 2 && (
+        <div
+          className="site-detail-modal-backdrop site-detail-chart-modal-backdrop"
+          role="presentation"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget) setChartModalOpen(false)
+          }}
+        >
+          <section className="site-detail-modal site-detail-modal--chart" role="dialog" aria-modal="true" aria-labelledby={`site-chart-title-${imprimante.id}`}>
+            <header className="site-detail-modal__header">
+              <div>
+                <h2 id={`site-chart-title-${imprimante.id}`}>Consommation toner</h2>
+                <p>{imprimante.numeroSerie} - {imprimante.modele}</p>
+              </div>
+              <button type="button" className="site-detail-modal__close" onClick={() => setChartModalOpen(false)} aria-label="Fermer">
+                x
+              </button>
+            </header>
+            <p className="site-detail-chart-modal__hint">Tournez le téléphone en paysage pour plus de confort.</p>
+            <div className="site-detail-chart-modal__canvas">
+              {renderTonerChart(420)}
+            </div>
+          </section>
+        </div>
+      )}
 
       <h3>Rapports</h3>
       {loading ? (

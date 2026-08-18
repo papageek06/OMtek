@@ -11,10 +11,17 @@ use App\Entity\Enum\InterventionPriority;
 use App\Entity\Enum\InterventionSource;
 use App\Entity\Enum\InterventionStatus;
 use App\Entity\Enum\InterventionType;
+use App\Entity\Enum\CategoriePiece;
+use App\Entity\Enum\NaturePiece;
+use App\Entity\Enum\StockMovementReason;
+use App\Entity\Enum\StockScope;
 use App\Entity\Imprimante;
 use App\Entity\Intervention;
+use App\Entity\Piece;
 use App\Entity\Site;
+use App\Entity\StockMovement;
 use App\Entity\User;
+use App\Service\StockMutationService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
@@ -27,6 +34,7 @@ class InterventionController extends AbstractController
 {
     public function __construct(
         private readonly EntityManagerInterface $em,
+        private readonly StockMutationService $stockMutationService,
     ) {
     }
 
@@ -110,6 +118,10 @@ class InterventionController extends AbstractController
         }
 
         $this->em->persist($intervention);
+        $error = $this->applyCompletedDeliveryStockMovements($intervention, $user);
+        if ($error !== null) {
+            return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
+        }
         $this->em->flush();
 
         return new JsonResponse($this->toArray($intervention), Response::HTTP_CREATED);
@@ -132,6 +144,11 @@ class InterventionController extends AbstractController
     #[Route('/{id}', name: 'update', requirements: ['id' => '\d+'], methods: ['PATCH'])]
     public function update(int $id, Request $request): JsonResponse|Response
     {
+        $user = $this->getUser();
+        if (!$user instanceof User) {
+            return new JsonResponse(['error' => 'Non authentifie'], Response::HTTP_UNAUTHORIZED);
+        }
+
         $intervention = $this->em->getRepository(Intervention::class)->find($id);
         if (!$intervention) {
             return new JsonResponse(['error' => 'Intervention non trouvee'], Response::HTTP_NOT_FOUND);
@@ -151,6 +168,10 @@ class InterventionController extends AbstractController
         }
 
         $intervention->setUpdatedAt(new \DateTimeImmutable());
+        $error = $this->applyCompletedDeliveryStockMovements($intervention, $user);
+        if ($error !== null) {
+            return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
+        }
         $this->em->flush();
 
         return new JsonResponse($this->toArray($intervention), Response::HTTP_OK);
@@ -576,9 +597,131 @@ class InterventionController extends AbstractController
         return sprintf('%s%d.%02d', $negative ? '-' : '', $units, $dec);
     }
 
+    private function applyCompletedDeliveryStockMovements(Intervention $intervention, User $user): ?string
+    {
+        if (
+            $intervention->getType() !== InterventionType::LIVRAISON_TONER
+            || $intervention->getStatus() !== InterventionStatus::TERMINEE
+            || $this->hasDeliveryStockMovements($intervention)
+        ) {
+            return null;
+        }
+
+        $deliveryLines = $this->parseDeliveryLines($intervention->getDescription());
+        if ($deliveryLines === []) {
+            return null;
+        }
+
+        $deliveryLabel = $intervention->getStartedAt()?->format('d/m/Y')
+            ?? $intervention->getClosedAt()?->format('d/m/Y')
+            ?? (new \DateTimeImmutable())->format('d/m/Y');
+
+        foreach ($deliveryLines as $line) {
+            $piece = $this->em->getRepository(Piece::class)->findOneBy(['reference' => $line['reference']]);
+            if (!$piece) {
+                return sprintf('Piece introuvable pour la livraison: %s', $line['reference']);
+            }
+            if (!$this->isConsumablePiece($piece)) {
+                continue;
+            }
+
+            try {
+                $this->stockMutationService->applyMovement(
+                    $piece,
+                    $intervention->getSite(),
+                    $line['quantity'],
+                    $user,
+                    StockScope::TECH_VISIBLE,
+                    StockMovementReason::LIVRAISON,
+                    sprintf('Livraison terminee du %s', $deliveryLabel),
+                    $intervention,
+                );
+            } catch (\RuntimeException|\InvalidArgumentException $e) {
+                return $e->getMessage();
+            }
+        }
+
+        return null;
+    }
+
+    private function hasDeliveryStockMovements(Intervention $intervention): bool
+    {
+        if ($intervention->getId() === null) {
+            return false;
+        }
+
+        return (int) $this->em->getRepository(StockMovement::class)->createQueryBuilder('sm')
+            ->select('COUNT(sm.id)')
+            ->andWhere('sm.intervention = :intervention')
+            ->andWhere('sm.reason = :reason')
+            ->setParameter('intervention', $intervention)
+            ->setParameter('reason', StockMovementReason::LIVRAISON->value)
+            ->getQuery()
+            ->getSingleScalarResult() > 0;
+    }
+
+    private function isConsumablePiece(Piece $piece): bool
+    {
+        if ($piece->getNature()) {
+            return $piece->getNature() === NaturePiece::CONSUMABLE;
+        }
+
+        return \in_array($piece->getCategorie(), [CategoriePiece::TONER, CategoriePiece::BAC_RECUP], true);
+    }
+
+    /**
+     * @return list<array{reference: string, quantity: int}>
+     */
+    private function parseDeliveryLines(?string $description): array
+    {
+        if (!$description) {
+            return [];
+        }
+
+        $linesByReference = [];
+        foreach (preg_split('/\R/u', $description) ?: [] as $rawLine) {
+            $line = trim($rawLine);
+            if (!str_starts_with($line, '- ')) {
+                continue;
+            }
+
+            $line = preg_replace(
+                '/\s+\((?:stock client incremente|pose directe, stock client non incremente)\)\s*$/iu',
+                '',
+                $line
+            ) ?? $line;
+            $body = trim(substr($line, 2));
+            if (!preg_match('/:\s*(\d+)\s*$/u', $body, $matches)) {
+                continue;
+            }
+
+            $quantity = (int) $matches[1];
+            if ($quantity <= 0) {
+                continue;
+            }
+
+            $withoutQuantity = trim(substr($body, 0, -strlen($matches[0])));
+            $referenceSegment = preg_split('/\s+-\s+/u', $withoutQuantity, 2)[0] ?? '';
+            $reference = trim(preg_split('/\s+\/\s+/u', $referenceSegment, 2)[0] ?? '');
+            if ($reference === '') {
+                continue;
+            }
+
+            $linesByReference[$reference] = ($linesByReference[$reference] ?? 0) + $quantity;
+        }
+
+        $lines = [];
+        foreach ($linesByReference as $reference => $quantity) {
+            $lines[] = ['reference' => $reference, 'quantity' => $quantity];
+        }
+
+        return $lines;
+    }
+
     private function toArray(Intervention $intervention): array
     {
         $isAdmin = $this->isAdmin();
+        $stockMovements = $this->findStockMovementsForIntervention($intervention, $isAdmin);
 
         return [
             'id' => $intervention->getId(),
@@ -635,6 +778,74 @@ class InterventionController extends AbstractController
             'archivedAt' => $intervention->getArchivedAt()?->format(\DateTimeInterface::ATOM),
             'createdAt' => $intervention->getCreatedAt()->format(\DateTimeInterface::ATOM),
             'updatedAt' => $intervention->getUpdatedAt()->format(\DateTimeInterface::ATOM),
+            'stockMovements' => array_map([$this, 'stockMovementToArray'], $stockMovements),
+        ];
+    }
+
+    /**
+     * @return list<StockMovement>
+     */
+    private function findStockMovementsForIntervention(Intervention $intervention, bool $isAdmin): array
+    {
+        $qb = $this->em->getRepository(StockMovement::class)->createQueryBuilder('sm')
+            ->addSelect('p', 'm')
+            ->join('sm.piece', 'p')
+            ->leftJoin('p.modeles', 'm')
+            ->andWhere('sm.intervention = :intervention')
+            ->setParameter('intervention', $intervention)
+            ->orderBy('sm.createdAt', 'ASC')
+            ->addOrderBy('sm.id', 'ASC');
+
+        if (!$isAdmin) {
+            $qb->andWhere('sm.stockScope = :stockScope')
+                ->setParameter('stockScope', StockScope::TECH_VISIBLE->value);
+        }
+
+        return $qb->getQuery()->getResult();
+    }
+
+    private function stockMovementToArray(StockMovement $movement): array
+    {
+        $piece = $movement->getPiece();
+        $user = $movement->getUser();
+        $intervention = $movement->getIntervention();
+        $isAdmin = $this->isAdmin();
+
+        return [
+            'id' => $movement->getId(),
+            'movementType' => $movement->getMovementType()->value,
+            'stockScope' => $movement->getStockScope()->value,
+            'quantityDelta' => $movement->getQuantityDelta(),
+            'quantityBefore' => $movement->getQuantityBefore(),
+            'quantityAfter' => $movement->getQuantityAfter(),
+            'reason' => $movement->getReason()->value,
+            'commentaire' => $movement->getCommentaire(),
+            'createdAt' => $movement->getCreatedAt()->format(\DateTimeInterface::ATOM),
+            'piece' => [
+                'id' => $piece->getId(),
+                'reference' => $piece->getReference(),
+                'refBis' => $piece->getRefBis(),
+                'libelle' => $piece->getLibelle(),
+                'categorie' => $piece->getCategorie()->value,
+                'variant' => $piece->getVariant()?->value,
+                'nature' => $piece->getNature()?->value,
+                'modeles' => array_map(static fn ($modele): array => [
+                    'id' => $modele->getId(),
+                    'nom' => $modele->getNom(),
+                    'constructeur' => $modele->getConstructeur(),
+                ], $piece->getModeles()->toArray()),
+            ],
+            'user' => [
+                'id' => $user->getId(),
+                'email' => $isAdmin ? $user->getEmail() : null,
+                'firstName' => $user->getFirstName(),
+                'lastName' => $user->getLastName(),
+            ],
+            'intervention' => $intervention ? [
+                'id' => $intervention->getId(),
+                'title' => $intervention->getTitle(),
+                'statut' => $intervention->getStatus()->value,
+            ] : null,
         ];
     }
 }

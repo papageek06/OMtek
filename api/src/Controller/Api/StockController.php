@@ -461,6 +461,13 @@ class StockController extends AbstractController
                 'refBis' => $piece->getRefBis(),
                 'libelle' => $piece->getLibelle(),
                 'categorie' => $piece->getCategorie()->value,
+                'variant' => $piece->getVariant()?->value,
+                'nature' => $piece->getNature()?->value,
+                'modeles' => array_map(static fn ($modele): array => [
+                    'id' => $modele->getId(),
+                    'nom' => $modele->getNom(),
+                    'constructeur' => $modele->getConstructeur(),
+                ], $piece->getModeles()->toArray()),
             ],
             'user' => [
                 'id' => $user->getId(),

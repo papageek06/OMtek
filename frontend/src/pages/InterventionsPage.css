@@ -228,7 +228,7 @@
   margin-top: 0.8rem;
 }
 
-.intervention-card__pieces span {
+.intervention-card__piece {
   max-width: 20rem;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -240,6 +240,40 @@
   border-radius: 999px;
   font-size: 0.8rem;
   font-weight: 700;
+}
+
+.intervention-card__piece--black {
+  color: #f8fafc;
+  background: rgba(0, 0, 0, 0.38);
+  border-color: rgba(255, 255, 255, 0.38);
+}
+
+.intervention-card__piece--cyan {
+  color: #67e8f9;
+  background: rgba(0, 168, 252, 0.14);
+  border-color: rgba(0, 188, 212, 0.46);
+}
+
+.intervention-card__piece--magenta {
+  color: #ff7ab6;
+  background: rgba(224, 28, 117, 0.16);
+  border-color: rgba(224, 28, 117, 0.48);
+}
+
+.intervention-card__piece--yellow {
+  color: #ffd166;
+  background: rgba(255, 193, 7, 0.16);
+  border-color: rgba(255, 193, 7, 0.5);
+}
+
+.intervention-card__piece--bac-recup {
+  color: #d7dde8;
+  background: rgba(148, 163, 184, 0.16);
+  border-color: rgba(148, 163, 184, 0.42);
+}
+
+.intervention-card__pieces--detail {
+  margin-bottom: 1rem;
 }
 
 .intervention-card__top {

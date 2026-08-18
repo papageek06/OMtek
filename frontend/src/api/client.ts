@@ -697,6 +697,9 @@ export interface DashboardTechnicienStockCritique {
     refBis: string | null
     libelle: string
     categorie: string
+    variant?: string | null
+    nature?: string | null
+    modeles?: ModeleItemSimple[]
   }
 }
 
@@ -786,6 +789,7 @@ export interface InterventionItem {
   archivedAt: string | null
   createdAt: string
   updatedAt: string
+  stockMovements?: StockMovementItem[]
 }
 
 export interface InterventionFilters {
@@ -1264,10 +1268,16 @@ export interface SiteContactLink {
   id: number
   displayName: string
   email: string | null
+  emailAddresses?: ContactEmailAddress[]
   mobilePhone: string | null
   businessPhone: string | null
+  phoneNumbers?: ContactPhoneNumber[]
   companyName: string | null
   jobTitle: string | null
+  businessAddress?: ContactAddress | null
+  homeAddress?: ContactAddress | null
+  otherAddress?: ContactAddress | null
+  contactNotes?: string | null
   role: string | null
   favorite: boolean
   notes: string | null
@@ -1312,6 +1322,9 @@ export interface StockMovementItem {
     refBis: string | null
     libelle: string
     categorie: string
+    variant?: string | null
+    nature?: string | null
+    modeles?: ModeleItemSimple[]
   }
   user: {
     id: number

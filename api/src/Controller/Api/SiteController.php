@@ -301,6 +301,9 @@ class SiteController extends AbstractController
         }
 
         $this->hydrateSiteContactLink($link, $data);
+        if ($link->isFavorite()) {
+            $this->unsetOtherFavoriteSiteContacts($site, $link);
+        }
         $this->em->flush();
 
         return new JsonResponse($this->siteContactToArray($link), Response::HTTP_OK);
@@ -330,6 +333,9 @@ class SiteController extends AbstractController
         }
 
         $this->hydrateSiteContactLink($link, $data);
+        if ($link->isFavorite()) {
+            $this->unsetOtherFavoriteSiteContacts($site, $link);
+        }
         $this->em->flush();
 
         return new JsonResponse($this->siteContactToArray($link), Response::HTTP_OK);
@@ -520,6 +526,22 @@ class SiteController extends AbstractController
         }
     }
 
+    private function unsetOtherFavoriteSiteContacts(Site $site, SiteContact $currentLink): void
+    {
+        /** @var list<SiteContact> $links */
+        $links = $this->em->getRepository(SiteContact::class)->findBy([
+            'site' => $site,
+            'favorite' => true,
+        ]);
+
+        foreach ($links as $link) {
+            if ($link === $currentLink || $link->getId() === $currentLink->getId()) {
+                continue;
+            }
+            $link->setFavorite(false);
+        }
+    }
+
     private function findSiteContactLink(Site $site, Contact $contact): ?SiteContact
     {
         /** @var SiteContact|null $link */
@@ -561,10 +583,16 @@ class SiteController extends AbstractController
             'id' => $contact->getId(),
             'displayName' => $contact->getDisplayName(),
             'email' => $contact->getEmail(),
+            'emailAddresses' => $contact->getEmailAddresses() ?? [],
             'mobilePhone' => $contact->getMobilePhone(),
             'businessPhone' => $contact->getBusinessPhone(),
+            'phoneNumbers' => $contact->getPhoneNumbers() ?? [],
             'companyName' => $contact->getCompanyName(),
             'jobTitle' => $contact->getJobTitle(),
+            'businessAddress' => $contact->getBusinessAddress(),
+            'homeAddress' => $contact->getHomeAddress(),
+            'otherAddress' => $contact->getOtherAddress(),
+            'contactNotes' => $contact->getNotes(),
             'role' => $link->getRole(),
             'favorite' => $link->isFavorite(),
             'notes' => $link->getNotes(),

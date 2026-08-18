@@ -1,5 +1,5 @@
 import { type ReactNode, useEffect, useState } from 'react'
-import { Link, Navigate } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import {
   fetchContacts,
   fetchContactSyncStatus,
@@ -104,14 +104,16 @@ function formatSyncStats(stats?: ContactSyncStats): string {
 
 export default function ContactsPage() {
   const { user } = useAuth()
+  const [searchParams] = useSearchParams()
   const userIsAdmin = isAdmin(user)
   const [contacts, setContacts] = useState<ContactItem[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [reloadToken, setReloadToken] = useState(0)
   const [sites, setSites] = useState<Site[]>([])
-  const [search, setSearch] = useState('')
-  const [debouncedSearch, setDebouncedSearch] = useState('')
+  const initialSearch = searchParams.get('q') ?? ''
+  const [search, setSearch] = useState(initialSearch)
+  const [debouncedSearch, setDebouncedSearch] = useState(initialSearch.trim())
   const [onlyFavorites, setOnlyFavorites] = useState(false)
   const [currentPage, setCurrentPage] = useState(1)
   const [pageSize, setPageSize] = useState(20)
