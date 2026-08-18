@@ -1152,7 +1152,7 @@ export default function SiteDetailPage() {
       return
     }
 
-    if (activeTab === 'stocks' || activeTab === 'resources') {
+    if (activeTab === 'stocks' || activeTab === 'contacts' || activeTab === 'resources') {
       return
     }
 
