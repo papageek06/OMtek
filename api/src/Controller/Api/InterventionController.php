@@ -118,7 +118,7 @@ class InterventionController extends AbstractController
         }
 
         $this->em->persist($intervention);
-        $error = $this->applyCompletedDeliveryStockMovements($intervention, $user);
+        $error = $this->syncDeliveryStockMovements($intervention, $user);
         if ($error !== null) {
             return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
         }
@@ -168,7 +168,7 @@ class InterventionController extends AbstractController
         }
 
         $intervention->setUpdatedAt(new \DateTimeImmutable());
-        $error = $this->applyCompletedDeliveryStockMovements($intervention, $user);
+        $error = $this->syncDeliveryStockMovements($intervention, $user);
         if ($error !== null) {
             return new JsonResponse(['error' => $error], Response::HTTP_BAD_REQUEST);
         }
@@ -597,43 +597,67 @@ class InterventionController extends AbstractController
         return sprintf('%s%d.%02d', $negative ? '-' : '', $units, $dec);
     }
 
-    private function applyCompletedDeliveryStockMovements(Intervention $intervention, User $user): ?string
+    private function syncDeliveryStockMovements(Intervention $intervention, User $user): ?string
     {
-        if (
-            $intervention->getType() !== InterventionType::LIVRAISON_TONER
-            || $intervention->getStatus() !== InterventionStatus::TERMINEE
-            || $this->hasDeliveryStockMovements($intervention)
-        ) {
-            return null;
-        }
-
-        $deliveryLines = $this->parseDeliveryLines($intervention->getDescription());
-        if ($deliveryLines === []) {
+        if ($intervention->getType() !== InterventionType::LIVRAISON_TONER) {
             return null;
         }
 
         $deliveryLabel = $intervention->getStartedAt()?->format('d/m/Y')
             ?? $intervention->getClosedAt()?->format('d/m/Y')
             ?? (new \DateTimeImmutable())->format('d/m/Y');
+        $currentByPieceId = $this->getDeliveryStockMovementTotals($intervention);
+        $desiredByPieceId = [];
 
-        foreach ($deliveryLines as $line) {
-            $piece = $this->em->getRepository(Piece::class)->findOneBy(['reference' => $line['reference']]);
-            if (!$piece) {
-                return sprintf('Piece introuvable pour la livraison: %s', $line['reference']);
+        if ($intervention->getStatus() === InterventionStatus::TERMINEE) {
+            foreach ($this->parseDeliveryLines($intervention->getDescription()) as $line) {
+                $piece = $this->em->getRepository(Piece::class)->findOneBy(['reference' => $line['reference']]);
+                if (!$piece) {
+                    return sprintf('Piece introuvable pour la livraison: %s', $line['reference']);
+                }
+                if (!$this->isConsumablePiece($piece)) {
+                    continue;
+                }
+
+                $pieceId = $piece->getId();
+                if ($pieceId === null) {
+                    continue;
+                }
+
+                $desiredByPieceId[$pieceId] ??= ['piece' => $piece, 'quantity' => 0];
+                $desiredByPieceId[$pieceId]['quantity'] += $line['quantity'];
             }
-            if (!$this->isConsumablePiece($piece)) {
+        }
+
+        $pieceIds = array_unique(array_merge(array_keys($desiredByPieceId), array_keys($currentByPieceId)));
+        foreach ($pieceIds as $pieceId) {
+            $desiredQuantity = $desiredByPieceId[$pieceId]['quantity'] ?? 0;
+            $currentQuantity = $currentByPieceId[$pieceId]['quantity'] ?? 0;
+            $quantityDelta = $desiredQuantity - $currentQuantity;
+            if ($quantityDelta === 0) {
                 continue;
             }
+
+            $piece = $desiredByPieceId[$pieceId]['piece'] ?? $currentByPieceId[$pieceId]['piece'] ?? null;
+            if (!$piece) {
+                continue;
+            }
+
+            $commentaire = match ($intervention->getStatus()) {
+                InterventionStatus::TERMINEE => sprintf('Synchronisation livraison terminee du %s', $deliveryLabel),
+                InterventionStatus::ANNULEE => sprintf('Annulation livraison du %s', $deliveryLabel),
+                default => sprintf('Livraison non terminee du %s: stock client neutralise', $deliveryLabel),
+            };
 
             try {
                 $this->stockMutationService->applyMovement(
                     $piece,
                     $intervention->getSite(),
-                    $line['quantity'],
+                    $quantityDelta,
                     $user,
                     StockScope::TECH_VISIBLE,
                     StockMovementReason::LIVRAISON,
-                    sprintf('Livraison terminee du %s', $deliveryLabel),
+                    $commentaire,
                     $intervention,
                 );
             } catch (\RuntimeException|\InvalidArgumentException $e) {
@@ -644,20 +668,44 @@ class InterventionController extends AbstractController
         return null;
     }
 
-    private function hasDeliveryStockMovements(Intervention $intervention): bool
+    /**
+     * @return array<int, array{piece: Piece, quantity: int}>
+     */
+    private function getDeliveryStockMovementTotals(Intervention $intervention): array
     {
         if ($intervention->getId() === null) {
-            return false;
+            return [];
         }
 
-        return (int) $this->em->getRepository(StockMovement::class)->createQueryBuilder('sm')
-            ->select('COUNT(sm.id)')
+        $movements = $this->em->getRepository(StockMovement::class)->createQueryBuilder('sm')
+            ->addSelect('p')
+            ->join('sm.piece', 'p')
             ->andWhere('sm.intervention = :intervention')
             ->andWhere('sm.reason = :reason')
+            ->andWhere('sm.stockScope = :stockScope')
             ->setParameter('intervention', $intervention)
             ->setParameter('reason', StockMovementReason::LIVRAISON->value)
+            ->setParameter('stockScope', StockScope::TECH_VISIBLE->value)
             ->getQuery()
-            ->getSingleScalarResult() > 0;
+            ->getResult();
+
+        $totals = [];
+        foreach ($movements as $movement) {
+            if (!$movement instanceof StockMovement) {
+                continue;
+            }
+
+            $piece = $movement->getPiece();
+            $pieceId = $piece->getId();
+            if ($pieceId === null) {
+                continue;
+            }
+
+            $totals[$pieceId] ??= ['piece' => $piece, 'quantity' => 0];
+            $totals[$pieceId]['quantity'] += $movement->getQuantityDelta();
+        }
+
+        return $totals;
     }
 
     private function isConsumablePiece(Piece $piece): bool

@@ -133,6 +133,97 @@ function isConsumablePiece(piece: Pick<PieceAvecStocks, 'nature' | 'categorie' |
   return ['TONER', 'BAC_RECUP', 'toner', 'bac_recup', 'Fournitures Consommables'].includes(piece.categorie ?? piece.type)
 }
 
+function deliveryDescriptionLine(piece: PieceAvecStocks, quantity: number): string {
+  const reference = [
+    piece.reference,
+    piece.refBis?.trim() || null,
+  ].filter(Boolean).join(' / ')
+  const variantLabel = pieceVariantLabel(normalizePieceVariant(piece.variant))
+  const details = [
+    piece.libelle,
+    variantLabel,
+  ].filter(Boolean).join(' - ')
+  const stockNote = isConsumablePiece(piece)
+    ? 'stock client incremente'
+    : 'pose directe, stock client non incremente'
+
+  return `- ${reference} - ${details}: ${quantity} (${stockNote})`
+}
+
+function findSitePiece(
+  sitePieces: PieceAvecStocks[],
+  reference: string | null,
+  refBis: string | null
+): PieceAvecStocks | null {
+  if (!reference && !refBis) return null
+  return sitePieces.find((piece) => (
+    (reference && piece.reference === reference)
+    || (refBis && piece.refBis === refBis)
+  )) ?? null
+}
+
+function buildDeliveryDescriptionWithPieceChange(
+  intervention: InterventionItem,
+  sitePieces: PieceAvecStocks[],
+  pieceId: number,
+  quantityDelta: number
+): string {
+  const targetPiece = sitePieces.find((piece) => piece.pieceId === pieceId)
+  if (!targetPiece) {
+    throw new Error('Piece introuvable sur ce site')
+  }
+
+  const headerLines: string[] = []
+  const unmatchedPieceLines: string[] = []
+  const piecesById = new Map<number, { piece: PieceAvecStocks; quantity: number }>()
+
+  ;(intervention.description ?? '').split('\n').forEach((rawLine) => {
+    const line = rawLine.trim()
+    if (!line) return
+    if (!line.startsWith('- ')) {
+      headerLines.push(rawLine.trimEnd())
+      return
+    }
+
+    const parsedPiece = extractInterventionPieces(line)[0]
+    const sitePiece = parsedPiece
+      ? findSitePiece(sitePieces, parsedPiece.reference, parsedPiece.refBis)
+      : null
+    if (!parsedPiece || !sitePiece) {
+      unmatchedPieceLines.push(rawLine.trimEnd())
+      return
+    }
+
+    const current = piecesById.get(sitePiece.pieceId)
+    if (current) {
+      current.quantity += parsedPiece.quantity
+      return
+    }
+    piecesById.set(sitePiece.pieceId, { piece: sitePiece, quantity: parsedPiece.quantity })
+  })
+
+  const currentTarget = piecesById.get(pieceId)
+  const nextQuantity = Math.max(0, (currentTarget?.quantity ?? 0) + quantityDelta)
+  if (nextQuantity > 0) {
+    piecesById.set(pieceId, { piece: targetPiece, quantity: nextQuantity })
+  } else {
+    piecesById.delete(pieceId)
+  }
+
+  const normalizedHeaderLines = headerLines.length > 0
+    ? headerLines
+    : [
+        `Livraison du ${formatDate(intervention.startedAt ?? intervention.closedAt ?? intervention.createdAt)}`,
+        `Site: ${intervention.site.nom}`,
+      ]
+
+  return [
+    ...normalizedHeaderLines,
+    ...unmatchedPieceLines,
+    ...Array.from(piecesById.values()).map(({ piece, quantity }) => deliveryDescriptionLine(piece, quantity)),
+  ].join('\n')
+}
+
 function compactPieceLabel(refBis: string | null | undefined, variant: string | null): string {
   return [
     refBis?.trim() || 'Sans ref-bis',
@@ -157,20 +248,13 @@ function formatInterventionPieceBadges(
   sitePieces: PieceAvecStocks[] = []
 ): InterventionPieceBadge[] {
   const stockMovements = intervention.stockMovements ?? []
+  const descriptionPieces = extractInterventionPieces(intervention.description)
   const grouped = new Map<string, {
     pieceId: number | null
     refBis: string | null
     variant: string | null
     quantity: number
   }>()
-
-  const findSitePiece = (reference: string | null, refBis: string | null): PieceAvecStocks | null => {
-    if (!reference && !refBis) return null
-    return sitePieces.find((piece) => (
-      (reference && piece.reference === reference)
-      || (refBis && piece.refBis === refBis)
-    )) ?? null
-  }
 
   const addGroupedPiece = (
     keySeed: string,
@@ -188,8 +272,8 @@ function formatInterventionPieceBadges(
     grouped.set(key, { pieceId, refBis, variant, quantity })
   }
 
-  extractInterventionPieces(intervention.description).forEach((descriptionPiece) => {
-    const sitePiece = findSitePiece(descriptionPiece.reference, descriptionPiece.refBis)
+  descriptionPieces.forEach((descriptionPiece) => {
+    const sitePiece = findSitePiece(sitePieces, descriptionPiece.reference, descriptionPiece.refBis)
     addGroupedPiece(
       descriptionPiece.reference ?? descriptionPiece.key,
       sitePiece?.pieceId ?? null,
@@ -199,16 +283,18 @@ function formatInterventionPieceBadges(
     )
   })
 
-  stockMovements.forEach((movement) => {
-    const piece = movement.piece
-    addGroupedPiece(
-      String(piece.id),
-      piece.id,
-      piece.refBis,
-      normalizePieceVariant(piece.variant),
-      movement.quantityDelta
-    )
-  })
+  if (intervention.type !== 'LIVRAISON_TONER' || descriptionPieces.length === 0) {
+    stockMovements.forEach((movement) => {
+      const piece = movement.piece
+      addGroupedPiece(
+        String(piece.id),
+        piece.id,
+        piece.refBis,
+        normalizePieceVariant(piece.variant),
+        movement.quantityDelta
+      )
+    })
+  }
 
   return Array.from(grouped.entries()).map(([key, item]) => {
     const label = compactPieceLabel(item.refBis, item.variant)
@@ -448,6 +534,23 @@ export default function InterventionsPage() {
     setError(null)
     setMessage(null)
     try {
+      if (intervention.type === 'LIVRAISON_TONER') {
+        const piecesForSite = sitePieces.length > 0
+          ? sitePieces
+          : (await fetchSiteDetail(intervention.site.id)).piecesAvecStocks
+        const description = buildDeliveryDescriptionWithPieceChange(
+          intervention,
+          piecesForSite,
+          pieceId,
+          quantity
+        )
+
+        await updateIntervention(intervention.id, { description })
+        await refreshInterventionAfterStockChange(intervention)
+        setMessage(quantity > 0 ? 'Piece ajoutee a la livraison' : 'Piece retiree de la livraison')
+        return
+      }
+
       await createSiteStockMovement(intervention.site.id, {
         pieceId,
         quantityDelta: quantity,
