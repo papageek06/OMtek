@@ -265,6 +265,12 @@ class StockController extends AbstractController
         if (\array_key_exists('interventionId', $body) && $body['interventionId'] && !$intervention) {
             return new JsonResponse(['error' => 'Intervention introuvable'], Response::HTTP_NOT_FOUND);
         }
+        if ($intervention && $intervention->getSite()->getId() !== $site->getId()) {
+            return new JsonResponse(['error' => 'Intervention non liee a ce site'], Response::HTTP_BAD_REQUEST);
+        }
+        if ($intervention && !$this->canAccessIntervention($intervention)) {
+            return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
+        }
 
         try {
             $movement = $this->stockMutationService->applyMovement(
@@ -582,5 +588,14 @@ class StockController extends AbstractController
         }
 
         return true;
+    }
+
+    private function canAccessIntervention(Intervention $intervention): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return !$intervention->isArchived() && !$intervention->getSite()->isHidden();
     }
 }

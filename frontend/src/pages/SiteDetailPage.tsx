@@ -1012,7 +1012,7 @@ export default function SiteDetailPage() {
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
   const [deliveryOpen, setDeliveryOpen] = useState(false)
   const [deliveryDate, setDeliveryDate] = useState(dateInputValue())
-  const [deliveryStatus, setDeliveryStatus] = useState('TERMINEE')
+  const [deliveryStatus, setDeliveryStatus] = useState('EN_COURS')
   const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, number>>({})
   const [deliveryShowAllPieces, setDeliveryShowAllPieces] = useState(false)
   const [deliverySubmitting, setDeliverySubmitting] = useState(false)
@@ -1767,7 +1767,7 @@ export default function SiteDetailPage() {
               type="button"
               onClick={() => {
                 setDeliveryDate(dateInputValue())
-                setDeliveryStatus('TERMINEE')
+                setDeliveryStatus('EN_COURS')
                 setDeliveryQuantities({})
                 setDeliveryShowAllPieces(false)
                 setDeliveryOpen(true)
@@ -1808,27 +1808,13 @@ export default function SiteDetailPage() {
               {piecesAvecStocks.map((p) => {
                 const matchedModeles = matchingSiteModeles(p, imprimantes)
                 return (
-                <article key={`mobile-${p.pieceId}`} className="piece-card">
-                  <div className="piece-card__header">
-                    <div>
-                      <strong className="piece-card__ref">{p.reference}</strong>
-                      <h3 title={p.libelle}>{p.libelle}</h3>
-                    </div>
-                    <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
-                      {pieceTypeLabel(p.categorie ?? p.type)}
+                <details key={`mobile-${p.pieceId}`} className="piece-mobile-row">
+                  <summary>
+                    <span className="piece-mobile-row__identity">
+                      <strong>{refBisValues[p.pieceId] ?? p.refBis ?? 'Sans ref-bis'}</strong>
+                      <small>{p.reference}</small>
                     </span>
-                  </div>
-                  <div className="piece-card__meta">
-                    <span>Ref-bis: {refBisValues[p.pieceId] ?? p.refBis ?? '—'}</span>
-                    <span>Stock général: {p.quantiteStockGeneral}</span>
-                  </div>
-                  <div className="piece-card__modeles piece-card__modeles--compact">
-                    <span className="pieces-table__site-model-count" title={matchedModeles.join(', ') || 'Aucun modele du site'}>
-                      {matchingSiteModelesLabel(matchedModeles.length)}
-                    </span>
-                  </div>
-                  <div className="piece-card__stock-grid">
-                    <label>
+                    <label className="piece-mobile-row__stock" onClick={(e) => e.stopPropagation()}>
                       <span>Stock site</span>
                       <input
                         type="number"
@@ -1842,14 +1828,61 @@ export default function SiteDetailPage() {
                         disabled={stockSaveSubmitting}
                       />
                     </label>
+                  </summary>
+                  <div className="piece-mobile-row__details">
+                    <dl>
+                      <div>
+                        <dt>Reference</dt>
+                        <dd>{p.reference}</dd>
+                      </div>
+                      <div>
+                        <dt>Libelle</dt>
+                        <dd>{p.libelle}</dd>
+                      </div>
+                      <div>
+                        <dt>Categorie</dt>
+                        <dd>{pieceTypeLabel(p.categorie ?? p.type)}</dd>
+                      </div>
+                      <div>
+                        <dt>Variant</dt>
+                        <dd>{p.variant ?? '-'}</dd>
+                      </div>
+                      <div>
+                        <dt>Nature</dt>
+                        <dd>{pieceNatureDisplay(p)}</dd>
+                      </div>
+                      <div>
+                        <dt>Modeles site</dt>
+                        <dd>{matchingSiteModelesLabel(matchedModeles.length)}</dd>
+                      </div>
+                      <div>
+                        <dt>Stock general</dt>
+                        <dd>{p.quantiteStockGeneral}</dd>
+                      </div>
+                    </dl>
+                    <label className="piece-mobile-row__ref-bis-edit">
+                      <span>Ref-bis</span>
+                      <input
+                        type="text"
+                        value={refBisValues[p.pieceId] ?? p.refBis ?? ''}
+                        onChange={(e) => setRefBisValues((prev) => ({ ...prev, [p.pieceId]: e.target.value }))}
+                        onBlur={() => void handleRefBisSave(p)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') e.currentTarget.blur()
+                        }}
+                        placeholder="Ref entreprise"
+                        className="pieces-table__ref-bis-input"
+                        disabled={quickSavingPieceId === p.pieceId}
+                      />
+                    </label>
+                    <div className="piece-mobile-row__actions">
+                      {quickSavingPieceId === p.pieceId && <span className="piece-card__save-status">Enregistrement...</span>}
+                      <Link to={`/interventions?siteId=${site.id}&create=1`} className="piece-card__link-btn">
+                        Intervention
+                      </Link>
+                    </div>
                   </div>
-                  <div className="piece-card__actions">
-                    {quickSavingPieceId === p.pieceId && <span className="piece-card__save-status">Enregistrement...</span>}
-                    <Link to={`/interventions?siteId=${site.id}&create=1`} className="piece-card__link-btn">
-                      Intervention
-                    </Link>
-                  </div>
-                </article>
+                </details>
                 )
               })}
             </div>

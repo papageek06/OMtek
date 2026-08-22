@@ -2,7 +2,9 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { Link, Navigate, useSearchParams } from 'react-router-dom'
 import {
   approveIntervention,
+  createSiteStockMovement,
   createIntervention,
+  fetchSiteDetail,
   fetchInterventions,
   fetchSites,
   rejectIntervention,
@@ -12,11 +14,13 @@ import {
   type InterventionFilters,
   type InterventionItem,
   type InterventionUpdatePayload,
+  type ContactAddress,
+  type PieceAvecStocks,
   type Site,
+  type SiteContactLink,
 } from '../api/client'
 import {
   INTERVENTION_APPROVAL_LABELS as APPROVAL_LABELS,
-  INTERVENTION_APPROVAL_OPTIONS as APPROVAL_OPTIONS,
   INTERVENTION_BILLING_LABELS as BILLING_LABELS,
   INTERVENTION_BILLING_OPTIONS as BILLING_OPTIONS,
   INTERVENTION_PRIORITY_LABELS as PRIORITY_LABELS,
@@ -68,9 +72,11 @@ const PIECE_VARIANT_LABELS: Record<string, string> = {
 
 type InterventionPieceBadge = {
   key: string
+  pieceId: number | null
   label: string
   title: string
   variant: string | null
+  quantity: number
 }
 
 function normalizePieceVariant(value: string | null | undefined): string | null {
@@ -93,13 +99,36 @@ function pieceVariantLabel(variant: string | null): string | null {
   return PIECE_VARIANT_LABELS[variant] ?? variant
 }
 
+function isConsumablePiece(piece: Pick<PieceAvecStocks, 'nature' | 'categorie' | 'type'>): boolean {
+  if (piece.nature) return piece.nature === 'CONSUMABLE'
+  return ['TONER', 'BAC_RECUP', 'toner', 'bac_recup', 'Fournitures Consommables'].includes(piece.categorie ?? piece.type)
+}
+
+function compactPieceLabel(refBis: string | null | undefined, variant: string | null): string {
+  return [
+    refBis?.trim() || 'Sans ref-bis',
+    pieceVariantLabel(variant),
+  ].filter(Boolean).join(' - ')
+}
+
+function contactAddressText(address: ContactAddress | null | undefined): string {
+  if (!address) return ''
+  return Object.values(address)
+    .map((value) => String(value).trim())
+    .filter(Boolean)
+    .join(', ')
+}
+
+function mapsUrl(address: string): string {
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
+}
+
 function formatInterventionPieceBadges(intervention: InterventionItem): InterventionPieceBadge[] {
   const stockMovements = intervention.stockMovements ?? []
   if (stockMovements.length > 0) {
     const grouped = new Map<string, {
-      reference: string
-      modelLabel: string
-      libelle: string
+      pieceId: number
+      refBis: string | null
       variant: string | null
       quantity: number
     }>()
@@ -107,14 +136,9 @@ function formatInterventionPieceBadges(intervention: InterventionItem): Interven
     stockMovements.forEach((movement) => {
       const piece = movement.piece
       const variant = normalizePieceVariant(piece.variant)
-      const modelLabel = piece.refBis
-        || piece.modeles?.map((modele) => modele.nom).filter(Boolean).slice(0, 2).join(', ')
-        || ''
       const key = [
-        piece.reference,
+        piece.id,
         piece.refBis ?? '',
-        modelLabel,
-        piece.libelle,
         variant ?? '',
       ].join('|')
       const current = grouped.get(key)
@@ -123,40 +147,36 @@ function formatInterventionPieceBadges(intervention: InterventionItem): Interven
         return
       }
       grouped.set(key, {
-        reference: piece.reference,
-        modelLabel,
-        libelle: piece.libelle,
+        pieceId: piece.id,
+        refBis: piece.refBis,
         variant,
         quantity: movement.quantityDelta,
       })
     })
 
     return Array.from(grouped.entries()).map(([key, item]) => {
-      const variantLabel = pieceVariantLabel(item.variant)
-      const modelOrLabel = item.modelLabel || item.libelle
-      const label = [
-        item.reference,
-        modelOrLabel ? ` / ${modelOrLabel}` : '',
-        variantLabel ? ` · ${variantLabel}` : '',
-        ` : ${item.quantity}`,
-      ].join('')
+      const label = compactPieceLabel(item.refBis, item.variant)
 
       return {
         key,
-        label,
-        title: `${item.reference}${modelOrLabel ? ` / ${modelOrLabel}` : ''}${variantLabel ? ` - ${variantLabel}` : ''}: ${item.quantity}`,
+        pieceId: item.pieceId,
+        label: `${label} x${item.quantity}`,
+        title: `${label}: ${item.quantity}`,
         variant: item.variant,
+        quantity: item.quantity,
       }
-    })
+    }).filter((item) => item.quantity !== 0)
   }
 
   return extractInterventionPieces(intervention.description).map((piece) => {
     const variant = inferPieceVariantFromText(piece)
     return {
       key: piece,
+      pieceId: null,
       label: piece,
       title: piece,
       variant,
+      quantity: 0,
     }
   })
 }
@@ -169,6 +189,7 @@ export default function InterventionsPage() {
   const [sites, setSites] = useState<Site[]>([])
   const [interventions, setInterventions] = useState<InterventionItem[]>([])
   const [filters, setFilters] = useState<InterventionFilters>({
+    statut: 'EN_COURS',
     archived: 'false',
     siteId: initialSiteId ? Number(initialSiteId) : undefined,
   })
@@ -178,6 +199,13 @@ export default function InterventionsPage() {
   const [message, setMessage] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(initialCreate)
   const [selectedIntervention, setSelectedIntervention] = useState<InterventionItem | null>(null)
+  const [sitePieces, setSitePieces] = useState<PieceAvecStocks[]>([])
+  const [siteContacts, setSiteContacts] = useState<SiteContactLink[]>([])
+  const [sitePiecesLoading, setSitePiecesLoading] = useState(false)
+  const [sitePiecesError, setSitePiecesError] = useState<string | null>(null)
+  const [pieceSearch, setPieceSearch] = useState('')
+  const [showAllSitePieces, setShowAllSitePieces] = useState(false)
+  const [defaultPieceQuantity, setDefaultPieceQuantity] = useState(1)
   const [form, setForm] = useState({
     siteId: initialSiteId ?? '',
     type: 'DEPANNAGE',
@@ -211,6 +239,36 @@ export default function InterventionsPage() {
   useEffect(() => {
     void loadData()
   }, [loadData])
+
+  useEffect(() => {
+    if (!selectedIntervention) {
+      setSitePieces([])
+      setSiteContacts([])
+      setSitePiecesError(null)
+      return
+    }
+
+    let cancelled = false
+    setSitePiecesLoading(true)
+    setSitePiecesError(null)
+    fetchSiteDetail(selectedIntervention.site.id)
+      .then((detail) => {
+        if (!cancelled) {
+          setSitePieces(detail.piecesAvecStocks)
+          setSiteContacts(detail.contacts ?? [])
+        }
+      })
+      .catch((e) => {
+        if (!cancelled) setSitePiecesError(e instanceof Error ? e.message : 'Erreur chargement pieces site')
+      })
+      .finally(() => {
+        if (!cancelled) setSitePiecesLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [selectedIntervention?.id, selectedIntervention?.site.id])
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -273,61 +331,6 @@ export default function InterventionsPage() {
     }
   }
 
-  const handleUpdateInterventionCost = async (intervention: InterventionItem) => {
-    const durationRaw = window.prompt(
-      'Duree intervention (minutes, vide = non renseigne):',
-      intervention.interventionDurationMinutes != null ? String(intervention.interventionDurationMinutes) : ''
-    )
-    if (durationRaw === null) return
-    const laborRaw = window.prompt(
-      'Main d oeuvre HT (ex: 80.00):',
-      intervention.interventionLaborCostHt ?? ''
-    )
-    if (laborRaw === null) return
-    const partsRaw = window.prompt(
-      'Pieces HT (ex: 35.50):',
-      intervention.interventionPartsCostHt ?? ''
-    )
-    if (partsRaw === null) return
-    const travelRaw = window.prompt(
-      'Deplacement HT (ex: 20.00):',
-      intervention.interventionTravelCostHt ?? ''
-    )
-    if (travelRaw === null) return
-    const notesRaw = window.prompt(
-      'Notes facturation (optionnel):',
-      intervention.interventionBillingNotes ?? ''
-    )
-    if (notesRaw === null) return
-
-    const normalizedDuration = durationRaw.trim()
-    if (normalizedDuration !== '' && (!/^\d+$/.test(normalizedDuration) || Number(normalizedDuration) < 0)) {
-      setError('Duree intervention invalide')
-      return
-    }
-
-    const amountRegex = /^\d+(?:[.,]\d{1,6})?$/
-    for (const [label, value] of [
-      ['Main d oeuvre', laborRaw],
-      ['Pieces', partsRaw],
-      ['Deplacement', travelRaw],
-    ] as const) {
-      const normalized = value.trim()
-      if (normalized !== '' && !amountRegex.test(normalized)) {
-        setError(`${label} HT invalide`)
-        return
-      }
-    }
-
-    await handlePatch(intervention, {
-      interventionDurationMinutes: normalizedDuration === '' ? null : Number(normalizedDuration),
-      interventionLaborCostHt: laborRaw.trim() === '' ? null : laborRaw.trim().replace(',', '.'),
-      interventionPartsCostHt: partsRaw.trim() === '' ? null : partsRaw.trim().replace(',', '.'),
-      interventionTravelCostHt: travelRaw.trim() === '' ? null : travelRaw.trim().replace(',', '.'),
-      interventionBillingNotes: notesRaw.trim() || null,
-    })
-  }
-
   const handleSubmitForApproval = async (intervention: InterventionItem) => {
     setSubmitting(true)
     setError(null)
@@ -377,6 +380,44 @@ export default function InterventionsPage() {
       setMessage('Intervention rejetee')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur rejet intervention')
+    } finally {
+      setSubmitting(false)
+    }
+  }
+
+  const refreshInterventionAfterStockChange = async (intervention: InterventionItem) => {
+    const updatedInterventions = await fetchInterventions(filters)
+    setInterventions(updatedInterventions)
+    setSelectedIntervention(updatedInterventions.find((item) => item.id === intervention.id) ?? intervention)
+    const detail = await fetchSiteDetail(intervention.site.id)
+    setSitePieces(detail.piecesAvecStocks)
+    setSiteContacts(detail.contacts ?? [])
+  }
+
+  const handleAdjustInterventionPiece = async (
+    intervention: InterventionItem,
+    pieceId: number,
+    quantityDelta: number
+  ) => {
+    const quantity = Math.trunc(quantityDelta)
+    if (quantity === 0) return
+
+    setSubmitting(true)
+    setError(null)
+    setMessage(null)
+    try {
+      await createSiteStockMovement(intervention.site.id, {
+        pieceId,
+        quantityDelta: quantity,
+        reason: quantity > 0 ? 'LIVRAISON' : 'CORRECTION',
+        commentaire: quantity > 0 ? 'Ajout depuis intervention' : 'Retrait depuis intervention',
+        scope: 'TECH_VISIBLE',
+        interventionId: intervention.id,
+      })
+      await refreshInterventionAfterStockChange(intervention)
+      setMessage(quantity > 0 ? 'Piece ajoutee a intervention' : 'Piece retiree de intervention')
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour piece intervention')
     } finally {
       setSubmitting(false)
     }
@@ -548,40 +589,6 @@ export default function InterventionsPage() {
 
         {userIsAdmin && (
           <label>
-            <span>Facturation</span>
-            <select
-              value={filters.billingStatus ?? ''}
-              onChange={(e) => setFilters((prev) => ({ ...prev, billingStatus: e.target.value || undefined }))}
-            >
-              <option value="">Tous</option>
-              {BILLING_OPTIONS.map((value) => (
-                <option key={value} value={value}>
-                  {BILLING_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {userIsAdmin && (
-          <label>
-            <span>Validation</span>
-            <select
-              value={filters.approvalStatus ?? ''}
-              onChange={(e) => setFilters((prev) => ({ ...prev, approvalStatus: e.target.value || undefined }))}
-            >
-              <option value="">Toutes</option>
-              {APPROVAL_OPTIONS.map((value) => (
-                <option key={value} value={value}>
-                  {APPROVAL_LABELS[value]}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
-
-        {userIsAdmin && (
-          <label>
             <span>Archive</span>
             <select
               value={filters.archived ?? 'false'}
@@ -642,11 +649,11 @@ export default function InterventionsPage() {
                 </div>
 
                 {pieces.length > 0 && (
-                  <div className="intervention-card__pieces" aria-label="Pieces livrees">
+                  <div className="intervention-card__pieces-list" aria-label="Pieces livrees">
                     {pieces.map((piece) => (
                       <span
                         key={piece.key}
-                        className={`intervention-card__piece intervention-card__piece--${statusClass(piece.variant ?? 'none')}`}
+                        className={`intervention-card__piece-line intervention-card__piece-line--${statusClass(piece.variant ?? 'none')}`}
                         title={piece.title}
                       >
                         {piece.label}
@@ -663,6 +670,31 @@ export default function InterventionsPage() {
       {selectedIntervention && (() => {
         const intervention = selectedIntervention
         const pieces = formatInterventionPieceBadges(intervention)
+        const pieceTotals = new Map<number, number>()
+        pieces.forEach((piece) => {
+          if (piece.pieceId !== null) pieceTotals.set(piece.pieceId, piece.quantity)
+        })
+        const normalizedSearch = pieceSearch.trim().toLowerCase()
+        const availableSitePieces = sitePieces
+          .filter((piece) => showAllSitePieces || isConsumablePiece(piece))
+          .filter((piece) => {
+            if (!normalizedSearch) return true
+            return [
+              piece.refBis,
+              piece.variant,
+              piece.categorie,
+              piece.type,
+              ...((piece.modeles ?? []).map((modele) => modele.nom)),
+            ]
+              .filter(Boolean)
+              .some((value) => String(value).toLowerCase().includes(normalizedSearch))
+          })
+        const preferredContact = siteContacts.find((contact) => contact.favorite) ?? siteContacts[0] ?? null
+        const preferredAddress = preferredContact
+          ? contactAddressText(preferredContact.businessAddress)
+            || contactAddressText(preferredContact.homeAddress)
+            || contactAddressText(preferredContact.otherAddress)
+          : ''
         const approvalStatus = intervention.approvalStatus ?? 'DRAFT'
         const billingStatus = intervention.billingStatus ?? 'NON_FACTURE'
         const canSubmitForApproval =
@@ -711,50 +743,115 @@ export default function InterventionsPage() {
                 )}
               </div>
 
-              {intervention.description && (
-                <p className="intervention-card__description">{intervention.description}</p>
-              )}
+              <div className="intervention-detail-summary">
+                <span>Date: {formatDate(intervention.startedAt ?? intervention.createdAt)}</span>
+                <span>Site: {intervention.site.nom}</span>
+                {preferredContact && preferredAddress && (
+                  <a href={mapsUrl(preferredAddress)} target="_blank" rel="noreferrer">
+                    {preferredContact.displayName}: {preferredAddress}
+                  </a>
+                )}
+              </div>
 
               {pieces.length > 0 && (
-                <div className="intervention-card__pieces intervention-card__pieces--detail" aria-label="Pieces livrees">
+                <div className="intervention-card__pieces-list intervention-card__pieces-list--detail" aria-label="Pieces livrees">
                   {pieces.map((piece) => (
-                    <span
+                    <button
+                      type="button"
                       key={piece.key}
-                      className={`intervention-card__piece intervention-card__piece--${statusClass(piece.variant ?? 'none')}`}
+                      className={`intervention-card__piece-line intervention-card__piece-line--clickable intervention-card__piece-line--${statusClass(piece.variant ?? 'none')}`}
                       title={piece.title}
+                      disabled={submitting || piece.pieceId === null || piece.quantity <= 0}
+                      onClick={() => {
+                        if (piece.pieceId !== null) {
+                          void handleAdjustInterventionPiece(intervention, piece.pieceId, -Math.min(defaultPieceQuantity, piece.quantity))
+                        }
+                      }}
                     >
-                      {piece.label}
-                    </span>
+                      <span>{piece.label}</span>
+                      <strong>-</strong>
+                    </button>
                   ))}
                 </div>
               )}
 
-              <div className="intervention-card__details">
-                <span>Demandeur: {intervention.createdBy.firstName} {intervention.createdBy.lastName}</span>
-                <span>Assigne: {intervention.assignedTo ? `${intervention.assignedTo.firstName} ${intervention.assignedTo.lastName}` : 'Non assignee'}</span>
-                <span>Debut: {formatDate(intervention.startedAt)}</span>
-                <span>Cloture: {formatDate(intervention.closedAt)}</span>
-                <span>Soumise: {formatDate(intervention.submittedAt ?? null)}</span>
-                <span>Validee: {formatDate(intervention.approvedAt ?? null)}</span>
-                {intervention.approvedBy && (
-                  <span>Validee par: {intervention.approvedBy.firstName} {intervention.approvedBy.lastName}</span>
+              <section className="intervention-piece-manager" aria-label="Pieces compatibles du site">
+                <div className="intervention-piece-manager__toolbar">
+                  <label>
+                    <span>Recherche</span>
+                    <input
+                      type="search"
+                      value={pieceSearch}
+                      onChange={(e) => setPieceSearch(e.target.value)}
+                      placeholder="Ref-bis, variante, modele"
+                    />
+                  </label>
+                  <label>
+                    <span>Quantite defaut</span>
+                    <input
+                      type="number"
+                      min={1}
+                      value={defaultPieceQuantity}
+                      onChange={(e) => setDefaultPieceQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
+                    />
+                  </label>
+                  <label className="intervention-piece-manager__toggle">
+                    <input
+                      type="checkbox"
+                      checked={showAllSitePieces}
+                      onChange={(e) => setShowAllSitePieces(e.target.checked)}
+                    />
+                    <span>Toutes</span>
+                  </label>
+                </div>
+
+                {sitePiecesError && <p className="intervention-piece-manager__error">{sitePiecesError}</p>}
+                {sitePiecesLoading ? (
+                  <p className="intervention-piece-manager__empty">Chargement pieces...</p>
+                ) : availableSitePieces.length === 0 ? (
+                  <p className="intervention-piece-manager__empty">Aucune piece compatible.</p>
+                ) : (
+                  <div className="intervention-piece-manager__rows">
+                    {availableSitePieces.map((piece) => {
+                      const variant = normalizePieceVariant(piece.variant)
+                      const total = pieceTotals.get(piece.pieceId) ?? 0
+                      const label = compactPieceLabel(piece.refBis, variant)
+                      return (
+                        <div key={piece.pieceId} className="intervention-piece-row">
+                          <button
+                            type="button"
+                            className="intervention-piece-row__main"
+                            onClick={() => void handleAdjustInterventionPiece(intervention, piece.pieceId, defaultPieceQuantity)}
+                            disabled={submitting}
+                            title={label}
+                          >
+                            <span>{label}</span>
+                            <small>Stock {piece.quantiteStockSite} - Lie {total}</small>
+                          </button>
+                          <div className="intervention-piece-row__actions">
+                            <button
+                              type="button"
+                              onClick={() => void handleAdjustInterventionPiece(intervention, piece.pieceId, -Math.min(defaultPieceQuantity, total))}
+                              disabled={submitting || total <= 0}
+                              aria-label={`Retirer ${label}`}
+                            >
+                              -
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => void handleAdjustInterventionPiece(intervention, piece.pieceId, defaultPieceQuantity)}
+                              disabled={submitting}
+                              aria-label={`Ajouter ${label}`}
+                            >
+                              +
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
                 )}
-                {intervention.approvalNote && (
-                  <span>Note validation: {intervention.approvalNote}</span>
-                )}
-                {userIsAdmin && (
-                  <>
-                    <span>Duree (min): {intervention.interventionDurationMinutes ?? '-'}</span>
-                    <span>MO HT: {intervention.interventionLaborCostHt ?? '-'}</span>
-                    <span>Pieces HT: {intervention.interventionPartsCostHt ?? '-'}</span>
-                    <span>Deplacement HT: {intervention.interventionTravelCostHt ?? '-'}</span>
-                    <span>Total HT: {intervention.interventionTotalCostHt ?? '-'}</span>
-                    {intervention.interventionBillingNotes && (
-                      <span>Notes facturation: {intervention.interventionBillingNotes}</span>
-                    )}
-                  </>
-                )}
-              </div>
+              </section>
 
               <div className="intervention-card__actions">
                 <label>
@@ -797,17 +894,6 @@ export default function InterventionsPage() {
                     disabled={submitting}
                   >
                     {intervention.archived ? 'Desarchiver' : 'Archiver'}
-                  </button>
-                )}
-
-                {userIsAdmin && (
-                  <button
-                    type="button"
-                    className="intervention-card__secondary-btn"
-                    onClick={() => handleUpdateInterventionCost(intervention)}
-                    disabled={submitting}
-                  >
-                    Valoriser cout
                   </button>
                 )}
 

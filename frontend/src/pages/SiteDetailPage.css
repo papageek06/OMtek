@@ -1184,6 +1184,112 @@
   border-color: rgba(0, 168, 252, 0.4);
 }
 
+.piece-mobile-row {
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  background: #2b2d31;
+  overflow: hidden;
+}
+
+.piece-mobile-row summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  min-height: 3.25rem;
+  padding: 0.55rem 0.65rem;
+  cursor: pointer;
+  list-style: none;
+}
+
+.piece-mobile-row summary::-webkit-details-marker {
+  display: none;
+}
+
+.piece-mobile-row__identity {
+  display: grid;
+  gap: 0.18rem;
+  min-width: 0;
+}
+
+.piece-mobile-row__identity strong,
+.piece-mobile-row__identity small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.piece-mobile-row__identity strong {
+  color: #f2f3f5;
+  font-weight: 800;
+}
+
+.piece-mobile-row__identity small {
+  color: #00a8fc;
+  font-family: ui-monospace, monospace;
+  font-size: 0.76rem;
+}
+
+.piece-mobile-row__stock {
+  display: grid;
+  gap: 0.25rem;
+  min-width: 5rem;
+  color: #b5bac1;
+  font-size: 0.72rem;
+}
+
+.piece-mobile-row__stock .pieces-table__input {
+  width: 4rem;
+}
+
+.piece-mobile-row__details {
+  display: grid;
+  gap: 0.75rem;
+  padding: 0.7rem;
+  border-top: 1px solid #3f4147;
+  background: rgba(30, 31, 34, 0.45);
+}
+
+.piece-mobile-row__details dl {
+  display: grid;
+  gap: 0.45rem;
+  margin: 0;
+}
+
+.piece-mobile-row__details dl > div {
+  display: grid;
+  grid-template-columns: 7rem minmax(0, 1fr);
+  gap: 0.65rem;
+}
+
+.piece-mobile-row__details dt {
+  color: #8e9297;
+  font-size: 0.78rem;
+}
+
+.piece-mobile-row__details dd {
+  min-width: 0;
+  margin: 0;
+  overflow: hidden;
+  color: #dcddde;
+  text-overflow: ellipsis;
+}
+
+.piece-mobile-row__ref-bis-edit {
+  display: grid;
+  gap: 0.35rem;
+  color: #b5bac1;
+  font-size: 0.8rem;
+}
+
+.piece-mobile-row__actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.65rem;
+}
+
 .piece-type-badge {
   font-size: 0.75rem;
   padding: 0.2rem 0.5rem;
