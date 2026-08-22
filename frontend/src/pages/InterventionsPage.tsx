@@ -51,13 +51,42 @@ function statusClass(value: string): string {
   return value.toLowerCase().replace(/_/g, '-')
 }
 
-function extractInterventionPieces(description: string | null): string[] {
+type InterventionDescriptionPiece = {
+  key: string
+  reference: string | null
+  refBis: string | null
+  label: string
+  quantity: number
+  variant: string | null
+}
+
+function extractInterventionPieces(description: string | null): InterventionDescriptionPiece[] {
   if (!description) return []
   return description
     .split('\n')
     .map((line) => line.trim())
     .filter((line) => line.startsWith('- '))
-    .map((line) => line.slice(2).replace(/\s+\((?:stock client incremente|pose directe, stock client non incremente)\)$/i, ''))
+    .map((line) => {
+      const cleanLine = line.slice(2).replace(/\s+\((?:stock client incremente|pose directe, stock client non incremente)\)$/i, '')
+      const quantityMatch = cleanLine.match(/:\s*(\d+)\s*$/)
+      const quantity = quantityMatch ? Number(quantityMatch[1]) : 0
+      const withoutQuantity = quantityMatch ? cleanLine.slice(0, quantityMatch.index).trim() : cleanLine
+      const [referenceSegment] = withoutQuantity.split(/\s+-\s+/, 1)
+      const [referenceRaw, refBisRaw] = (referenceSegment ?? '').split(/\s+\/\s+/, 2)
+      const reference = referenceRaw?.trim() || null
+      const refBis = refBisRaw?.trim() || null
+      const variant = inferPieceVariantFromText(cleanLine)
+      const label = compactPieceLabel(refBis, variant)
+
+      return {
+        key: cleanLine,
+        reference,
+        refBis,
+        label: quantity > 0 ? `${label} x${quantity}` : cleanLine,
+        quantity,
+        variant,
+      }
+    })
 }
 
 const PIECE_VARIANT_LABELS: Record<string, string> = {
@@ -123,62 +152,75 @@ function mapsUrl(address: string): string {
   return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`
 }
 
-function formatInterventionPieceBadges(intervention: InterventionItem): InterventionPieceBadge[] {
+function formatInterventionPieceBadges(
+  intervention: InterventionItem,
+  sitePieces: PieceAvecStocks[] = []
+): InterventionPieceBadge[] {
   const stockMovements = intervention.stockMovements ?? []
-  if (stockMovements.length > 0) {
-    const grouped = new Map<string, {
-      pieceId: number
-      refBis: string | null
-      variant: string | null
-      quantity: number
-    }>()
+  const grouped = new Map<string, {
+    pieceId: number | null
+    refBis: string | null
+    variant: string | null
+    quantity: number
+  }>()
 
-    stockMovements.forEach((movement) => {
-      const piece = movement.piece
-      const variant = normalizePieceVariant(piece.variant)
-      const key = [
-        piece.id,
-        piece.refBis ?? '',
-        variant ?? '',
-      ].join('|')
-      const current = grouped.get(key)
-      if (current) {
-        current.quantity += movement.quantityDelta
-        return
-      }
-      grouped.set(key, {
-        pieceId: piece.id,
-        refBis: piece.refBis,
-        variant,
-        quantity: movement.quantityDelta,
-      })
-    })
-
-    return Array.from(grouped.entries()).map(([key, item]) => {
-      const label = compactPieceLabel(item.refBis, item.variant)
-
-      return {
-        key,
-        pieceId: item.pieceId,
-        label: `${label} x${item.quantity}`,
-        title: `${label}: ${item.quantity}`,
-        variant: item.variant,
-        quantity: item.quantity,
-      }
-    }).filter((item) => item.quantity !== 0)
+  const findSitePiece = (reference: string | null, refBis: string | null): PieceAvecStocks | null => {
+    if (!reference && !refBis) return null
+    return sitePieces.find((piece) => (
+      (reference && piece.reference === reference)
+      || (refBis && piece.refBis === refBis)
+    )) ?? null
   }
 
-  return extractInterventionPieces(intervention.description).map((piece) => {
-    const variant = inferPieceVariantFromText(piece)
-    return {
-      key: piece,
-      pieceId: null,
-      label: piece,
-      title: piece,
-      variant,
-      quantity: 0,
+  const addGroupedPiece = (
+    keySeed: string,
+    pieceId: number | null,
+    refBis: string | null,
+    variant: string | null,
+    quantity: number
+  ) => {
+    const key = [pieceId ?? keySeed, refBis ?? '', variant ?? ''].join('|')
+    const current = grouped.get(key)
+    if (current) {
+      current.quantity += quantity
+      return
     }
+    grouped.set(key, { pieceId, refBis, variant, quantity })
+  }
+
+  extractInterventionPieces(intervention.description).forEach((descriptionPiece) => {
+    const sitePiece = findSitePiece(descriptionPiece.reference, descriptionPiece.refBis)
+    addGroupedPiece(
+      descriptionPiece.reference ?? descriptionPiece.key,
+      sitePiece?.pieceId ?? null,
+      sitePiece?.refBis ?? descriptionPiece.refBis,
+      normalizePieceVariant(sitePiece?.variant) ?? descriptionPiece.variant,
+      descriptionPiece.quantity
+    )
   })
+
+  stockMovements.forEach((movement) => {
+    const piece = movement.piece
+    addGroupedPiece(
+      String(piece.id),
+      piece.id,
+      piece.refBis,
+      normalizePieceVariant(piece.variant),
+      movement.quantityDelta
+    )
+  })
+
+  return Array.from(grouped.entries()).map(([key, item]) => {
+    const label = compactPieceLabel(item.refBis, item.variant)
+    return {
+      key,
+      pieceId: item.pieceId,
+      label: `${label} x${item.quantity}`,
+      title: `${label}: ${item.quantity}`,
+      variant: item.variant,
+      quantity: item.quantity,
+    }
+  }).filter((item) => item.quantity !== 0)
 }
 
 export default function InterventionsPage() {
@@ -669,7 +711,7 @@ export default function InterventionsPage() {
 
       {selectedIntervention && (() => {
         const intervention = selectedIntervention
-        const pieces = formatInterventionPieceBadges(intervention)
+        const pieces = formatInterventionPieceBadges(intervention, sitePieces)
         const pieceTotals = new Map<number, number>()
         pieces.forEach((piece) => {
           if (piece.pieceId !== null) pieceTotals.set(piece.pieceId, piece.quantity)
