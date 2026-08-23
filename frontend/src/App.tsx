@@ -14,6 +14,7 @@ import VerifyEmailPage from './pages/VerifyEmailPage'
 import ContractsPage from './pages/ContractsPage'
 import UsersPage from './pages/UsersPage'
 import AlertesPage from './pages/AlertesPage'
+import AlertRuleSettingsPage from './pages/AlertRuleSettingsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import ContactsPage from './pages/ContactsPage'
 import { isAdmin } from './shared/auth/permissions'
@@ -81,14 +82,14 @@ function HeaderNav() {
               Modeles
             </NavLink>
             {userIsAdmin && (
-              <NavLink to="/contracts" className={navLinkClass} onClick={closeMenu}>
-                Contrats
-              </NavLink>
-            )}
-            {userIsAdmin && (
-              <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
-                Utilisateurs
-              </NavLink>
+              <>
+                <NavLink to="/parametres/alertes" className={navLinkClass} onClick={closeMenu}>
+                  Parametres
+                </NavLink>
+                <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
+                  Utilisateurs
+                </NavLink>
+              </>
             )}
             <NavLink to="/profil" className={navLinkClass} onClick={closeMenu}>
               Profil
@@ -124,6 +125,7 @@ function App() {
               <Route path="/sites" element={<SitesPage />} />
               <Route path="/stocks" element={<StocksPage />} />
               <Route path="/alertes" element={<AlertesPage />} />
+              <Route path="/parametres/alertes" element={<AlertRuleSettingsPage />} />
               <Route path="/analyses" element={<AnalyticsPage />} />
               <Route path="/contacts" element={<ContactsPage />} />
               <Route path="/interventions" element={<InterventionsPage />} />

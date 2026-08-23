@@ -5,17 +5,16 @@ import {
   UnauthorizedError,
   type DashboardTechnicien,
 } from '../api/client'
-import { isAdmin } from '../shared/auth/permissions'
 import { formatEnum } from '../shared/formatters/number'
 import { useAuth } from '../context/AuthContext'
 import './DashboardPage.css'
 
 export default function DashboardPage() {
   const { user } = useAuth()
-  const userIsAdmin = isAdmin(user)
   const [dashboard, setDashboard] = useState<DashboardTechnicien | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
+  const userName = [user?.firstName, user?.lastName].filter(Boolean).join(' ').trim() || user?.email || 'utilisateur'
 
   useEffect(() => {
     let cancelled = false
@@ -60,41 +59,9 @@ export default function DashboardPage() {
 
   return (
     <div className="dashboard-home">
-      <header className="dashboard-home__hero">
-        <div className="dashboard-home__hero-copy">
-          <span className="dashboard-home__eyebrow">{userIsAdmin ? 'Accueil admin' : 'Accueil technicien'}</span>
-          <h1>Dashboard technique</h1>
-          <p>
-            Vue rapide des alertes, des absences de remontee, des interventions en
-            cours et des stocks critiques visibles.
-          </p>
-        </div>
-        <div className="dashboard-home__hero-actions">
-          <Link to="/sites" className="dashboard-home__primary-link">
-            Ouvrir les sites
-          </Link>
-          <Link to="/interventions" className="dashboard-home__secondary-link">
-            Voir les interventions
-          </Link>
-          <Link to="/modeles" className="dashboard-home__secondary-link">
-            Voir les modeles
-          </Link>
-        </div>
+      <header className="dashboard-home__welcome">
+        <h1>Bienvenue {userName}</h1>
       </header>
-
-      {userIsAdmin && (
-        <section className="dashboard-home__admin-quick">
-          <h2>Acces essentiel admin</h2>
-          <div className="dashboard-home__admin-links">
-            <Link to="/sites" className="dashboard-home__admin-link">Sites</Link>
-            <Link to="/stocks" className="dashboard-home__admin-link">Stocks</Link>
-            <Link to="/interventions" className="dashboard-home__admin-link">Interventions</Link>
-            <Link to="/contracts" className="dashboard-home__admin-link">Contrats</Link>
-            <Link to="/users" className="dashboard-home__admin-link">Utilisateurs</Link>
-            <Link to="/modeles" className="dashboard-home__admin-link">Modeles</Link>
-          </div>
-        </section>
-      )}
 
       {error && (
         <div className="dashboard-home__error">

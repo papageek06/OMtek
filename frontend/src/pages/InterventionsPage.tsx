@@ -4,6 +4,7 @@ import {
   approveIntervention,
   createSiteStockMovement,
   createIntervention,
+  fetchIntervention,
   fetchSiteDetail,
   fetchInterventions,
   fetchSites,
@@ -15,8 +16,10 @@ import {
   type InterventionItem,
   type InterventionUpdatePayload,
   type ContactAddress,
+  type Imprimante,
   type PieceAvecStocks,
   type Site,
+  type SiteDetail,
   type SiteContactLink,
 } from '../api/client'
 import {
@@ -25,8 +28,6 @@ import {
   INTERVENTION_BILLING_OPTIONS as BILLING_OPTIONS,
   INTERVENTION_PRIORITY_LABELS as PRIORITY_LABELS,
   INTERVENTION_PRIORITY_OPTIONS as PRIORITY_OPTIONS,
-  INTERVENTION_SOURCE_LABELS as SOURCE_LABELS,
-  INTERVENTION_SOURCE_OPTIONS as SOURCE_OPTIONS,
   INTERVENTION_STATUS_LABELS as STATUS_LABELS,
   INTERVENTION_STATUS_OPTIONS as STATUS_OPTIONS,
   INTERVENTION_TYPE_LABELS as TYPE_LABELS,
@@ -131,6 +132,25 @@ function pieceVariantLabel(variant: string | null): string | null {
 function isConsumablePiece(piece: Pick<PieceAvecStocks, 'nature' | 'categorie' | 'type'>): boolean {
   if (piece.nature) return piece.nature === 'CONSUMABLE'
   return ['TONER', 'BAC_RECUP', 'toner', 'bac_recup', 'Fournitures Consommables'].includes(piece.categorie ?? piece.type)
+}
+
+function isSparePartPiece(piece: Pick<PieceAvecStocks, 'nature' | 'categorie' | 'type'>): boolean {
+  if (piece.nature) return piece.nature === 'SPARE_PART'
+  return !isConsumablePiece(piece)
+}
+
+function pieceNatureDisplay(piece: Pick<PieceAvecStocks, 'nature'>): string {
+  return piece.nature === 'CONSUMABLE' ? 'Consommable'
+    : piece.nature === 'SPARE_PART' ? 'Piece detachee'
+      : piece.nature === 'VENTE' ? 'Vente'
+        : piece.nature === 'LOCATION' ? 'Location'
+          : piece.nature === 'MOBILIER' ? 'Mobilier'
+            : '-'
+}
+
+function pieceMatchesImprimante(piece: PieceAvecStocks, imprimante: Imprimante | null): boolean {
+  if (!imprimante?.modeleId || !piece.modeles?.length) return true
+  return piece.modeles.some((modele) => modele.id === imprimante.modeleId)
 }
 
 function deliveryDescriptionLine(piece: PieceAvecStocks, quantity: number): string {
@@ -314,11 +334,15 @@ export default function InterventionsPage() {
   const [searchParams] = useSearchParams()
   const initialSiteId = searchParams.get('siteId')
   const initialCreate = searchParams.get('create') === '1'
+  const initialType = searchParams.get('type') || 'DEPANNAGE'
+  const initialImprimanteId = searchParams.get('imprimanteId') ?? ''
+  const initialInterventionId = Number(searchParams.get('interventionId'))
+  const shouldOpenInitialIntervention = Number.isFinite(initialInterventionId) && initialInterventionId > 0
   const [sites, setSites] = useState<Site[]>([])
   const [interventions, setInterventions] = useState<InterventionItem[]>([])
   const [filters, setFilters] = useState<InterventionFilters>({
-    statut: 'EN_COURS',
-    archived: 'false',
+    statut: shouldOpenInitialIntervention ? undefined : 'EN_COURS',
+    archived: shouldOpenInitialIntervention ? 'all' : 'false',
     siteId: initialSiteId ? Number(initialSiteId) : undefined,
   })
   const [loading, setLoading] = useState(true)
@@ -326,9 +350,16 @@ export default function InterventionsPage() {
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(initialCreate)
+  const [createSiteDetail, setCreateSiteDetail] = useState<SiteDetail | null>(null)
+  const [createSiteLoading, setCreateSiteLoading] = useState(false)
+  const [createPieceQuantities, setCreatePieceQuantities] = useState<Record<number, number>>({})
+  const [createPieceSearch, setCreatePieceSearch] = useState('')
+  const [createShowAllPieces, setCreateShowAllPieces] = useState(false)
+  const [siteSearch, setSiteSearch] = useState('')
   const [selectedIntervention, setSelectedIntervention] = useState<InterventionItem | null>(null)
   const [sitePieces, setSitePieces] = useState<PieceAvecStocks[]>([])
   const [siteContacts, setSiteContacts] = useState<SiteContactLink[]>([])
+  const [siteImprimantes, setSiteImprimantes] = useState<Imprimante[]>([])
   const [sitePiecesLoading, setSitePiecesLoading] = useState(false)
   const [sitePiecesError, setSitePiecesError] = useState<string | null>(null)
   const [pieceSearch, setPieceSearch] = useState('')
@@ -336,8 +367,8 @@ export default function InterventionsPage() {
   const [defaultPieceQuantity, setDefaultPieceQuantity] = useState(1)
   const [form, setForm] = useState({
     siteId: initialSiteId ?? '',
-    type: 'DEPANNAGE',
-    source: 'MANUEL',
+    imprimanteId: initialImprimanteId,
+    type: initialType,
     priorite: 'NORMALE',
     billingStatus: 'NON_FACTURE',
     title: '',
@@ -350,9 +381,19 @@ export default function InterventionsPage() {
     setLoading(true)
     setError(null)
     try {
-      const [interventionsData, sitesData] = await Promise.all([fetchInterventions(filters), fetchSites()])
-      setInterventions(interventionsData)
+      const [interventionsData, sitesData, initialIntervention] = await Promise.all([
+        fetchInterventions(filters),
+        fetchSites(),
+        shouldOpenInitialIntervention ? fetchIntervention(initialInterventionId) : Promise.resolve(null),
+      ])
+      const nextInterventions = initialIntervention && !interventionsData.some((item) => item.id === initialIntervention.id)
+        ? [initialIntervention, ...interventionsData]
+        : interventionsData
+      setInterventions(nextInterventions)
       setSites(sitesData)
+      if (initialIntervention) {
+        setSelectedIntervention(initialIntervention)
+      }
     } catch (e) {
       if (e instanceof UnauthorizedError) {
         setError('Veuillez vous connecter pour acceder a cette page')
@@ -362,16 +403,52 @@ export default function InterventionsPage() {
     } finally {
       setLoading(false)
     }
-  }, [filters])
+  }, [filters, initialInterventionId, shouldOpenInitialIntervention])
 
   useEffect(() => {
     void loadData()
   }, [loadData])
 
   useEffect(() => {
+    const siteId = Number(form.siteId)
+    if (!Number.isFinite(siteId) || siteId <= 0 || !createOpen) {
+      setCreateSiteDetail(null)
+      return
+    }
+
+    let cancelled = false
+    setCreateSiteLoading(true)
+    fetchSiteDetail(siteId)
+      .then((detail) => {
+        if (cancelled) return
+        setCreateSiteDetail(detail)
+        setForm((prev) => {
+          if (prev.siteId !== String(siteId)) return prev
+          const detailImprimantes = [...(detail.imprimantes ?? []), ...(detail.anciennesImprimantes ?? [])]
+          const currentPrinterExists = detailImprimantes.some((imprimante) => String(imprimante.id) === prev.imprimanteId)
+          return {
+            ...prev,
+            imprimanteId: currentPrinterExists ? prev.imprimanteId : '',
+          }
+        })
+      })
+      .catch(() => {
+        if (!cancelled) setCreateSiteDetail(null)
+      })
+      .finally(() => {
+        if (!cancelled) setCreateSiteLoading(false)
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [createOpen, form.siteId])
+
+  useEffect(() => {
     if (!selectedIntervention) {
       setSitePieces([])
       setSiteContacts([])
+      setSiteImprimantes([])
       setSitePiecesError(null)
       return
     }
@@ -384,6 +461,7 @@ export default function InterventionsPage() {
         if (!cancelled) {
           setSitePieces(detail.piecesAvecStocks)
           setSiteContacts(detail.contacts ?? [])
+          setSiteImprimantes([...(detail.imprimantes ?? []), ...(detail.anciennesImprimantes ?? [])])
         }
       })
       .catch((e) => {
@@ -397,6 +475,55 @@ export default function InterventionsPage() {
       cancelled = true
     }
   }, [selectedIntervention?.id, selectedIntervention?.site.id])
+
+  const createPieces = createSiteDetail?.piecesAvecStocks ?? []
+  const createImprimantes = [
+    ...(createSiteDetail?.imprimantes ?? []),
+    ...(createSiteDetail?.anciennesImprimantes ?? []),
+  ]
+  const createSelectedImprimante = createImprimantes.find((imprimante) => String(imprimante.id) === form.imprimanteId) ?? null
+  const createAvailablePieces = createPieces
+    .filter((piece) => pieceMatchesImprimante(piece, createSelectedImprimante))
+    .filter((piece) => createShowAllPieces || isSparePartPiece(piece))
+    .filter((piece) => {
+      const query = createPieceSearch.trim().toLowerCase()
+      if (!query) return true
+      return [
+        piece.reference,
+        piece.refBis,
+        piece.libelle,
+        piece.variant,
+        piece.categorie,
+        piece.type,
+        ...((piece.modeles ?? []).map((modele) => modele.nom)),
+      ]
+        .filter(Boolean)
+        .some((value) => String(value).toLowerCase().includes(query))
+    })
+  const createSelectedPieces = createPieces
+    .filter((piece) => pieceMatchesImprimante(piece, createSelectedImprimante))
+    .map((piece) => ({ piece, quantity: Math.max(0, createPieceQuantities[piece.pieceId] ?? 0) }))
+    .filter((row) => row.quantity > 0)
+  const normalizedSiteSearch = siteSearch.trim().toLowerCase()
+  const searchedSites = normalizedSiteSearch
+    ? sites.filter((site) => site.nom.toLowerCase().includes(normalizedSiteSearch))
+    : sites
+  const displayedInterventions = normalizedSiteSearch
+    ? interventions.filter((intervention) => intervention.site.nom.toLowerCase().includes(normalizedSiteSearch))
+    : interventions
+
+  const buildCreateDescription = (): string | null => {
+    const manualDescription = form.description.trim()
+    const lines = createSelectedPieces.map(({ piece, quantity }) => deliveryDescriptionLine(piece, quantity))
+    if (manualDescription && lines.length === 0) return manualDescription
+    if (!manualDescription && lines.length === 0) return null
+
+    return [
+      manualDescription || 'Pieces prevues pour intervention',
+      '',
+      ...lines,
+    ].join('\n').trim()
+  }
 
   if (!user) {
     return <Navigate to="/login" replace />
@@ -413,25 +540,39 @@ export default function InterventionsPage() {
     setError(null)
     setMessage(null)
     try {
-      await createIntervention({
+      const createdIntervention = await createIntervention({
         siteId: Number(form.siteId),
+        imprimanteId: form.imprimanteId ? Number(form.imprimanteId) : null,
         type: form.type,
-        source: form.source,
+        source: 'MANUEL',
         priorite: form.priorite,
         billingStatus: userIsAdmin ? form.billingStatus : undefined,
         title: form.title.trim() || undefined,
-        description: form.description.trim() || null,
+        description: buildCreateDescription(),
       })
+
+      for (const { piece, quantity } of createSelectedPieces) {
+        await createSiteStockMovement(createdIntervention.site.id, {
+          pieceId: piece.pieceId,
+          quantityDelta: quantity,
+          reason: 'DEPANNAGE',
+          commentaire: 'Ajout depuis creation intervention',
+          scope: 'TECH_VISIBLE',
+          interventionId: createdIntervention.id,
+        })
+      }
+
       await loadData()
       setForm({
         siteId: '',
+        imprimanteId: '',
         type: 'DEPANNAGE',
-        source: 'MANUEL',
         priorite: 'NORMALE',
         billingStatus: 'NON_FACTURE',
         title: '',
         description: '',
       })
+      setCreatePieceQuantities({})
       setCreateOpen(false)
       setMessage('Intervention creee')
     } catch (e) {
@@ -520,6 +661,7 @@ export default function InterventionsPage() {
     const detail = await fetchSiteDetail(intervention.site.id)
     setSitePieces(detail.piecesAvecStocks)
     setSiteContacts(detail.contacts ?? [])
+    setSiteImprimantes([...(detail.imprimantes ?? []), ...(detail.anciennesImprimantes ?? [])])
   }
 
   const handleAdjustInterventionPiece = async (
@@ -599,13 +741,34 @@ export default function InterventionsPage() {
               <span>Site</span>
               <select
                 value={form.siteId}
-                onChange={(e) => setForm((prev) => ({ ...prev, siteId: e.target.value }))}
+                onChange={(e) => {
+                  setForm((prev) => ({ ...prev, siteId: e.target.value, imprimanteId: '' }))
+                  setCreatePieceQuantities({})
+                }}
                 required
               >
                 <option value="">Selectionner un site</option>
                 {sites.map((site) => (
                   <option key={site.id} value={site.id}>
                     {site.nom}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <label>
+              <span>Imprimante</span>
+              <select
+                value={form.imprimanteId}
+                onChange={(e) => setForm((prev) => ({ ...prev, imprimanteId: e.target.value }))}
+                disabled={!form.siteId || createSiteLoading}
+              >
+                <option value="">
+                  {createSiteLoading ? 'Chargement...' : 'Aucune imprimante precisee'}
+                </option>
+                {createImprimantes.map((imprimante) => (
+                  <option key={imprimante.id} value={imprimante.id}>
+                    {imprimante.numeroSerie} - {imprimante.modele}
                   </option>
                 ))}
               </select>
@@ -620,20 +783,6 @@ export default function InterventionsPage() {
                 {TYPE_OPTIONS.map((value) => (
                   <option key={value} value={value}>
                     {TYPE_LABELS[value]}
-                  </option>
-                ))}
-              </select>
-            </label>
-
-            <label>
-              <span>Source</span>
-              <select
-                value={form.source}
-                onChange={(e) => setForm((prev) => ({ ...prev, source: e.target.value }))}
-              >
-                {SOURCE_OPTIONS.map((value) => (
-                  <option key={value} value={value}>
-                    {SOURCE_LABELS[value]}
                   </option>
                 ))}
               </select>
@@ -690,6 +839,75 @@ export default function InterventionsPage() {
               />
             </label>
 
+            {form.siteId && (
+              <section className="intervention-piece-manager interventions-form__wide" aria-label="Pieces detachees a ajouter">
+                <div className="intervention-piece-manager__toolbar">
+                  <label>
+                    <span>Pieces</span>
+                    <input
+                      type="search"
+                      value={createPieceSearch}
+                      onChange={(e) => setCreatePieceSearch(e.target.value)}
+                      placeholder="Reference, ref-bis, modele"
+                    />
+                  </label>
+                  <label className="intervention-piece-manager__toggle">
+                    <input
+                      type="checkbox"
+                      checked={createShowAllPieces}
+                      onChange={(e) => setCreateShowAllPieces(e.target.checked)}
+                    />
+                    <span>Toutes</span>
+                  </label>
+                </div>
+
+                {createSiteLoading ? (
+                  <p className="intervention-piece-manager__empty">Chargement pieces...</p>
+                ) : createAvailablePieces.length === 0 ? (
+                  <p className="intervention-piece-manager__empty">Aucune piece detachee compatible.</p>
+                ) : (
+                  <div className="intervention-piece-manager__rows">
+                    {createAvailablePieces.map((piece) => {
+                      const variant = normalizePieceVariant(piece.variant)
+                      const label = compactPieceLabel(piece.refBis, variant)
+                      const quantity = createPieceQuantities[piece.pieceId] ?? 0
+                      return (
+                        <div key={`create-piece-${piece.pieceId}`} className="intervention-piece-row">
+                          <div className="intervention-piece-row__main" title={`${piece.reference} - ${piece.libelle}`}>
+                            <span>{label}</span>
+                            <small>Stock {piece.quantiteStockSite} - {pieceNatureDisplay(piece)}</small>
+                          </div>
+                          <div className="intervention-piece-row__actions">
+                            <button
+                              type="button"
+                              onClick={() => setCreatePieceQuantities((prev) => ({
+                                ...prev,
+                                [piece.pieceId]: Math.max(0, quantity - 1),
+                              }))}
+                              disabled={quantity <= 0}
+                              aria-label={`Retirer ${label}`}
+                            >
+                              -
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setCreatePieceQuantities((prev) => ({
+                                ...prev,
+                                [piece.pieceId]: quantity + 1,
+                              }))}
+                              aria-label={`Ajouter ${label}`}
+                            >
+                              +{quantity > 0 ? ` ${quantity}` : ''}
+                            </button>
+                          </div>
+                        </div>
+                      )
+                    })}
+                  </div>
+                )}
+              </section>
+            )}
+
             <button
               type="submit"
               className="interventions-page__primary-btn"
@@ -702,6 +920,19 @@ export default function InterventionsPage() {
       )}
 
       <section className="interventions-filters">
+        <label>
+          <span>Recherche site</span>
+          <input
+            type="search"
+            value={siteSearch}
+            onChange={(e) => {
+              setSiteSearch(e.target.value)
+              setFilters((prev) => (prev.siteId === undefined ? prev : { ...prev, siteId: undefined }))
+            }}
+            placeholder="Nom du site"
+          />
+        </label>
+
         <label>
           <span>Statut</span>
           <select
@@ -721,10 +952,13 @@ export default function InterventionsPage() {
           <span>Site</span>
           <select
             value={filters.siteId ?? ''}
-            onChange={(e) => setFilters((prev) => ({ ...prev, siteId: e.target.value ? Number(e.target.value) : undefined }))}
+            onChange={(e) => {
+              setSiteSearch('')
+              setFilters((prev) => ({ ...prev, siteId: e.target.value ? Number(e.target.value) : undefined }))
+            }}
           >
             <option value="">Tous</option>
-            {sites.map((site) => (
+            {searchedSites.map((site) => (
               <option key={site.id} value={site.id}>
                 {site.nom}
               </option>
@@ -749,11 +983,11 @@ export default function InterventionsPage() {
 
       {loading ? (
         <p className="interventions-page__empty">Chargement des interventions...</p>
-      ) : interventions.length === 0 ? (
+      ) : displayedInterventions.length === 0 ? (
         <p className="interventions-page__empty">Aucune intervention pour ces filtres.</p>
       ) : (
         <div className="interventions-list">
-          {interventions.map((intervention) => {
+          {displayedInterventions.map((intervention) => {
             const pieces = formatInterventionPieceBadges(intervention)
 
             return (
@@ -815,13 +1049,18 @@ export default function InterventionsPage() {
       {selectedIntervention && (() => {
         const intervention = selectedIntervention
         const pieces = formatInterventionPieceBadges(intervention, sitePieces)
+        const selectedDetailImprimante = siteImprimantes.find((imprimante) => imprimante.id === intervention.imprimante?.id) ?? null
         const pieceTotals = new Map<number, number>()
         pieces.forEach((piece) => {
           if (piece.pieceId !== null) pieceTotals.set(piece.pieceId, piece.quantity)
         })
         const normalizedSearch = pieceSearch.trim().toLowerCase()
+        const shouldShowPieceByDefault = (piece: PieceAvecStocks) => (
+          intervention.type === 'LIVRAISON_TONER' ? isConsumablePiece(piece) : isSparePartPiece(piece)
+        )
         const availableSitePieces = sitePieces
-          .filter((piece) => showAllSitePieces || isConsumablePiece(piece))
+          .filter((piece) => pieceMatchesImprimante(piece, selectedDetailImprimante))
+          .filter((piece) => showAllSitePieces || shouldShowPieceByDefault(piece))
           .filter((piece) => {
             if (!normalizedSearch) return true
             return [
@@ -891,6 +1130,21 @@ export default function InterventionsPage() {
               <div className="intervention-detail-summary">
                 <span>Date: {formatDate(intervention.startedAt ?? intervention.createdAt)}</span>
                 <span>Site: {intervention.site.nom}</span>
+                <label className="intervention-detail-summary__select">
+                  <span>Imprimante</span>
+                  <select
+                    value={intervention.imprimante?.id ?? ''}
+                    onChange={(e) => handlePatch(intervention, { imprimanteId: e.target.value ? Number(e.target.value) : null })}
+                    disabled={submitting || sitePiecesLoading}
+                  >
+                    <option value="">Non precisee</option>
+                    {siteImprimantes.map((imprimante) => (
+                      <option key={imprimante.id} value={imprimante.id}>
+                        {imprimante.numeroSerie} - {imprimante.modele}
+                      </option>
+                    ))}
+                  </select>
+                </label>
                 {preferredContact && preferredAddress && (
                   <a href={mapsUrl(preferredAddress)} target="_blank" rel="noreferrer">
                     {preferredContact.displayName}: {preferredAddress}
@@ -946,7 +1200,7 @@ export default function InterventionsPage() {
                       checked={showAllSitePieces}
                       onChange={(e) => setShowAllSitePieces(e.target.checked)}
                     />
-                    <span>Toutes</span>
+                    <span>{intervention.type === 'LIVRAISON_TONER' ? 'Toutes' : 'Inclure consommables'}</span>
                   </label>
                 </div>
 

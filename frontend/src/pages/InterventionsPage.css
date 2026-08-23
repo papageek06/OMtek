@@ -134,6 +134,7 @@
 .interventions-form input,
 .interventions-form textarea,
 .interventions-form select,
+.interventions-filters input,
 .interventions-filters select,
 .intervention-card__actions select {
   border: 1px solid #3f4147;
@@ -557,6 +558,27 @@
 
 .intervention-detail-summary a:hover {
   text-decoration: underline;
+}
+
+.intervention-detail-summary__select {
+  display: inline-grid;
+  gap: 0.25rem;
+  min-width: min(100%, 18rem);
+}
+
+.intervention-detail-summary__select span {
+  color: #8e9297;
+  font-size: 0.75rem;
+  font-weight: 700;
+}
+
+.intervention-detail-summary__select select {
+  min-height: 2.15rem;
+  padding: 0.4rem 0.55rem;
+  border: 1px solid #3f4147;
+  border-radius: 7px;
+  background: #1e1f22;
+  color: #f2f3f5;
 }
 
 .intervention-card__details {

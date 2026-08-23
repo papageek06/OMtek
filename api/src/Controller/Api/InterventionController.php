@@ -488,6 +488,9 @@ class InterventionController extends AbstractController
             if ($data['imprimanteId'] && !$imprimante) {
                 return 'Imprimante introuvable';
             }
+            if ($imprimante && $imprimante->getSite()?->getId() !== $intervention->getSite()->getId()) {
+                return 'Imprimante non liee au site de l intervention';
+            }
             $intervention->setImprimante($imprimante);
         }
         if (array_key_exists('sourceAlerteId', $data)) {

@@ -74,6 +74,27 @@ class Alerte
     #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
     private bool $ignorer = false;
 
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $autoDeactivated = false;
+
+    #[ORM\Column(type: Types::BOOLEAN, nullable: true)]
+    private ?bool $activeManualOverride = null;
+
+    #[ORM\Column(type: Types::STRING, length: 40, nullable: true)]
+    private ?string $ruleMode = null;
+
+    #[ORM\Column(type: Types::STRING, length: 80, nullable: true)]
+    private ?string $ruleReason = null;
+
+    #[ORM\Column(type: Types::DECIMAL, precision: 6, scale: 2, nullable: true)]
+    private ?string $ruleScore = null;
+
+    #[ORM\Column(type: Types::INTEGER, nullable: true)]
+    private ?int $ruleStockQuantity = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $ruleEvaluatedAt = null;
+
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
@@ -230,6 +251,83 @@ class Alerte
     public function setIgnorer(bool $ignorer): static
     {
         $this->ignorer = $ignorer;
+        return $this;
+    }
+
+    public function isAutoDeactivated(): bool
+    {
+        return $this->autoDeactivated;
+    }
+
+    public function setAutoDeactivated(bool $autoDeactivated): static
+    {
+        $this->autoDeactivated = $autoDeactivated;
+        return $this;
+    }
+
+    public function getActiveManualOverride(): ?bool
+    {
+        return $this->activeManualOverride;
+    }
+
+    public function setActiveManualOverride(?bool $activeManualOverride): static
+    {
+        $this->activeManualOverride = $activeManualOverride;
+        return $this;
+    }
+
+    public function getRuleMode(): ?string
+    {
+        return $this->ruleMode;
+    }
+
+    public function setRuleMode(?string $ruleMode): static
+    {
+        $this->ruleMode = $ruleMode !== null ? mb_substr($ruleMode, 0, 40) : null;
+        return $this;
+    }
+
+    public function getRuleReason(): ?string
+    {
+        return $this->ruleReason;
+    }
+
+    public function setRuleReason(?string $ruleReason): static
+    {
+        $this->ruleReason = $ruleReason !== null ? mb_substr($ruleReason, 0, 80) : null;
+        return $this;
+    }
+
+    public function getRuleScore(): ?string
+    {
+        return $this->ruleScore;
+    }
+
+    public function setRuleScore(null|float|string $ruleScore): static
+    {
+        $this->ruleScore = $ruleScore !== null ? number_format((float) $ruleScore, 2, '.', '') : null;
+        return $this;
+    }
+
+    public function getRuleStockQuantity(): ?int
+    {
+        return $this->ruleStockQuantity;
+    }
+
+    public function setRuleStockQuantity(?int $ruleStockQuantity): static
+    {
+        $this->ruleStockQuantity = $ruleStockQuantity;
+        return $this;
+    }
+
+    public function getRuleEvaluatedAt(): ?\DateTimeImmutable
+    {
+        return $this->ruleEvaluatedAt;
+    }
+
+    public function setRuleEvaluatedAt(?\DateTimeImmutable $ruleEvaluatedAt): static
+    {
+        $this->ruleEvaluatedAt = $ruleEvaluatedAt;
         return $this;
     }
 }

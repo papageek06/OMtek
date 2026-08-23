@@ -186,6 +186,8 @@ const STOCK_MOVEMENT_REASON_LABELS: Record<string, string> = {
   TRANSFERT_RESERVE: 'Transfert reserve',
 }
 
+const STOCK_MOVEMENT_PAGE_SIZE = 15
+
 const PIECE_VARIANT_LABELS: Record<string, string> = {
   BLACK: 'Noir',
   CYAN: 'Cyan',
@@ -219,6 +221,16 @@ function formatMovementDay(iso: string): string {
     day: '2-digit',
     month: 'long',
     year: 'numeric',
+  })
+}
+
+function formatMovementDateTime(iso: string): string {
+  return new Date(iso).toLocaleDateString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
   })
 }
 
@@ -269,7 +281,7 @@ interface StockMovementGroup {
   sortTime: number
   dateKey: string
   dateLabel: string
-  timeLabel: string
+  dateTimeLabel: string
   modelLabel: string
   refBis: string | null
   reason: string
@@ -289,6 +301,13 @@ interface StockMovementDayGroup {
   dateKey: string
   dateLabel: string
   groups: StockMovementGroup[]
+}
+
+interface InterventionChartMarker {
+  id: number
+  x: number
+  title: string
+  dateLabel: string
 }
 
 function groupStockMovementsByDate(
@@ -325,7 +344,7 @@ function groupStockMovementsByDate(
         sortTime: new Date(movement.createdAt).getTime(),
         dateKey: localDateKey(movement.createdAt),
         dateLabel: formatMovementDay(movement.createdAt),
-        timeLabel: new Date(movement.createdAt).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }),
+        dateTimeLabel: formatMovementDateTime(movement.createdAt),
         modelLabel,
         refBis,
         reason: movement.reason,
@@ -381,6 +400,32 @@ function groupStockMovementsByDate(
   }
 
   return Array.from(dayMap.values())
+}
+
+function paginateStockMovementDays(
+  days: StockMovementDayGroup[],
+  page: number,
+  pageSize: number
+): StockMovementDayGroup[] {
+  const start = (page - 1) * pageSize
+  const end = start + pageSize
+  let cursor = 0
+
+  return days
+    .map((day) => {
+      const groups = day.groups.filter(() => {
+        const index = cursor
+        cursor += 1
+        return index >= start && index < end
+      })
+
+      return { ...day, groups }
+    })
+    .filter((day) => day.groups.length > 0)
+}
+
+function countStockMovementGroups(days: StockMovementDayGroup[]): number {
+  return days.reduce((count, day) => count + day.groups.length, 0)
 }
 /** Point de données pour le graphique consommation. */
 type TonerColorKey = 'black' | 'cyan' | 'magenta' | 'yellow'
@@ -680,6 +725,55 @@ function isWithinTwelveMonthWindow(isoDate: string | null | undefined): boolean 
   const window = getCenteredChartWindow()
   const time = parsed.getTime()
   return time >= window.startTs && time <= window.endTs
+}
+
+function movementMatchesImprimante(movement: StockMovementItem, imprimante: Imprimante): boolean {
+  const modeles = movement.piece.modeles ?? []
+  if (imprimante.modeleId == null || modeles.length === 0) return true
+  return modeles.some((modele) => modele.id === imprimante.modeleId)
+}
+
+function buildInterventionChartMarkers(
+  imprimante: Imprimante,
+  movements: StockMovementItem[]
+): InterventionChartMarker[] {
+  const markers = new Map<number, InterventionChartMarker>()
+
+  movements.forEach((movement) => {
+    if (!movement.intervention || !movementMatchesImprimante(movement, imprimante)) return
+    if (!isWithinTwelveMonthWindow(movement.createdAt)) return
+
+    const parsed = parseChartDate(movement.createdAt)
+    if (!parsed) return
+
+    const existing = markers.get(movement.intervention.id)
+    const nextMarker = {
+      id: movement.intervention.id,
+      x: parsed.getTime(),
+      title: movement.intervention.title,
+      dateLabel: formatDate(movement.createdAt),
+    }
+
+    if (!existing || nextMarker.x < existing.x) {
+      markers.set(movement.intervention.id, nextMarker)
+    }
+  })
+
+  return Array.from(markers.values()).sort((a, b) => a.x - b.x)
+}
+
+function renderInterventionMarkerLabel(props: any, marker: InterventionChartMarker) {
+  const x = Number(props?.viewBox?.x)
+  const y = Number(props?.viewBox?.y)
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null
+
+  return (
+    <g transform={`translate(${x - 10}, ${y + 4})`}>
+      <title>{`${marker.title} - ${marker.dateLabel}`}</title>
+      <circle cx="10" cy="10" r="10" fill="#f0b429" stroke="#1e1f22" strokeWidth="2" />
+      <text x="10" y="14" textAnchor="middle" fill="#1e1f22" fontSize="11" fontWeight="900">I</text>
+    </g>
+  )
 }
 
 function findNearestChartPointIndex(points: ChartPoint[], isoDate: string | null | undefined): number | null {
@@ -1007,6 +1101,7 @@ export default function SiteDetailPage() {
   const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
   const [stockSaveSubmitting, setStockSaveSubmitting] = useState(false)
   const [stockMovementHistory, setStockMovementHistory] = useState<StockMovementItem[]>([])
+  const [stockMovementPage, setStockMovementPage] = useState(1)
   const [search, setSearch] = useState<StockSearchParams>({})
   const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
@@ -1018,6 +1113,12 @@ export default function SiteDetailPage() {
   const [deliverySubmitting, setDeliverySubmitting] = useState(false)
   const [siteContactSearch, setSiteContactSearch] = useState('')
   const [siteContactResults, setSiteContactResults] = useState<ContactItem[]>([])
+  const [siteContactPagination, setSiteContactPagination] = useState({
+    page: 1,
+    limit: 100,
+    total: 0,
+    totalPages: 1,
+  })
   const [siteContactSelectedId, setSiteContactSelectedId] = useState('')
   const [siteContactRole, setSiteContactRole] = useState('')
   const [siteContactFavorite, setSiteContactFavorite] = useState(false)
@@ -1038,6 +1139,10 @@ export default function SiteDetailPage() {
   useEffect(() => {
     setActiveTab(null)
   }, [siteId, requestedImprimanteId])
+
+  useEffect(() => {
+    setStockMovementPage(1)
+  }, [siteId, stockMovementHistory.length])
 
   const modelesSite = (site?.imprimantes ?? [])
     .filter((i) => i.modeleId != null)
@@ -1271,6 +1376,7 @@ export default function SiteDetailPage() {
   const selectedImprimante = typeof activeTab === 'number'
     ? allSiteImprimantes.find((imprimante) => imprimante.id === activeTab)
     : null
+  const interventionPrinterId = typeof activeTab === 'number' ? activeTab : requestedImprimanteId
   const piecesAvecStocks = site.piecesAvecStocks ?? []
   const deliveryPieces = piecesAvecStocks.filter((piece) => deliveryShowAllPieces || isConsumablePiece(piece))
   const deliveryTotalQuantity = Object.values(deliveryQuantities).reduce((total, quantity) => total + Math.max(0, quantity), 0)
@@ -1313,6 +1419,14 @@ export default function SiteDetailPage() {
     }))
     .filter((change) => change.nextQuantity !== change.previousQuantity)
   const groupedStockMovementDays = groupStockMovementsByDate(stockMovementHistory, piecesAvecStocks, imprimantes)
+  const stockMovementGroupCount = countStockMovementGroups(groupedStockMovementDays)
+  const stockMovementTotalPages = Math.max(1, Math.ceil(stockMovementGroupCount / STOCK_MOVEMENT_PAGE_SIZE))
+  const currentStockMovementPage = Math.min(stockMovementPage, stockMovementTotalPages)
+  const paginatedStockMovementDays = paginateStockMovementDays(
+    groupedStockMovementDays,
+    currentStockMovementPage,
+    STOCK_MOVEMENT_PAGE_SIZE
+  )
 
   const resetStockChanges = () => {
     const qty: Record<number, number> = {}
@@ -1380,18 +1494,20 @@ export default function SiteDetailPage() {
   const selectedCandidatePhones = selectedContactCandidate ? contactPhones(selectedContactCandidate) : []
   const selectedCandidateAddressBlocks = selectedContactCandidate ? contactAddressBlocks(selectedContactCandidate) : []
 
-  const handleSearchContactsForSite = async () => {
+  const handleSearchContactsForSite = async (page = 1) => {
     if (!siteContactSearch.trim()) {
       setSiteContactResults([])
+      setSiteContactPagination({ page: 1, limit: 100, total: 0, totalPages: 1 })
       return
     }
 
     setSiteContactBusy(true)
     setError(null)
     try {
-      const response = await fetchContacts({ q: siteContactSearch.trim(), limit: 25 })
+      const response = await fetchContacts({ q: siteContactSearch.trim(), page, limit: 100 })
       const results = response.data
       setSiteContactResults(results)
+      setSiteContactPagination(response.pagination)
       setSiteContactSelectedId(results[0]?.id ? String(results[0].id) : '')
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur recherche contacts')
@@ -1418,6 +1534,7 @@ export default function SiteDetailPage() {
       })
       setSiteContactSearch('')
       setSiteContactResults([])
+      setSiteContactPagination({ page: 1, limit: 100, total: 0, totalPages: 1 })
       setSiteContactSelectedId('')
       setSiteContactRole('')
       setSiteContactFavorite(false)
@@ -1776,6 +1893,12 @@ export default function SiteDetailPage() {
             >
               Livraison
             </button>
+            <Link
+              to={`/interventions?siteId=${site.id}&create=1&type=DEPANNAGE${interventionPrinterId ? `&imprimanteId=${interventionPrinterId}` : ''}`}
+              className="site-detail-add-btn site-detail-add-btn--link"
+            >
+              Intervention P
+            </Link>
             {stockChanges.length > 0 && (
               <div className="site-detail-stock-savebar" role="status">
                 <span>{stockChanges.length} modification{stockChanges.length > 1 ? 's' : ''} en attente</span>
@@ -1974,76 +2097,118 @@ export default function SiteDetailPage() {
                     Historique complet des mouvements visibles pour ce site, groupes par date et par operation.
                   </p>
                 </div>
-                <span className="stock-movements__count">{stockMovementHistory.length}</span>
+                <span className="stock-movements__count">{stockMovementGroupCount}</span>
               </div>
 
               {groupedStockMovementDays.length === 0 ? (
                 <p className="site-detail-empty">Aucun mouvement enregistre pour le moment.</p>
               ) : (
-                <div className="stock-movements">
-                  {groupedStockMovementDays.map((day) => (
-                    <section key={day.dateKey} className="stock-movement-day">
-                      <h4>{day.dateLabel}</h4>
-                      <div className="stock-movement-day__groups">
-                        {day.groups.map((group) => (
-                          <article key={group.key} className="stock-movement-card">
-                            <div className="stock-movement-card__top">
-                              <div>
-                                <strong>{group.modelLabel}</strong>
-                                <p>
-                                  {group.refBis ? `Ref-bis: ${group.refBis}` : 'Sans ref-bis'}
-                                  {' - '}
-                                  {STOCK_MOVEMENT_REASON_LABELS[group.reason] ?? group.reason}
-                                  {group.intervention ? ` - ${group.intervention.title}` : ''}
-                                </p>
-                              </div>
-                              <span
-                                className={
-                                  'stock-movement-card__delta ' +
-                                  (group.totalDelta > 0
-                                    ? 'stock-movement-card__delta--positive'
-                                    : 'stock-movement-card__delta--negative')
-                                }
+                <>
+                  <div className="stock-movements">
+                    {paginatedStockMovementDays.map((day) => (
+                      <section key={day.dateKey} className="stock-movement-day">
+                        <h4>{day.dateLabel}</h4>
+                        <div className="stock-movement-day__groups">
+                          {day.groups.map((group) => {
+                            const cardContent = (
+                              <>
+                                <div className="stock-movement-card__top">
+                                  <div>
+                                    <strong>{group.modelLabel}</strong>
+                                    <p>
+                                      {group.refBis ? `Ref-bis: ${group.refBis}` : 'Sans ref-bis'}
+                                      {' - '}
+                                      {STOCK_MOVEMENT_REASON_LABELS[group.reason] ?? group.reason}
+                                      {group.intervention ? ` - ${group.intervention.title}` : ''}
+                                    </p>
+                                  </div>
+                                  <span
+                                    className={
+                                      'stock-movement-card__delta ' +
+                                      (group.totalDelta > 0
+                                        ? 'stock-movement-card__delta--positive'
+                                        : 'stock-movement-card__delta--negative')
+                                    }
+                                  >
+                                    {group.totalDelta > 0 ? '+' : ''}
+                                    {group.totalDelta}
+                                  </span>
+                                </div>
+
+                                <div className="stock-movement-card__colors">
+                                  {group.colors.map((color) => (
+                                    <span
+                                      key={`${group.key}-${color.label}`}
+                                      className={`stock-movement-color stock-movement-color--${color.className}`}
+                                      title={color.references.join(', ')}
+                                    >
+                                      <strong>{color.label}</strong>
+                                      <em>{color.quantityDelta > 0 ? '+' : ''}{color.quantityDelta}</em>
+                                    </span>
+                                  ))}
+                                </div>
+
+                                <div className="stock-movement-card__meta">
+                                  <span>{STOCK_MOVEMENT_TYPE_LABELS[group.movementType] ?? group.movementType}</span>
+                                  <span>{group.userLabel || 'Utilisateur inconnu'}</span>
+                                  <span>{group.dateTimeLabel}</span>
+                                  <span>{group.movements.length} ligne{group.movements.length > 1 ? 's' : ''}</span>
+                                  {isAdmin && (
+                                    <span>
+                                      {group.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
+                                    </span>
+                                  )}
+                                  {group.intervention && <span>Voir intervention</span>}
+                                </div>
+
+                                {group.commentaire && (
+                                  <p className="stock-movement-card__comment">{group.commentaire}</p>
+                                )}
+                              </>
+                            )
+
+                            return group.intervention ? (
+                              <Link
+                                key={group.key}
+                                to={`/interventions?siteId=${site.id}&interventionId=${group.intervention.id}`}
+                                className="stock-movement-card stock-movement-card--clickable"
+                                aria-label={`Voir intervention ${group.intervention.title}`}
                               >
-                                {group.totalDelta > 0 ? '+' : ''}
-                                {group.totalDelta}
-                              </span>
-                            </div>
+                                {cardContent}
+                              </Link>
+                            ) : (
+                              <article key={group.key} className="stock-movement-card">
+                                {cardContent}
+                              </article>
+                            )
+                          })}
+                        </div>
+                      </section>
+                    ))}
+                  </div>
 
-                            <div className="stock-movement-card__colors">
-                              {group.colors.map((color) => (
-                                <span
-                                  key={`${group.key}-${color.label}`}
-                                  className={`stock-movement-color stock-movement-color--${color.className}`}
-                                  title={color.references.join(', ')}
-                                >
-                                  <strong>{color.label}</strong>
-                                  <em>{color.quantityDelta > 0 ? '+' : ''}{color.quantityDelta}</em>
-                                </span>
-                              ))}
-                            </div>
-
-                            <div className="stock-movement-card__meta">
-                              <span>{STOCK_MOVEMENT_TYPE_LABELS[group.movementType] ?? group.movementType}</span>
-                              <span>{group.userLabel || 'Utilisateur inconnu'}</span>
-                              <span>{group.timeLabel}</span>
-                              <span>{group.movements.length} ligne{group.movements.length > 1 ? 's' : ''}</span>
-                              {isAdmin && (
-                                <span>
-                                  {group.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
-                                </span>
-                              )}
-                            </div>
-
-                            {group.commentaire && (
-                              <p className="stock-movement-card__comment">{group.commentaire}</p>
-                            )}
-                          </article>
-                        ))}
-                      </div>
-                    </section>
-                  ))}
-                </div>
+                  {stockMovementTotalPages > 1 && (
+                    <nav className="stock-movements-pagination" aria-label="Pagination mouvements de stock">
+                      <button
+                        type="button"
+                        onClick={() => setStockMovementPage((page) => Math.max(1, page - 1))}
+                        disabled={currentStockMovementPage <= 1}
+                      >
+                        Precedent
+                      </button>
+                      <span>
+                        Page {currentStockMovementPage} / {stockMovementTotalPages}
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => setStockMovementPage((page) => Math.min(stockMovementTotalPages, page + 1))}
+                        disabled={currentStockMovementPage >= stockMovementTotalPages}
+                      >
+                        Suivant
+                      </button>
+                    </nav>
+                  )}
+                </>
               )}
             </section>
             </>
@@ -2069,11 +2234,11 @@ export default function SiteDetailPage() {
                     value={siteContactSearch}
                     onChange={(e) => setSiteContactSearch(e.target.value)}
                     onKeyDown={(e) => {
-                      if (e.key === 'Enter') void handleSearchContactsForSite()
+                      if (e.key === 'Enter') void handleSearchContactsForSite(1)
                     }}
                     placeholder="Rechercher un contact par nom, email, note..."
                   />
-                  <button type="button" onClick={() => void handleSearchContactsForSite()} disabled={siteContactBusy}>
+                  <button type="button" onClick={() => void handleSearchContactsForSite(1)} disabled={siteContactBusy}>
                     Rechercher
                   </button>
                 </div>
@@ -2109,6 +2274,30 @@ export default function SiteDetailPage() {
                     />
                     <button type="button" onClick={() => void handleAddContactToSite()} disabled={siteContactBusy || !siteContactSelectedId || selectedContactAlreadyLinked}>
                       {selectedContactAlreadyLinked ? 'Deja lie' : 'Lier au site'}
+                    </button>
+                  </div>
+                )}
+
+                {siteContactPagination.total > 0 && (
+                  <div className="site-contact-linker__pagination">
+                    <span>
+                      {siteContactPagination.total} resultat{siteContactPagination.total > 1 ? 's' : ''}
+                      {' - '}
+                      page {siteContactPagination.page} / {siteContactPagination.totalPages}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => void handleSearchContactsForSite(Math.max(1, siteContactPagination.page - 1))}
+                      disabled={siteContactBusy || siteContactPagination.page <= 1}
+                    >
+                      Precedent
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSearchContactsForSite(Math.min(siteContactPagination.totalPages, siteContactPagination.page + 1))}
+                      disabled={siteContactBusy || siteContactPagination.page >= siteContactPagination.totalPages}
+                    >
+                      Suivant
                     </button>
                   </div>
                 )}
@@ -2593,6 +2782,7 @@ function ImprimanteTab({
   const chartWindow = getCenteredChartWindow()
   const chartMonthTicks = buildChartMonthTicks(chartWindow)
   const missingDataAreas = buildMissingDataAreas(chartData, chartWindow)
+  const interventionMarkers = buildInterventionChartMarkers(imprimante, stockMovementHistory)
   const tonerStocksByDate = Object.fromEntries(
     chartData.map((point) => [
       point.date,
@@ -2629,6 +2819,17 @@ function ImprimanteTab({
           strokeWidth={2}
           label={{ value: "Aujourd'hui", position: 'top', fill: '#bde7ff', fontSize: 12 }}
         />
+        {interventionMarkers.map((marker) => (
+          <ReferenceLine
+            key={`intervention-${marker.id}`}
+            x={marker.x}
+            stroke="#f0b429"
+            strokeDasharray="3 4"
+            strokeOpacity={0.8}
+            ifOverflow="hidden"
+            label={(props: any) => renderInterventionMarkerLabel(props, marker)}
+          />
+        ))}
         <XAxis
           dataKey="x"
           type="number"
@@ -2689,7 +2890,11 @@ function ImprimanteTab({
               <h3>Consommation toner - {imprimante.numeroSerie}</h3>
               <p>6 mois d'historique a gauche, aujourd'hui au centre, simulation prudente a droite.</p>
             </div>
-            <span>{tonerChangeCount} changement{tonerChangeCount > 1 ? 's' : ''}</span>
+            <span>
+              {tonerChangeCount} changement{tonerChangeCount > 1 ? 's' : ''}
+              {' - '}
+              {interventionMarkers.length} intervention{interventionMarkers.length > 1 ? 's' : ''}
+            </span>
           </div>
           {chartUsefulPointCount < 2 ? (
             <p className="site-detail-empty">Pas assez de rapports pour afficher le graphique.</p>

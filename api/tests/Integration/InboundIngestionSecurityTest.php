@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace App\Tests\Integration;
 
 use App\Entity\Alerte;
+use App\Entity\AlertRuleConfig;
 use App\Entity\Enum\CategoriePiece;
+use App\Entity\Enum\NaturePiece;
 use App\Entity\Enum\StockScope;
 use App\Entity\Enum\VariantPiece;
 use App\Entity\Imprimante;
@@ -16,6 +18,7 @@ use App\Entity\Site;
 use App\Entity\Stock;
 use App\Entity\TonerReplacementEvent;
 use App\Entity\User;
+use App\Service\AlertRuleService;
 use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
 use Doctrine\ORM\Tools\SchemaTool;
@@ -234,6 +237,97 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertSame(1, $body['skipped'] ?? null);
         self::assertSame(1, $body['skippedUnlinked'] ?? null);
         self::assertSame([], $body['ids'] ?? null);
+    }
+
+    public function testMultiPrinterRuleDoesNotDeactivateWasteOrSparePartAlerts(): void
+    {
+        $alertRuleService = static::getContainer()->get(AlertRuleService::class);
+        self::assertInstanceOf(AlertRuleService::class, $alertRuleService);
+        $alertRuleService->updateConfig(AlertRuleConfig::MODE_MULTI_PRINTER, 1, true, []);
+
+        $site = (new Site())->setNom('Site Non Toner');
+        $modele = (new Modele())
+            ->setNom('Modele Non Toner')
+            ->setConstructeur('RICOH');
+        $wastePiece = (new Piece())
+            ->setReference('WASTE-001')
+            ->setLibelle('Bac recuperation')
+            ->setCategorie(CategoriePiece::BAC_RECUP)
+            ->setNature(NaturePiece::CONSUMABLE);
+        $sparePiece = (new Piece())
+            ->setReference('BELT-001')
+            ->setLibelle('Courroie transfert')
+            ->setCategorie(CategoriePiece::COURROIE)
+            ->setNature(NaturePiece::SPARE_PART);
+        $modele->addPiece($wastePiece);
+        $modele->addPiece($sparePiece);
+
+        $imprimante = (new Imprimante())
+            ->setSite($site)
+            ->setNumeroSerie('SN-NON-TONER-0001')
+            ->setModele($modele)
+            ->setModeleNom('Modele Non Toner')
+            ->setConstructeur('RICOH');
+
+        foreach ([$wastePiece, $sparePiece] as $piece) {
+            $this->em->persist(
+                (new Stock())
+                    ->setPiece($piece)
+                    ->setSite($site)
+                    ->setScope(StockScope::TECH_VISIBLE)
+                    ->setQuantite(10)
+            );
+        }
+
+        $this->em->persist($site);
+        $this->em->persist($modele);
+        $this->em->persist($wastePiece);
+        $this->em->persist($sparePiece);
+        $this->em->persist($imprimante);
+        $this->em->flush();
+
+        $this->client->request(
+            'POST',
+            '/api/alertes',
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN,
+            ],
+            json_encode([
+                'alertes' => [
+                    [
+                        'site' => 'Site Non Toner',
+                        'modeleImprimante' => 'Modele Non Toner',
+                        'numeroSerie' => 'SN-NON-TONER-0001',
+                        'motifAlerte' => 'Bac recuperation presque plein',
+                        'piece' => 'Bac recuperation',
+                        'niveauPourcent' => 80,
+                    ],
+                    [
+                        'site' => 'Site Non Toner',
+                        'modeleImprimante' => 'Modele Non Toner',
+                        'numeroSerie' => 'SN-NON-TONER-0001',
+                        'motifAlerte' => 'Courroie a remplacer',
+                        'piece' => 'Courroie transfert',
+                        'niveauPourcent' => null,
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)
+        );
+
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertCount(2, $body['ids'] ?? []);
+
+        foreach ($body['ids'] as $id) {
+            $alerte = $this->em->getRepository(Alerte::class)->find((int) $id);
+            self::assertInstanceOf(Alerte::class, $alerte);
+            self::assertFalse($alerte->isIgnorer());
+            self::assertFalse($alerte->isAutoDeactivated());
+            self::assertSame(AlertRuleService::REASON_NOT_TONER, $alerte->getRuleReason());
+        }
     }
 
     public function testTonerChangeAlerteConsumesStockAndCreatesReplacementEvent(): void

@@ -635,6 +635,13 @@ export interface Alerte {
   active?: boolean
   /** compat API historique */
   ignorer?: boolean
+  autoDeactivated?: boolean
+  activeManualOverride?: boolean | null
+  ruleMode?: string | null
+  ruleReason?: string | null
+  ruleScore?: number | null
+  ruleStockQuantity?: number | null
+  ruleEvaluatedAt?: string | null
   imprimante?: {
     id: number | null
     numeroSerie: string
@@ -803,6 +810,7 @@ export interface InterventionFilters {
 export interface InterventionCreatePayload {
   siteId: number
   type: string
+  imprimanteId?: number | null
   title?: string
   description?: string | null
   notesTech?: string | null
@@ -820,6 +828,7 @@ export interface InterventionCreatePayload {
 }
 
 export interface InterventionUpdatePayload {
+  imprimanteId?: number | null
   title?: string
   description?: string | null
   notesTech?: string | null
@@ -874,6 +883,45 @@ export async function fetchInterventions(filters?: InterventionFilters): Promise
   const res = await apiFetch(url)
   if (!res.ok) throw new Error('Erreur chargement des interventions')
   return res.json()
+}
+
+export type AlertRuleMode = 'CURRENT_RULE' | 'MULTI_PRINTER' | 'STOCK_FILTER_DISABLED'
+
+export interface AlertRuleThreshold {
+  id?: number | null
+  minPercent: number
+  maxPercent: number
+  label: string
+  weight: number
+  sortOrder?: number
+}
+
+export interface AlertRuleConfig {
+  id: number | null
+  mode: AlertRuleMode
+  minPrinters: number
+  simpleStatusOnly: boolean
+  thresholds: AlertRuleThreshold[]
+  updatedAt: string
+}
+
+export interface AlertRuleSimulation {
+  rows: Array<{
+    niveauPourcent: number
+    weight: number
+  }>
+  score: number
+  stockQuantity: number
+  active: boolean
+}
+
+export async function fetchIntervention(id: number): Promise<InterventionItem> {
+  const res = await apiFetch(`${API_BASE}/interventions/${id}`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement intervention')
+  }
+  return body
 }
 
 export async function createIntervention(data: InterventionCreatePayload): Promise<InterventionItem> {
@@ -2136,6 +2184,50 @@ export async function updateAlerteActive(id: number, active: boolean): Promise<A
   const body = await res.json().catch(() => ({}))
   if (!res.ok) {
     throw new Error((body?.error as string) || 'Erreur mise a jour alerte')
+  }
+  return body
+}
+
+export async function fetchAlertRuleConfig(): Promise<AlertRuleConfig> {
+  const res = await apiFetch(`${API_BASE}/alert-rule-config`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement reglage alertes')
+  }
+  return body
+}
+
+export async function updateAlertRuleConfig(config: {
+  mode: AlertRuleMode
+  minPrinters: number
+  simpleStatusOnly: boolean
+  thresholds: AlertRuleThreshold[]
+}): Promise<AlertRuleConfig> {
+  const res = await apiFetch(`${API_BASE}/alert-rule-config`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(config),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur mise a jour reglage alertes')
+  }
+  return body
+}
+
+export async function simulateAlertRule(data: {
+  levels: number[]
+  stockQuantity: number
+  thresholds: AlertRuleThreshold[]
+}): Promise<AlertRuleSimulation> {
+  const res = await apiFetch(`${API_BASE}/alert-rule-config/simulate`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur simulation reglage alertes')
   }
   return body
 }

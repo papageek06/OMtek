@@ -8,6 +8,7 @@ use App\Entity\Alerte;
 use App\Entity\Imprimante;
 use App\Entity\User;
 use App\Service\InboundTokenGuard;
+use App\Service\AlertRuleService;
 use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -25,6 +26,7 @@ class AlerteController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly InboundTokenGuard $inboundTokenGuard,
+        private readonly AlertRuleService $alertRuleService,
         private readonly TonerReplacementService $tonerReplacementService,
     ) {
     }
@@ -138,7 +140,12 @@ class AlerteController extends AbstractController
         }
 
         $active = (bool) $data['active'];
+        $alerte->setActiveManualOverride($active);
         $alerte->setIgnorer(!$active);
+        $alerte
+            ->setAutoDeactivated(false)
+            ->setRuleReason(AlertRuleService::REASON_MANUAL_OVERRIDE)
+            ->setRuleEvaluatedAt(new \DateTimeImmutable());
         $this->em->flush();
 
         return new JsonResponse($this->alerteToArray($alerte), Response::HTTP_OK);
@@ -230,6 +237,8 @@ class AlerteController extends AbstractController
 
         $hasAutoUpdates = false;
         foreach ($entities as $entity) {
+            $this->alertRuleService->evaluateAlerte($entity);
+            $hasAutoUpdates = true;
             if ($this->deactivateOlderActionableAlerts($entity)) {
                 $hasAutoUpdates = true;
             }
@@ -291,6 +300,13 @@ class AlerteController extends AbstractController
             'niveauPourcent' => $alerte->getNiveauPourcent(),
             'active' => !$alerte->isIgnorer(),
             'ignorer' => $alerte->isIgnorer(),
+            'autoDeactivated' => $alerte->isAutoDeactivated(),
+            'activeManualOverride' => $alerte->getActiveManualOverride(),
+            'ruleMode' => $alerte->getRuleMode(),
+            'ruleReason' => $alerte->getRuleReason(),
+            'ruleScore' => $alerte->getRuleScore() !== null ? (float) $alerte->getRuleScore() : null,
+            'ruleStockQuantity' => $alerte->getRuleStockQuantity(),
+            'ruleEvaluatedAt' => $alerte->getRuleEvaluatedAt()?->format(\DateTimeInterface::ATOM),
             'imprimante' => $alerte->getImprimante() ? [
                 'id' => $alerte->getImprimante()?->getId(),
                 'numeroSerie' => $alerte->getImprimante()?->getNumeroSerie(),
@@ -479,7 +495,7 @@ class AlerteController extends AbstractController
 
         return $this->isTonerAlert($alerte)
             && $alerte->getNiveauPourcent() !== null
-            && $alerte->getNiveauPourcent() < self::TONER_THRESHOLD_PERCENT;
+            && $alerte->getNiveauPourcent() <= self::TONER_THRESHOLD_PERCENT;
     }
 
     private function isTonerAlert(Alerte $alerte): bool

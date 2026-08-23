@@ -110,8 +110,11 @@ final class TonerReplacementService
     public function registerFromRapport(RapportImprimante $rapport, ?RapportImprimante $previousRapport = null): void
     {
         $imprimante = $rapport->getImprimante();
-        if (!$imprimante instanceof Imprimante || $imprimante->getId() === null) {
+        if (!$imprimante instanceof Imprimante) {
             return;
+        }
+        if ($imprimante->getId() === null) {
+            $this->em->flush();
         }
 
         $detectedAt = $this->extractRapportDate($rapport);
@@ -216,6 +219,10 @@ final class TonerReplacementService
         \DateTimeImmutable $detectedAt,
         ?int $levelAfter,
     ): ?TonerReplacementEvent {
+        if ($imprimante->getId() === null) {
+            return null;
+        }
+
         $rows = $this->em->getRepository(TonerReplacementEvent::class)
             ->createQueryBuilder('event')
             ->andWhere('event.imprimante = :imprimante')
@@ -302,6 +309,10 @@ final class TonerReplacementService
         string $color,
         \DateTimeImmutable $detectedAt,
     ): ?TonerReplacementEvent {
+        if ($imprimante->getId() === null) {
+            return null;
+        }
+
         $previous = $this->em->getRepository(TonerReplacementEvent::class)
             ->createQueryBuilder('event')
             ->andWhere('event.imprimante = :imprimante')
@@ -584,6 +595,10 @@ final class TonerReplacementService
 
     private function resolveCounterNearDate(Imprimante $imprimante, \DateTimeImmutable $detectedAt, string $color): ?int
     {
+        if ($imprimante->getId() === null) {
+            return null;
+        }
+
         $rapport = $this->em->getRepository(RapportImprimante::class)
             ->createQueryBuilder('rapport')
             ->andWhere('rapport.imprimante = :imprimante')
