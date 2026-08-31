@@ -35,7 +35,7 @@ final class StockMutationService
         $stock = $this->findOrCreateStock($piece, $site, $scope);
 
         $before = $stock->getQuantite();
-        $after = max(0, $quantite);
+        $after = $quantite;
         $delta = $after - $before;
 
         $stock->setQuantite($after);
@@ -76,10 +76,6 @@ final class StockMutationService
         $stock = $this->findOrCreateStock($piece, $site, $scope);
         $before = $stock->getQuantite();
         $after = $before + $quantityDelta;
-
-        if ($after < 0) {
-            throw new \RuntimeException('Stock insuffisant pour appliquer ce mouvement.');
-        }
 
         $stock->setQuantite($after);
         $stock->setUpdatedAt(new \DateTimeImmutable());

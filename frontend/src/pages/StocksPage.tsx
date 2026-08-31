@@ -32,7 +32,7 @@ type PieceFormValues = {
   categorie: string
   variant: string
   nature: string
-  quantite: number
+  quantite: string
   modeleIds: number[]
 }
 
@@ -43,7 +43,7 @@ type EditingValues = {
   categorie: string
   variant: string
   nature: string
-  quantite: number
+  quantite: string
   modeleIds: number[]
 }
 
@@ -60,8 +60,13 @@ const emptyPieceForm: PieceFormValues = {
   categorie: 'AUTRE',
   variant: '',
   nature: '',
-  quantite: 0,
+  quantite: '0',
   modeleIds: [],
+}
+
+function parseStockQuantity(value: string): number {
+  const parsed = Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : 0
 }
 
 function sameNumberSet(a: number[], b: number[]): boolean {
@@ -149,7 +154,7 @@ export default function StocksPage() {
       categorie: row.categorie ?? 'AUTRE',
       variant: row.variant ?? '',
       nature: row.nature ?? '',
-      quantite: row.quantiteStockGeneral,
+      quantite: String(row.quantiteStockGeneral),
       modeleIds: (row.modeles ?? []).map((modele) => modele.id),
     })
   }, [])
@@ -240,7 +245,7 @@ export default function StocksPage() {
         nature: newPieceForm.nature || null,
         modeleIds: newPieceForm.modeleIds,
       })
-      await upsertStockGeneral(created.id, newPieceForm.quantite)
+      await upsertStockGeneral(created.id, parseStockQuantity(newPieceForm.quantite))
       setNewPieceForm(emptyPieceForm)
       setShowAddForm(false)
       setMessage('Reference creee')
@@ -292,7 +297,8 @@ export default function StocksPage() {
       if (Object.keys(update).length > 0) {
         await updatePiece(row.pieceId, update)
       }
-      await upsertStockGeneral(row.pieceId, editingValues.quantite)
+      const nextStockGeneralQuantity = parseStockQuantity(editingValues.quantite)
+      await upsertStockGeneral(row.pieceId, nextStockGeneralQuantity)
 
       setEditingRowId(null)
       setEditingValues(null)
@@ -310,7 +316,7 @@ export default function StocksPage() {
             modeles: editingValues.modeleIds
               .map((id) => modelesById.get(id))
               .filter((modele): modele is ModeleItem => Boolean(modele)),
-            quantiteStockGeneral: editingValues.quantite,
+            quantiteStockGeneral: nextStockGeneralQuantity,
           }
         })
       )
@@ -506,9 +512,8 @@ export default function StocksPage() {
               Stock general initial
               <input
                 type="number"
-                min={0}
                 value={newPieceForm.quantite}
-                onChange={(e) => setNewPieceForm((prev) => ({ ...prev, quantite: Math.max(0, Number(e.target.value) || 0) }))}
+                onChange={(e) => setNewPieceForm((prev) => ({ ...prev, quantite: e.target.value }))}
               />
             </label>
           </div>
@@ -707,9 +712,8 @@ export default function StocksPage() {
                       {isEditing && editingValues ? (
                         <input
                           type="number"
-                          min={0}
                           value={editingValues.quantite}
-                          onChange={(e) => setEditingValues((prev) => prev ? { ...prev, quantite: Math.max(0, Number(e.target.value) || 0) } : prev)}
+                          onChange={(e) => setEditingValues((prev) => prev ? { ...prev, quantite: e.target.value } : prev)}
                         />
                       ) : (
                         row.quantiteStockGeneral

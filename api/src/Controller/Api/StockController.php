@@ -146,7 +146,7 @@ class StockController extends AbstractController
         $stock = $this->stockMutationService->upsertStock(
             $piece,
             $site,
-            max(0, (int) $body['quantite']),
+            (int) $body['quantite'],
             $user,
             $scope,
             StockMovementReason::INVENTAIRE
@@ -320,7 +320,7 @@ class StockController extends AbstractController
         $stock = $this->stockMutationService->upsertStock(
             $piece,
             null,
-            max(0, (int) $body['quantite']),
+            (int) $body['quantite'],
             $user,
             $scope,
             StockMovementReason::REAPPRO

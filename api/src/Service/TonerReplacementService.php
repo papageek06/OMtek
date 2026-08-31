@@ -360,6 +360,7 @@ final class TonerReplacementService
                 [null, StockScope::ADMIN_ONLY],
             ];
 
+        $fallbackTarget = $searchScopes[0] ?? null;
         foreach ($searchScopes as [$targetSite, $scope]) {
             $stock = $this->em->getRepository(Stock::class)->findOneBy([
                 'piece' => $piece,
@@ -393,6 +394,33 @@ final class TonerReplacementService
             } catch (\RuntimeException|\InvalidArgumentException) {
                 // A concurrent write can empty the stock between read and movement.
                 continue;
+            }
+        }
+
+        if ($fallbackTarget !== null) {
+            [$targetSite, $scope] = $fallbackTarget;
+            $commentaire = sprintf(
+                '[AUTO_TONER_REPLACEMENT] key=%s source=%s color=%s levelAfter=%s counter=%s',
+                $eventKey,
+                $sourceType,
+                $color,
+                $levelAfter !== null ? (string) $levelAfter : 'na',
+                $counterValue !== null ? (string) $counterValue : 'na',
+            );
+
+            try {
+                return $this->stockMutationService->applyMovement(
+                    $piece,
+                    $targetSite,
+                    -1,
+                    $systemUser,
+                    $scope,
+                    StockMovementReason::AUTO_TONER_REPLACEMENT,
+                    $commentaire,
+                    null,
+                );
+            } catch (\RuntimeException|\InvalidArgumentException) {
+                return null;
             }
         }
 

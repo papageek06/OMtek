@@ -208,6 +208,67 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertSame('Modele DB', $alerte->getModeleImprimante());
     }
 
+    public function testLowTonerAlertIsCreatedInactiveWhenMatchingSiteStockExists(): void
+    {
+        $site = (new Site())->setNom('Site Stock Toner');
+        $modele = (new Modele())
+            ->setNom('MPC Stock')
+            ->setConstructeur('RICOH');
+        $piece = (new Piece())
+            ->setReference('TONER-CYAN-STOCK-TEST')
+            ->setLibelle('Toner cyan test')
+            ->setCategorie(CategoriePiece::TONER)
+            ->setVariant(VariantPiece::CYAN);
+        $piece->addModele($modele);
+        $stock = (new Stock())
+            ->setPiece($piece)
+            ->setSite($site)
+            ->setScope(StockScope::TECH_VISIBLE)
+            ->setQuantite(1);
+        $imprimante = (new Imprimante())
+            ->setSite($site)
+            ->setModele($modele)
+            ->setNumeroSerie('SN-STOCK-CYAN-0001')
+            ->setModeleNom('MPC Stock')
+            ->setConstructeur('RICOH');
+
+        $this->em->persist($site);
+        $this->em->persist($modele);
+        $this->em->persist($piece);
+        $this->em->persist($stock);
+        $this->em->persist($imprimante);
+        $this->em->flush();
+
+        $this->client->request(
+            'POST',
+            '/api/alertes',
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN,
+            ],
+            json_encode([
+                'alertes' => [[
+                    'site' => 'Site Mail',
+                    'modeleImprimante' => 'Modele Mail',
+                    'numeroSerie' => 'SN-STOCK-CYAN-0001',
+                    'motifAlerte' => 'Toner bas',
+                    'piece' => 'Toner Cyan',
+                    'niveauPourcent' => 8,
+                ]],
+            ], JSON_THROW_ON_ERROR)
+        );
+
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, $body['created'] ?? null);
+
+        $alerte = $this->em->getRepository(Alerte::class)->find((int) $body['ids'][0]);
+        self::assertInstanceOf(Alerte::class, $alerte);
+        self::assertTrue($alerte->isIgnorer());
+    }
+
     public function testAlertesCreateSkipsUnlinkedPrinterAlerts(): void
     {
         $this->client->request(

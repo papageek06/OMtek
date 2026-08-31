@@ -5,7 +5,12 @@ declare(strict_types=1);
 namespace App\Controller\Api;
 
 use App\Entity\Alerte;
+use App\Entity\Enum\CategoriePiece;
+use App\Entity\Enum\StockScope;
+use App\Entity\Enum\VariantPiece;
 use App\Entity\Imprimante;
+use App\Entity\Piece;
+use App\Entity\Stock;
 use App\Entity\User;
 use App\Service\InboundTokenGuard;
 use App\Service\AlertRuleService;
@@ -218,6 +223,9 @@ class AlerteController extends AbstractController
                     : null
             );
             $alerte->setIgnorer(!empty($a['ignorer']));
+            if (!$alerte->isIgnorer() && $this->shouldAutoIgnoreLowTonerAlertBecauseSiteStockExists($alerte)) {
+                $alerte->setIgnorer(true);
+            }
 
             if ($this->isDuplicateAlerte($alerte)) {
                 $skipped++;
@@ -385,6 +393,101 @@ class AlerteController extends AbstractController
         ]);
 
         return $existing !== null;
+    }
+
+    private function shouldAutoIgnoreLowTonerAlertBecauseSiteStockExists(Alerte $alerte): bool
+    {
+        if (!$this->isLowTonerAlert($alerte)) {
+            return false;
+        }
+
+        $imprimante = $alerte->getImprimante();
+        $site = $imprimante?->getSite();
+        if (!$imprimante instanceof Imprimante || $site === null) {
+            return false;
+        }
+
+        $color = $this->extractAlertColor($alerte);
+        if ($color === null) {
+            return false;
+        }
+
+        $pieces = $this->resolveTonerPiecesForAlert($imprimante, $color);
+        if ($pieces === []) {
+            return false;
+        }
+
+        foreach ($pieces as $piece) {
+            foreach ([StockScope::TECH_VISIBLE, StockScope::ADMIN_ONLY] as $scope) {
+                $stock = $this->em->getRepository(Stock::class)->findOneBy([
+                    'piece' => $piece,
+                    'site' => $site,
+                    'scope' => $scope,
+                ]);
+
+                if ($stock instanceof Stock && $stock->getQuantite() > 0) {
+                    return true;
+                }
+            }
+        }
+
+        return false;
+    }
+
+    private function isLowTonerAlert(Alerte $alerte): bool
+    {
+        if (!$this->isTonerAlert($alerte)) {
+            return false;
+        }
+
+        if ($alerte->getNiveauPourcent() !== null && $alerte->getNiveauPourcent() < self::TONER_THRESHOLD_PERCENT) {
+            return true;
+        }
+
+        $motif = mb_strtolower($alerte->getMotifAlerte());
+        return str_contains($motif, 'toner bas') || str_contains($motif, 'toner vide');
+    }
+
+    /**
+     * @return list<Piece>
+     */
+    private function resolveTonerPiecesForAlert(Imprimante $imprimante, string $color): array
+    {
+        $modele = $imprimante->getModele();
+        if ($modele === null) {
+            return [];
+        }
+
+        $expectedVariant = match ($color) {
+            'black' => VariantPiece::BLACK,
+            'cyan' => VariantPiece::CYAN,
+            'magenta' => VariantPiece::MAGENTA,
+            'yellow' => VariantPiece::YELLOW,
+            default => null,
+        };
+
+        $exactMatches = [];
+        $genericFallbacks = [];
+        foreach ($modele->getPieces() as $piece) {
+            if (!$piece instanceof Piece || $piece->getCategorie() !== CategoriePiece::TONER) {
+                continue;
+            }
+
+            $variant = $piece->getVariant();
+            if ($expectedVariant instanceof VariantPiece && $variant === $expectedVariant) {
+                $exactMatches[] = $piece;
+                continue;
+            }
+
+            if (
+                $color === 'black'
+                && ($variant === null || $variant === VariantPiece::NONE || $variant === VariantPiece::UNIT)
+            ) {
+                $genericFallbacks[] = $piece;
+            }
+        }
+
+        return $exactMatches !== [] ? $exactMatches : $genericFallbacks;
     }
 
     private function deactivateOlderActionableAlerts(Alerte $incoming): bool

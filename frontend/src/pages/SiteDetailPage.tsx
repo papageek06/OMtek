@@ -483,6 +483,11 @@ function dateInputValue(date = new Date()): string {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+function parseStockQuantity(value: string | number): number {
+  const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10)
+  return Number.isFinite(parsed) ? parsed : 0
+}
+
 function formatDateInputLabel(value: string): string {
   if (!value) return '-'
   return new Date(`${value}T00:00:00`).toLocaleDateString('fr-FR')
@@ -1098,7 +1103,7 @@ export default function SiteDetailPage() {
   const [tonerEventsByImp, setTonerEventsByImp] = useState<Record<number, TonerReplacementEvent[]>>({})
   const [showInactiveAlertsByImp, setShowInactiveAlertsByImp] = useState<Record<number, boolean>>({})
   const [updatingAlerteIdByImp, setUpdatingAlerteIdByImp] = useState<Record<number, number | null>>({})
-  const [stockQuantites, setStockQuantites] = useState<Record<number, number>>({})
+  const [stockQuantites, setStockQuantites] = useState<Record<number, string>>({})
   const [stockSaveSubmitting, setStockSaveSubmitting] = useState(false)
   const [stockMovementHistory, setStockMovementHistory] = useState<StockMovementItem[]>([])
   const [stockMovementPage, setStockMovementPage] = useState(1)
@@ -1166,10 +1171,10 @@ export default function SiteDetailPage() {
       .then(([data, movementHistoryData]) => {
         setSite(data)
         setStockMovementHistory(movementHistoryData)
-        const qty: Record<number, number> = {}
+        const qty: Record<number, string> = {}
         const refBis: Record<number, string> = {}
         for (const p of data.piecesAvecStocks ?? []) {
-          qty[p.pieceId] = p.quantiteStockSite
+          qty[p.pieceId] = String(p.quantiteStockSite)
           refBis[p.pieceId] = p.refBis ?? ''
         }
         setStockQuantites(qty)
@@ -1415,7 +1420,7 @@ export default function SiteDetailPage() {
       pieceId: piece.pieceId,
       reference: piece.reference,
       previousQuantity: piece.quantiteStockSite,
-      nextQuantity: Math.max(0, stockQuantites[piece.pieceId] ?? piece.quantiteStockSite),
+      nextQuantity: parseStockQuantity(stockQuantites[piece.pieceId] ?? piece.quantiteStockSite),
     }))
     .filter((change) => change.nextQuantity !== change.previousQuantity)
   const groupedStockMovementDays = groupStockMovementsByDate(stockMovementHistory, piecesAvecStocks, imprimantes)
@@ -1429,9 +1434,9 @@ export default function SiteDetailPage() {
   )
 
   const resetStockChanges = () => {
-    const qty: Record<number, number> = {}
+    const qty: Record<number, string> = {}
     for (const piece of piecesAvecStocks) {
-      qty[piece.pieceId] = piece.quantiteStockSite
+      qty[piece.pieceId] = String(piece.quantiteStockSite)
     }
     setStockQuantites(qty)
   }
@@ -1941,9 +1946,8 @@ export default function SiteDetailPage() {
                       <span>Stock site</span>
                       <input
                         type="number"
-                        min={0}
-                        value={stockQuantites[p.pieceId] ?? p.quantiteStockSite}
-                        onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
+                        value={stockQuantites[p.pieceId] ?? String(p.quantiteStockSite)}
+                        onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: e.target.value }))}
                         onKeyDown={(e) => {
                           if (e.key === 'Enter') void handleSaveStockChanges()
                         }}
@@ -2027,7 +2031,7 @@ export default function SiteDetailPage() {
                 <tbody>
                   {piecesAvecStocks.map((p) => {
                     const matchedModeles = matchingSiteModeles(p, imprimantes)
-                    const stockValue = stockQuantites[p.pieceId] ?? p.quantiteStockSite
+                    const stockValue = stockQuantites[p.pieceId] ?? String(p.quantiteStockSite)
                     return (
                       <tr key={p.pieceId}>
                         <td className="pieces-table__ref">{p.reference}</td>
@@ -2072,9 +2076,8 @@ export default function SiteDetailPage() {
                         <td className="pieces-table__num">
                           <input
                             type="number"
-                            min={0}
                             value={stockValue}
-                            onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: parseInt(e.target.value, 10) || 0 }))}
+                            onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: e.target.value }))}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') void handleSaveStockChanges()
                             }}

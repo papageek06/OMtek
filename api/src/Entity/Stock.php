@@ -82,7 +82,7 @@ class Stock
 
     public function setQuantite(int $quantite): static
     {
-        $this->quantite = max(0, $quantite);
+        $this->quantite = $quantite;
         return $this;
     }
 
