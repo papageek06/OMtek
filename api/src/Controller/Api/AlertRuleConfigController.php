@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace App\Controller\Api;
 
 use App\Entity\AlertRuleConfig;
-use App\Entity\User;
 use App\Service\AlertRuleService;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -26,7 +25,7 @@ class AlertRuleConfigController extends AbstractController
     #[Route('', name: 'show', methods: ['GET'])]
     public function show(): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->isAuthenticated()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -39,7 +38,7 @@ class AlertRuleConfigController extends AbstractController
     #[Route('', name: 'update', methods: ['PUT'])]
     public function update(Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->isAuthenticated()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -72,7 +71,7 @@ class AlertRuleConfigController extends AbstractController
     #[Route('/simulate', name: 'simulate', methods: ['POST'])]
     public function simulate(Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->isAuthenticated()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -93,8 +92,8 @@ class AlertRuleConfigController extends AbstractController
         ));
     }
 
-    private function isAdmin(): bool
+    private function isAuthenticated(): bool
     {
-        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+        return $this->isGranted('IS_AUTHENTICATED_FULLY');
     }
 }

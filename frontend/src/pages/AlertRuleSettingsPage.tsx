@@ -6,7 +6,6 @@ import {
 } from '../api/client'
 import type { AlertRuleConfig, AlertRuleMode, AlertRuleSimulation, AlertRuleThreshold } from '../api/client'
 import { useAuth } from '../context/AuthContext'
-import { isAdmin } from '../shared/auth/permissions'
 import './AlertRuleSettingsPage.css'
 
 const DEFAULT_LEVELS = [20, 30, 40, 70, 90]
@@ -19,7 +18,7 @@ const MODE_LABELS: Record<AlertRuleMode, string> = {
 
 export default function AlertRuleSettingsPage() {
   const { user } = useAuth()
-  const userIsAdmin = isAdmin(user)
+  const userIsAuthenticated = !!user
   const [config, setConfig] = useState<AlertRuleConfig | null>(null)
   const [mode, setMode] = useState<AlertRuleMode>('CURRENT_RULE')
   const [minPrinters, setMinPrinters] = useState(2)
@@ -43,7 +42,7 @@ export default function AlertRuleSettingsPage() {
   )
 
   useEffect(() => {
-    if (!userIsAdmin) {
+    if (!userIsAuthenticated) {
       setLoading(false)
       return
     }
@@ -65,10 +64,10 @@ export default function AlertRuleSettingsPage() {
     return () => {
       cancelled = true
     }
-  }, [userIsAdmin])
+  }, [userIsAuthenticated])
 
   useEffect(() => {
-    if (!userIsAdmin || thresholds.length === 0) return
+    if (!userIsAuthenticated || thresholds.length === 0) return
 
     let cancelled = false
     simulateAlertRule({ levels, stockQuantity, thresholds })
@@ -82,7 +81,7 @@ export default function AlertRuleSettingsPage() {
     return () => {
       cancelled = true
     }
-  }, [levels, stockQuantity, thresholds, userIsAdmin])
+  }, [levels, stockQuantity, thresholds, userIsAuthenticated])
 
   const applyConfig = (data: AlertRuleConfig) => {
     setConfig(data)
@@ -116,11 +115,11 @@ export default function AlertRuleSettingsPage() {
     }
   }
 
-  if (!userIsAdmin) {
+  if (!userIsAuthenticated) {
     return (
       <section className="alert-rule-page">
         <div className="alert-rule-page__message alert-rule-page__message--error">
-          Acces reserve aux administrateurs.
+          Connexion requise pour acceder aux parametres.
         </div>
       </section>
     )

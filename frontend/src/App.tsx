@@ -81,11 +81,11 @@ function HeaderNav() {
             <NavLink to="/modeles" className={navLinkClass} onClick={closeMenu}>
               Modeles
             </NavLink>
+            <NavLink to="/parametres/alertes" className={navLinkClass} onClick={closeMenu}>
+              Parametres
+            </NavLink>
             {userIsAdmin && (
               <>
-                <NavLink to="/parametres/alertes" className={navLinkClass} onClick={closeMenu}>
-                  Parametres
-                </NavLink>
                 <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
                   Utilisateurs
                 </NavLink>
