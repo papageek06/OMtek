@@ -81,7 +81,7 @@ final class AlerteRetroCleanCommand extends Command
                 if ($isWaste) {
                     foreach ($activeWasteBySerial[$serial] ?? [] as $olderWaste) {
                         if (!$olderWaste->isIgnorer()) {
-                            $olderWaste->setIgnorer(true);
+                            $this->markAutoDeactivated($olderWaste, 'SUPERSEDED_BY_NEWER_ALERT');
                             $deactivatedByActionable++;
                         }
                     }
@@ -89,7 +89,7 @@ final class AlerteRetroCleanCommand extends Command
                 } elseif ($isToner && $color !== null) {
                     foreach ($activeActionableTonerBySerialColor[$serial][$color] ?? [] as $olderToner) {
                         if (!$olderToner->isIgnorer()) {
-                            $olderToner->setIgnorer(true);
+                            $this->markAutoDeactivated($olderToner, 'SUPERSEDED_BY_NEWER_ALERT');
                             $deactivatedByActionable++;
                         }
                     }
@@ -100,7 +100,7 @@ final class AlerteRetroCleanCommand extends Command
             if ($isTonerChange && $color !== null) {
                 foreach ($activeAnyTonerBySerialColor[$serial][$color] ?? [] as $olderTonerAny) {
                     if (!$olderTonerAny->isIgnorer()) {
-                        $olderTonerAny->setIgnorer(true);
+                        $this->markAutoDeactivated($olderTonerAny, 'TONER_REPLACED_AFTER_ALERT');
                         $deactivatedByReplacement++;
                     }
                 }
@@ -144,7 +144,7 @@ final class AlerteRetroCleanCommand extends Command
 
         return $this->isTonerAlert($alerte)
             && $alerte->getNiveauPourcent() !== null
-            && $alerte->getNiveauPourcent() < self::TONER_THRESHOLD_PERCENT;
+            && $alerte->getNiveauPourcent() <= self::TONER_THRESHOLD_PERCENT;
     }
 
     private function isTonerAlert(Alerte $alerte): bool
@@ -185,5 +185,15 @@ final class AlerteRetroCleanCommand extends Command
         }
 
         return null;
+    }
+
+    private function markAutoDeactivated(Alerte $alerte, string $reason): void
+    {
+        $alerte
+            ->setIgnorer(true)
+            ->setAutoDeactivated(true)
+            ->setActiveManualOverride(null)
+            ->setRuleReason($reason)
+            ->setRuleEvaluatedAt(new \DateTimeImmutable());
     }
 }

@@ -386,7 +386,7 @@ WHERE a.ignorer = 0
   AND LOWER(a.motif_alerte) LIKE :toner_keyword
   AND LOWER(a.motif_alerte) NOT LIKE :change_keyword
   AND a.niveau_pourcent IS NOT NULL
-  AND a.niveau_pourcent < 20
+  AND a.niveau_pourcent <= 20
   AND (:is_admin = 1 OR s.is_hidden = 0 OR s.id IS NULL)
 ORDER BY alert_at DESC, a.id DESC
 LIMIT 120

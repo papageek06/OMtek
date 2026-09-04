@@ -21,6 +21,8 @@ use Doctrine\ORM\EntityManagerInterface;
 
 final class TonerReplacementService
 {
+    public const REASON_TONER_REPLACED_AFTER_ALERT = 'TONER_REPLACED_AFTER_ALERT';
+
     private const SOURCE_ALERTE = 'ALERTE';
     private const SOURCE_REPORT_LEVEL_ASC = 'REPORT_LEVEL_ASC';
     private const SOURCE_MAIL_AND_REPORT = 'MAIL_AND_REPORT';
@@ -67,6 +69,7 @@ final class TonerReplacementService
         $equivalentEvent = $this->findEquivalentReplacementRecently($imprimante, $color, $detectedAt, $alerte->getNiveauPourcent());
         if ($equivalentEvent instanceof TonerReplacementEvent) {
             $this->attachAlerteToExistingEvent($equivalentEvent, $alerte);
+            $this->deactivateOpenTonerAlertsBeforeReplacement($imprimante, $color, $detectedAt);
             return;
         }
         if ($this->isRuntimeDuplicateSeen($imprimante, $color, $detectedAt, $alerte->getNiveauPourcent())) {
@@ -105,6 +108,7 @@ final class TonerReplacementService
             ->setCopiesSincePrevious($copiesSincePrevious);
 
         $this->em->persist($event);
+        $this->deactivateOpenTonerAlertsBeforeReplacement($imprimante, $color, $detectedAt);
     }
 
     public function registerFromRapport(RapportImprimante $rapport, ?RapportImprimante $previousRapport = null): void
@@ -145,6 +149,7 @@ final class TonerReplacementService
             $equivalentEvent = $this->findEquivalentReplacementRecently($imprimante, $color, $detectedAt, $levelAfter);
             if ($equivalentEvent instanceof TonerReplacementEvent) {
                 $this->attachRapportToExistingEvent($equivalentEvent, $rapport);
+                $this->deactivateOpenTonerAlertsBeforeReplacement($imprimante, $color, $detectedAt);
                 continue;
             }
             if ($this->isRuntimeDuplicateSeen($imprimante, $color, $detectedAt, $levelAfter)) {
@@ -183,7 +188,56 @@ final class TonerReplacementService
                 ->setCopiesSincePrevious($copiesSincePrevious);
 
             $this->em->persist($event);
+            $this->deactivateOpenTonerAlertsBeforeReplacement($imprimante, $color, $detectedAt);
         }
+    }
+
+    private function deactivateOpenTonerAlertsBeforeReplacement(
+        Imprimante $imprimante,
+        string $color,
+        \DateTimeImmutable $detectedAt,
+    ): void {
+        /** @var list<Alerte> $candidates */
+        $candidates = $this->em->getRepository(Alerte::class)
+            ->createQueryBuilder('a')
+            ->andWhere('a.imprimante = :imprimante')
+            ->andWhere('a.ignorer = false')
+            ->andWhere('(a.recuLe IS NULL OR a.recuLe <= :detectedAt)')
+            ->andWhere('LOWER(a.motifAlerte) LIKE :tonerKeyword')
+            ->andWhere('LOWER(a.motifAlerte) NOT LIKE :changeKeyword')
+            ->setParameter('imprimante', $imprimante)
+            ->setParameter('detectedAt', $detectedAt)
+            ->setParameter('tonerKeyword', '%toner%')
+            ->setParameter('changeKeyword', '%changement de cartouche%')
+            ->getQuery()
+            ->getResult();
+
+        $now = new \DateTimeImmutable();
+        foreach ($candidates as $candidate) {
+            if (!$candidate instanceof Alerte) {
+                continue;
+            }
+            if (!$this->alertColorMatchesReplacement($candidate, $imprimante, $color)) {
+                continue;
+            }
+
+            $candidate
+                ->setIgnorer(true)
+                ->setAutoDeactivated(true)
+                ->setActiveManualOverride(null)
+                ->setRuleReason(self::REASON_TONER_REPLACED_AFTER_ALERT)
+                ->setRuleEvaluatedAt($now);
+        }
+    }
+
+    private function alertColorMatchesReplacement(Alerte $alerte, Imprimante $imprimante, string $replacementColor): bool
+    {
+        $alertColor = $this->extractColor($alerte->getPiece() . ' ' . $alerte->getMotifAlerte());
+        if ($alertColor === $replacementColor) {
+            return true;
+        }
+
+        return $alertColor === null && $replacementColor === 'black' && !$imprimante->isColor();
     }
 
     private function buildRapportEventKey(

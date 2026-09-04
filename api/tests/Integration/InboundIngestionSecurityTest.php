@@ -424,6 +424,15 @@ final class InboundIngestionSecurityTest extends WebTestCase
             ->setSite($site)
             ->setScope(StockScope::TECH_VISIBLE)
             ->setQuantite(2);
+        $olderAlert = (new Alerte())
+            ->setImprimante($imprimante)
+            ->setSite('Site Toner')
+            ->setModeleImprimante('Modele Toner')
+            ->setNumeroSerie('SN-TONER-0001')
+            ->setMotifAlerte('Toner bas')
+            ->setPiece('Toner Noir')
+            ->setNiveauPourcent(8)
+            ->setRecuLe(new \DateTimeImmutable('2026-08-10 08:00:00'));
 
         $this->em->persist($systemUser);
         $this->em->persist($site);
@@ -431,7 +440,9 @@ final class InboundIngestionSecurityTest extends WebTestCase
         $this->em->persist($piece);
         $this->em->persist($imprimante);
         $this->em->persist($stock);
+        $this->em->persist($olderAlert);
         $this->em->flush();
+        $olderAlertId = $olderAlert->getId();
 
         $this->client->request(
             'POST',
@@ -476,6 +487,94 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertCount(1, $events);
         self::assertSame('black', $events[0]->getColorKey());
         self::assertNotNull($events[0]->getStockMovement());
+
+        $closedAlert = $this->em->getRepository(Alerte::class)->find($olderAlertId);
+        self::assertInstanceOf(Alerte::class, $closedAlert);
+        self::assertTrue($closedAlert->isIgnorer());
+        self::assertTrue($closedAlert->isAutoDeactivated());
+        self::assertSame(TonerReplacementService::REASON_TONER_REPLACED_AFTER_ALERT, $closedAlert->getRuleReason());
+    }
+
+    public function testReportDetectedTonerReplacementDeactivatesOlderActiveAlert(): void
+    {
+        $systemUser = (new User())
+            ->setEmail('system-report-close@example.test')
+            ->setPassword('hashed-password')
+            ->setFirstName('System')
+            ->setLastName('ReportClose')
+            ->setRoles([User::ROLE_SUPER_ADMIN]);
+
+        $site = (new Site())->setNom('Site Report Close');
+        $modele = (new Modele())
+            ->setNom('Modele Report Close')
+            ->setConstructeur('RICOH');
+        $piece = (new Piece())
+            ->setReference('TN-REPORT-CLOSE-BLACK')
+            ->setLibelle('Toner Noir Report Close')
+            ->setCategorie(CategoriePiece::TONER)
+            ->setVariant(VariantPiece::BLACK);
+        $modele->addPiece($piece);
+
+        $imprimante = (new Imprimante())
+            ->setSite($site)
+            ->setNumeroSerie('SN-REPORT-CLOSE-0001')
+            ->setModele($modele)
+            ->setModeleNom('Modele Report Close')
+            ->setConstructeur('RICOH')
+            ->setColor(false);
+
+        $stock = (new Stock())
+            ->setPiece($piece)
+            ->setSite($site)
+            ->setScope(StockScope::TECH_VISIBLE)
+            ->setQuantite(2);
+
+        $olderAlert = (new Alerte())
+            ->setImprimante($imprimante)
+            ->setSite('Site Report Close')
+            ->setModeleImprimante('Modele Report Close')
+            ->setNumeroSerie('SN-REPORT-CLOSE-0001')
+            ->setMotifAlerte('Toner bas')
+            ->setPiece('Toner Noir')
+            ->setNiveauPourcent(8)
+            ->setRecuLe(new \DateTimeImmutable('2026-08-10 08:00:00'));
+
+        $previousRapport = (new RapportImprimante())
+            ->setImprimante($imprimante)
+            ->setLastScanDate(new \DateTimeImmutable('2026-08-10 09:00:00'))
+            ->setBlackLevel('8%')
+            ->setMonoLifeCount('1000');
+
+        $currentRapport = (new RapportImprimante())
+            ->setImprimante($imprimante)
+            ->setLastScanDate(new \DateTimeImmutable('2026-08-10 12:00:00'))
+            ->setBlackLevel('100%')
+            ->setMonoLifeCount('1200');
+
+        $this->em->persist($systemUser);
+        $this->em->persist($site);
+        $this->em->persist($modele);
+        $this->em->persist($piece);
+        $this->em->persist($imprimante);
+        $this->em->persist($stock);
+        $this->em->persist($olderAlert);
+        $this->em->persist($previousRapport);
+        $this->em->persist($currentRapport);
+        $this->em->flush();
+        $olderAlertId = $olderAlert->getId();
+
+        $tonerReplacementService = static::getContainer()->get(TonerReplacementService::class);
+        self::assertInstanceOf(TonerReplacementService::class, $tonerReplacementService);
+        $tonerReplacementService->registerFromRapport($currentRapport, $previousRapport);
+        $this->em->flush();
+
+        $this->em->clear();
+
+        $closedAlert = $this->em->getRepository(Alerte::class)->find($olderAlertId);
+        self::assertInstanceOf(Alerte::class, $closedAlert);
+        self::assertTrue($closedAlert->isIgnorer());
+        self::assertTrue($closedAlert->isAutoDeactivated());
+        self::assertSame(TonerReplacementService::REASON_TONER_REPLACED_AFTER_ALERT, $closedAlert->getRuleReason());
     }
 
     public function testMailTonerChangeDoesNotDuplicateExistingReportDetection(): void

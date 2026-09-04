@@ -27,6 +27,7 @@ use Doctrine\ORM\QueryBuilder;
 class AlerteController extends AbstractController
 {
     private const TONER_THRESHOLD_PERCENT = 20;
+    private const REASON_SUPERSEDED_BY_NEWER_ALERT = 'SUPERSEDED_BY_NEWER_ALERT';
 
     public function __construct(
         private readonly EntityManagerInterface $em,
@@ -355,7 +356,7 @@ class AlerteController extends AbstractController
     {
         $qb->andWhere(sprintf(
             '(
-                (LOWER(%1$s.motifAlerte) LIKE :toner_keyword AND %1$s.niveauPourcent IS NOT NULL AND %1$s.niveauPourcent < :toner_threshold)
+                (LOWER(%1$s.motifAlerte) LIKE :toner_keyword AND %1$s.niveauPourcent IS NOT NULL AND %1$s.niveauPourcent <= :toner_threshold)
                 OR (
                     (LOWER(%1$s.motifAlerte) LIKE :waste_keyword_a AND LOWER(%1$s.motifAlerte) LIKE :waste_keyword_b)
                     OR (LOWER(%1$s.piece) LIKE :waste_keyword_a AND LOWER(%1$s.piece) LIKE :waste_keyword_b)
@@ -440,7 +441,7 @@ class AlerteController extends AbstractController
             return false;
         }
 
-        if ($alerte->getNiveauPourcent() !== null && $alerte->getNiveauPourcent() < self::TONER_THRESHOLD_PERCENT) {
+        if ($alerte->getNiveauPourcent() !== null && $alerte->getNiveauPourcent() <= self::TONER_THRESHOLD_PERCENT) {
             return true;
         }
 
@@ -524,7 +525,7 @@ class AlerteController extends AbstractController
 
             if ($incomingIsWaste) {
                 if ($this->isWasteAlert($candidate)) {
-                    $candidate->setIgnorer(true);
+                    $this->markAutoDeactivated($candidate, self::REASON_SUPERSEDED_BY_NEWER_ALERT);
                     $updated = true;
                 }
                 continue;
@@ -533,7 +534,7 @@ class AlerteController extends AbstractController
             if ($this->isTonerAlert($incoming) && $this->isTonerAlert($candidate)) {
                 $candidateColor = $this->extractAlertColor($candidate);
                 if ($incomingColor !== null && $candidateColor !== null && $incomingColor === $candidateColor) {
-                    $candidate->setIgnorer(true);
+                    $this->markAutoDeactivated($candidate, self::REASON_SUPERSEDED_BY_NEWER_ALERT);
                     $updated = true;
                 }
             }
@@ -582,7 +583,7 @@ class AlerteController extends AbstractController
 
             $candidateColor = $this->extractAlertColor($candidate);
             if ($candidateColor !== null && $candidateColor === $color) {
-                $candidate->setIgnorer(true);
+                $this->markAutoDeactivated($candidate, TonerReplacementService::REASON_TONER_REPLACED_AFTER_ALERT);
                 $updated = true;
             }
         }
@@ -644,6 +645,16 @@ class AlerteController extends AbstractController
     private function alertReferenceDate(Alerte $alerte): \DateTimeImmutable
     {
         return $alerte->getRecuLe() ?? $alerte->getCreatedAt();
+    }
+
+    private function markAutoDeactivated(Alerte $alerte, string $reason): void
+    {
+        $alerte
+            ->setIgnorer(true)
+            ->setAutoDeactivated(true)
+            ->setActiveManualOverride(null)
+            ->setRuleReason($reason)
+            ->setRuleEvaluatedAt(new \DateTimeImmutable());
     }
 
     private function validateInboundToken(Request $request): ?JsonResponse

@@ -8,6 +8,7 @@ import {
   sortAlertesByNewest,
   type AlerteTypeKey,
 } from '../domain/alertes/rules'
+import { isAdmin } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import { useAuth } from '../context/AuthContext'
 import './AlertesPage.css'
@@ -16,8 +17,100 @@ function formatDate(value: string | null | undefined): string {
   return formatDateTime(value, 'Date inconnue')
 }
 
+function alertDateMs(alerte: Alerte): number {
+  const value = new Date(alerte.recuLe ?? alerte.createdAt).getTime()
+  return Number.isFinite(value) ? value : 0
+}
+
+function alertLevelKey(alerte: Alerte): string {
+  return alerte.niveauPourcent == null ? 'na' : String(alerte.niveauPourcent)
+}
+
+interface AlerteDuplicateGroup {
+  key: string
+  alertes: Alerte[]
+  latest: Alerte
+  type: AlerteTypeKey
+  lastAt: number
+}
+
+interface AlerteSiteGroup {
+  key: string
+  siteName: string
+  siteId: number | null
+  alertCount: number
+  activeCount: number
+  lastAt: number
+  groups: AlerteDuplicateGroup[]
+}
+
+function buildGroupedAlertes(alertes: Alerte[]): AlerteSiteGroup[] {
+  const sites = new Map<string, AlerteSiteGroup>()
+
+  for (const alerte of alertes) {
+    const siteId = alerte.imprimante?.site?.id ?? null
+    const siteName = alerte.imprimante?.site?.nom ?? alerte.site ?? 'Site inconnu'
+    const siteKey = siteId != null ? `site-${siteId}` : `site-name-${siteName.toLowerCase()}`
+    const lastAt = alertDateMs(alerte)
+
+    let siteGroup = sites.get(siteKey)
+    if (!siteGroup) {
+      siteGroup = {
+        key: siteKey,
+        siteName,
+        siteId,
+        alertCount: 0,
+        activeCount: 0,
+        lastAt,
+        groups: [],
+      }
+      sites.set(siteKey, siteGroup)
+    }
+
+    siteGroup.alertCount += 1
+    if (isAlerteActive(alerte)) siteGroup.activeCount += 1
+    siteGroup.lastAt = Math.max(siteGroup.lastAt, lastAt)
+
+    const type = getAlerteType(alerte)
+    const duplicateKey = [
+      type,
+      alerte.numeroSerie,
+      alerte.motifAlerte,
+      alerte.piece,
+      alertLevelKey(alerte),
+      isAlerteActive(alerte) ? 'active' : 'inactive',
+    ].join('|').toLowerCase()
+
+    let duplicateGroup = siteGroup.groups.find((group) => group.key === duplicateKey)
+    if (!duplicateGroup) {
+      duplicateGroup = {
+        key: duplicateKey,
+        alertes: [],
+        latest: alerte,
+        type,
+        lastAt,
+      }
+      siteGroup.groups.push(duplicateGroup)
+    }
+
+    duplicateGroup.alertes.push(alerte)
+    if (lastAt >= duplicateGroup.lastAt) {
+      duplicateGroup.latest = alerte
+      duplicateGroup.lastAt = lastAt
+    }
+  }
+
+  return Array.from(sites.values())
+    .map((siteGroup) => ({
+      ...siteGroup,
+      groups: siteGroup.groups.sort((a, b) => b.lastAt - a.lastAt),
+    }))
+    .sort((a, b) => b.lastAt - a.lastAt || a.siteName.localeCompare(b.siteName))
+}
+
 export default function AlertesPage() {
   const { user } = useAuth()
+  const userIsAdmin = isAdmin(user)
   const [alertes, setAlertes] = useState<Alerte[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
@@ -102,6 +195,7 @@ export default function AlertesPage() {
       }))
   }, [alertes, search, statusFilter, typeFilter])
 
+  const groupedAlertes = useMemo(() => buildGroupedAlertes(filteredAlertes), [filteredAlertes])
   const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds])
   const filteredIds = useMemo(() => filteredAlertes.map((alerte) => alerte.id), [filteredAlertes])
 
@@ -116,6 +210,18 @@ export default function AlertesPage() {
     setSelectedIds((prev) => (
       prev.includes(id) ? prev.filter((currentId) => currentId !== id) : [...prev, id]
     ))
+  }
+
+  function toggleSelectAlerteGroup(ids: number[]): void {
+    setSelectedIds((prev) => {
+      const next = new Set(prev)
+      const allSelected = ids.every((id) => next.has(id))
+      for (const id of ids) {
+        if (allSelected) next.delete(id)
+        else next.add(id)
+      }
+      return Array.from(next)
+    })
   }
 
   function toggleSelectAllVisible(): void {
@@ -269,7 +375,7 @@ export default function AlertesPage() {
         <section className="alerts-page__results">
           <div className="alerts-page__results-head">
             <h2>Resultats</h2>
-            <span>{filteredAlertes.length}</span>
+            <span>{filteredAlertes.length} / {groupedAlertes.length} site{groupedAlertes.length > 1 ? 's' : ''}</span>
           </div>
 
           <div className="alerts-page__selection-bar">
@@ -287,14 +393,16 @@ export default function AlertesPage() {
               {selectedIds.length} selectionnee(s)
             </span>
             <label className="alerts-page__bulk-status">
-              <input
-                className="alerts-checkbox"
-                type="checkbox"
-                checked={bulkActiveTarget}
-                onChange={(e) => setBulkActiveTarget(e.target.checked)}
+              <span>Mettre en</span>
+              <select
+                value={bulkActiveTarget ? 'active' : 'inactive'}
+                onChange={(e) => setBulkActiveTarget(e.target.value === 'active')}
                 disabled={deleting || updatingActive}
-              />
-              <span>Mettre en {bulkActiveTarget ? 'active' : 'desactivee'}</span>
+                aria-label="Choisir le statut a appliquer aux alertes selectionnees"
+              >
+                <option value="active">Active</option>
+                <option value="inactive">Desactivee</option>
+              </select>
             </label>
             <button
               type="button"
@@ -304,14 +412,16 @@ export default function AlertesPage() {
             >
               {updatingActive ? 'Mise a jour...' : 'Appliquer statut'}
             </button>
-            <button
-              type="button"
-              className="alerts-page__bulk-delete"
-              onClick={handleDeleteSelected}
-              disabled={deleting || updatingActive || selectedIds.length === 0}
-            >
-              {deleting ? 'Suppression...' : 'Supprimer la selection'}
-            </button>
+            {userIsAdmin && (
+              <button
+                type="button"
+                className="alerts-page__bulk-delete"
+                onClick={handleDeleteSelected}
+                disabled={deleting || updatingActive || selectedIds.length === 0}
+              >
+                {deleting ? 'Suppression...' : 'Supprimer la selection'}
+              </button>
+            )}
           </div>
 
           {loading ? (
@@ -320,66 +430,86 @@ export default function AlertesPage() {
             <p className="alerts-page__empty">Aucune alerte pour les filtres selectionnes.</p>
           ) : (
             <ul className="alerts-list">
-              {filteredAlertes.map((alerte) => {
-                const type = getAlerteType(alerte)
-                const siteName = alerte.imprimante?.site?.nom ?? alerte.site ?? 'Site inconnu'
-                const siteId = alerte.imprimante?.site?.id
-                const cardContent = (
-                  <>
-                    <div className="alerts-item__top">
-                      <span className={'alerts-item__type alerts-item__type--' + type.toLowerCase()}>
-                        {ALERTE_TYPE_LABELS[type]}
-                      </span>
-                      <span className={'alerts-item__status ' + (isAlerteActive(alerte) ? 'is-active' : 'is-inactive')}>
-                        {isAlerteActive(alerte) ? 'Active' : 'Desactivee'}
-                      </span>
-                      <span className="alerts-item__source">
-                        Source: {alerte.sourceLabel ?? alerte.source ?? 'Mail'}
-                      </span>
+              {groupedAlertes.map((siteGroup) => (
+                <li key={siteGroup.key} className="alerts-site-group">
+                  <div className="alerts-site-group__head">
+                    <div>
+                      {siteGroup.siteId != null ? (
+                        <Link to={`/sites/${siteGroup.siteId}`} className="alerts-site-group__title">
+                          {siteGroup.siteName}
+                        </Link>
+                      ) : (
+                        <span className="alerts-site-group__title">{siteGroup.siteName}</span>
+                      )}
+                      <p>
+                        {siteGroup.alertCount} alerte{siteGroup.alertCount > 1 ? 's' : ''}
+                        {' - '}
+                        {siteGroup.activeCount} active{siteGroup.activeCount > 1 ? 's' : ''}
+                      </p>
                     </div>
+                    <span>{formatDate(siteGroup.groups[0]?.latest.recuLe ?? siteGroup.groups[0]?.latest.createdAt)}</span>
+                  </div>
 
-                    <h3>{siteName}</h3>
-                    <p className="alerts-item__meta">
-                      Serie {alerte.numeroSerie} - {alerte.modeleImprimante || 'Modele inconnu'}
-                    </p>
-                    <p className="alerts-item__motif">{alerte.motifAlerte}</p>
-                    <p className="alerts-item__detail">
-                      Piece: {alerte.piece || '-'}
-                      {alerte.niveauPourcent != null ? ` - Niveau: ${alerte.niveauPourcent}%` : ''}
-                    </p>
-                    <p className="alerts-item__date">Recu: {formatDate(alerte.recuLe ?? alerte.createdAt)}</p>
-                  </>
-                )
+                  <ul className="alerts-site-group__items">
+                    {siteGroup.groups.map((group) => {
+                      const alerte = group.latest
+                      const ids = group.alertes.map((item) => item.id)
+                      const allGroupSelected = ids.length > 0 && ids.every((id) => selectedIdsSet.has(id))
 
-                return (
-                  <li key={alerte.id} className={'alerts-item' + (isAlerteActive(alerte) ? '' : ' alerts-item--inactive')}>
-                    <div className="alerts-item__select-wrap">
-                      <input
-                        className="alerts-item__select alerts-checkbox"
-                        type="checkbox"
-                        checked={selectedIdsSet.has(alerte.id)}
-                        onChange={() => toggleSelectAlerte(alerte.id)}
-                        disabled={deleting || updatingActive}
-                        aria-label={`Selectionner l'alerte ${alerte.id}`}
-                      />
-                    </div>
+                      return (
+                        <li
+                          key={group.key}
+                          className={'alerts-item' + (isAlerteActive(alerte) ? '' : ' alerts-item--inactive')}
+                        >
+                          <div className="alerts-item__select-wrap">
+                            <input
+                              className="alerts-item__select alerts-checkbox"
+                              type="checkbox"
+                              checked={allGroupSelected}
+                              onChange={() => {
+                                if (ids.length === 1) toggleSelectAlerte(ids[0])
+                                else toggleSelectAlerteGroup(ids)
+                              }}
+                              disabled={deleting || updatingActive}
+                              aria-label={`Selectionner le groupe d'alertes ${alerte.id}`}
+                            />
+                          </div>
 
-                    {siteId != null ? (
-                      <Link
-                        to={`/sites/${siteId}`}
-                        className="alerts-item__card-link"
-                        aria-label={`Voir le detail du site ${siteName}`}
-                      >
-                        {cardContent}
-                      </Link>
-                    ) : (
-                      <div className="alerts-item__card alerts-item__card--disabled">
-                        {cardContent}
-                      </div>
-                    )}
-                  </li>
-                )
-              })}
+                          <div className="alerts-item__card">
+                            <div className="alerts-item__top">
+                              <span className={'alerts-item__type alerts-item__type--' + group.type.toLowerCase()}>
+                                {ALERTE_TYPE_LABELS[group.type]}
+                              </span>
+                              <span className={'alerts-item__status ' + (isAlerteActive(alerte) ? 'is-active' : 'is-inactive')}>
+                                {isAlerteActive(alerte) ? 'Active' : 'Desactivee'}
+                              </span>
+                              {group.alertes.length > 1 && (
+                                <span className="alerts-item__duplicates">x{group.alertes.length}</span>
+                              )}
+                              <span className="alerts-item__source">
+                                Source: {alerte.sourceLabel ?? alerte.source ?? 'Mail'}
+                              </span>
+                            </div>
+
+                            <h3>
+                              Serie {alerte.numeroSerie}
+                              {alerte.modeleImprimante ? ` - ${alerte.modeleImprimante}` : ''}
+                            </h3>
+                            <p className="alerts-item__motif">{alerte.motifAlerte}</p>
+                            <p className="alerts-item__detail">
+                              Piece: {alerte.piece || '-'}
+                              {alerte.niveauPourcent != null ? ` - Niveau: ${alerte.niveauPourcent}%` : ''}
+                            </p>
+                            <p className="alerts-item__date">
+                              Recu: {formatDate(alerte.recuLe ?? alerte.createdAt)}
+                            </p>
+                          </div>
+                        </li>
+                      )
+                    })}
+                  </ul>
+                </li>
+              ))}
             </ul>
           )}
         </section>

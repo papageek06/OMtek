@@ -627,7 +627,7 @@ class SiteController extends AbstractController
             ->andWhere('alerte.ignorer = false')
             ->andWhere(
                 '(
-                    (LOWER(alerte.motifAlerte) LIKE :tonerKeyword AND alerte.niveauPourcent IS NOT NULL AND alerte.niveauPourcent < :tonerThreshold)
+                    (LOWER(alerte.motifAlerte) LIKE :tonerKeyword AND alerte.niveauPourcent IS NOT NULL AND alerte.niveauPourcent <= :tonerThreshold)
                     OR (
                         (LOWER(alerte.motifAlerte) LIKE :wasteKeywordA AND LOWER(alerte.motifAlerte) LIKE :wasteKeywordB)
                         OR (LOWER(alerte.piece) LIKE :wasteKeywordA AND LOWER(alerte.piece) LIKE :wasteKeywordB)
