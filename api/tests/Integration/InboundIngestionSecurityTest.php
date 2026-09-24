@@ -6,12 +6,14 @@ namespace App\Tests\Integration;
 
 use App\Entity\Alerte;
 use App\Entity\AlertRuleConfig;
+use App\Entity\CsvImportAnomaly;
 use App\Entity\Enum\CategoriePiece;
 use App\Entity\Enum\NaturePiece;
 use App\Entity\Enum\StockScope;
 use App\Entity\Enum\VariantPiece;
 use App\Entity\Imprimante;
 use App\Entity\Modele;
+use App\Entity\PrinterAssignment;
 use App\Entity\Piece;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
@@ -157,6 +159,84 @@ final class InboundIngestionSecurityTest extends WebTestCase
         );
 
         self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+    }
+
+    public function testCsvBackupImportKeepsCurrentSiteWhenSameSerialAppearsOnMultipleSites(): void
+    {
+        $sievi = (new Site())->setNom('SIEVI');
+        $teleconcept = (new Site())->setNom('TELECONCEPT TSM');
+        $imprimante = (new Imprimante())
+            ->setSite($sievi)
+            ->setNumeroSerie('C718J401401')
+            ->setModeleNom('IM C3010')
+            ->setConstructeur('RICOH')
+            ->setIpAddress('172.20.7.110')
+            ->setGerer(true);
+
+        $this->em->persist($sievi);
+        $this->em->persist($teleconcept);
+        $this->em->persist($imprimante);
+        $this->em->flush();
+
+        $this->client->request(
+            'POST',
+            '/api/csv-backup',
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN,
+            ],
+            json_encode([
+                'rows' => [
+                    [
+                        'CUSTOMER' => 'SIEVI',
+                        'SERIAL_NUMBER' => 'C718J401401',
+                        'MODEL' => 'IM C3010',
+                        'BRAND' => 'RICOH',
+                        'IPADDRESS' => '172.20.7.110',
+                        'MANAGED' => 'true',
+                        'READING_DATE' => '10/08/2026 16:41',
+                        'LAST_SCAN_DATE' => '10/08/2026 16:41',
+                    ],
+                    [
+                        'CUSTOMER' => 'TELECONCEPT TSM',
+                        'SERIAL_NUMBER' => 'C718J401401',
+                        'MODEL' => 'MP C3004',
+                        'BRAND' => 'RICOH',
+                        'IPADDRESS' => '10.1.1.102',
+                        'MANAGED' => 'true',
+                        'READING_DATE' => '10/08/2026 23:44',
+                        'LAST_SCAN_DATE' => '10/08/2026 23:44',
+                    ],
+                ],
+            ], JSON_THROW_ON_ERROR)
+        );
+
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, $body['rapportsCreated'] ?? null);
+        self::assertSame(1, $body['csvImportAnomalies'] ?? null);
+        self::assertSame(1, $body['skippedSerialConflicts'] ?? null);
+
+        $this->em->clear();
+
+        $storedPrinter = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => 'C718J401401']);
+        self::assertInstanceOf(Imprimante::class, $storedPrinter);
+        self::assertSame('SIEVI', $storedPrinter->getSite()?->getNom());
+        self::assertSame('172.20.7.110', $storedPrinter->getIpAddress());
+
+        $reports = $this->em->getRepository(RapportImprimante::class)->findBy(['imprimante' => $storedPrinter]);
+        self::assertCount(1, $reports);
+        self::assertSame('SIEVI', $reports[0]->getSiteSnapshot()?->getNom());
+
+        $assignments = $this->em->getRepository(PrinterAssignment::class)->findBy(['imprimante' => $storedPrinter]);
+        self::assertCount(1, $assignments);
+        self::assertSame('SIEVI', $assignments[0]->getSite()?->getNom());
+
+        $anomalies = $this->em->getRepository(CsvImportAnomaly::class)->findBy(['serialNumber' => 'C718J401401']);
+        self::assertCount(1, $anomalies);
+        self::assertSame('TELECONCEPT TSM', $anomalies[0]->getIncomingSiteName());
     }
 
     public function testAlertesCreateLinksAlertToExistingPrinter(): void

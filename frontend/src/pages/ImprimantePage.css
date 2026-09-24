@@ -66,10 +66,113 @@
   margin-bottom: 2rem;
 }
 
+.imprimante-section__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.imprimante-section__head h2 {
+  margin-bottom: 0;
+}
+
+.imprimante-section__head span {
+  color: #80848e;
+  font-size: 0.9rem;
+}
+
 .imprimante-section h2 {
   font-size: 1.2rem;
   margin: 0 0 1rem;
   color: #f2f3f5;
+}
+
+.imprimante-lifecycle {
+  padding-bottom: 1.25rem;
+  border-bottom: 1px solid #1e1f22;
+}
+
+.imprimante-assignments {
+  list-style: none;
+  display: grid;
+  gap: 0.55rem;
+  margin: 0 0 1rem;
+  padding: 0;
+}
+
+.imprimante-assignments li {
+  display: grid;
+  gap: 0.25rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  background: #2b2d31;
+}
+
+.imprimante-assignments div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.imprimante-assignments strong {
+  color: #f2f3f5;
+}
+
+.imprimante-assignments span {
+  color: #00a8fc;
+  font-size: 0.78rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.imprimante-assignments p,
+.imprimante-assignments em {
+  margin: 0;
+  color: #b5bac1;
+  font-size: 0.86rem;
+}
+
+.imprimante-reinstall-form {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) minmax(180px, 1fr) auto;
+  gap: 0.55rem;
+  align-items: center;
+}
+
+.imprimante-reinstall-form select,
+.imprimante-reinstall-form input {
+  min-width: 0;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  background: #1e1f22;
+  color: #f2f3f5;
+  padding: 0.55rem 0.65rem;
+}
+
+.imprimante-reinstall-form button {
+  border: 1px solid #00a8fc;
+  border-radius: 8px;
+  background: #00a8fc;
+  color: #fff;
+  padding: 0.55rem 0.8rem;
+  cursor: pointer;
+  font-weight: 700;
+}
+
+.imprimante-reinstall-form button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+.imprimante-reinstall-form p {
+  grid-column: 1 / -1;
+  margin: 0.2rem 0 0;
+  color: #b5bac1;
+  font-size: 0.9rem;
 }
 
 .imprimante-analytics-tabs {
@@ -344,6 +447,16 @@
 }
 
 @media (max-width: 560px) {
+  .imprimante-section__head,
+  .imprimante-assignments div {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .imprimante-reinstall-form {
+    grid-template-columns: 1fr;
+  }
+
   .alerte-item {
     grid-template-columns: 1fr;
     gap: 0.45rem;

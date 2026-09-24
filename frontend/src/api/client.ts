@@ -495,6 +495,8 @@ export interface Imprimante {
 export interface RapportImprimante {
   id: number
   lastScanDate: string | null
+  siteSnapshot?: { id: number; nom: string } | null
+  assignmentId?: number | null
   monoLifeCount: string | null
   colorLifeCount: string | null
   blackLevel: string | null
@@ -503,6 +505,18 @@ export interface RapportImprimante {
   yellowLevel: string | null
   wasteLevel: string | null
   createdAt: string
+}
+
+export interface PrinterAssignment {
+  id: number
+  site: { id: number; nom: string } | null
+  status: string
+  startedAt: string
+  endedAt: string | null
+  source: string
+  notes: string | null
+  createdAt: string
+  updatedAt: string
 }
 
 export interface TonerReplacementEvent {
@@ -2093,6 +2107,28 @@ export async function updateImprimante(
   if (!res.ok) {
     const data = await res.json().catch(() => ({}))
     throw new Error((data?.error as string) || 'Erreur mise a jour imprimante')
+  }
+  return res.json()
+}
+
+export async function fetchPrinterAssignments(imprimanteId: number): Promise<PrinterAssignment[]> {
+  const res = await apiFetch(`${API_BASE}/imprimantes/${imprimanteId}/assignments`)
+  if (!res.ok) throw new Error('Erreur chargement historique affectations')
+  return res.json()
+}
+
+export async function reinstallImprimante(
+  id: number,
+  payload: { siteId: number; effectiveAt?: string | null; notes?: string | null }
+): Promise<{ imprimante: Imprimante; assignment: PrinterAssignment }> {
+  const res = await apiFetch(`${API_BASE}/imprimantes/${id}/reinstall`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error((data?.error as string) || 'Erreur reinstallation imprimante')
   }
   return res.json()
 }

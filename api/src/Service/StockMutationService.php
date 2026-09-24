@@ -17,6 +17,9 @@ use Doctrine\ORM\EntityManagerInterface;
 
 final class StockMutationService
 {
+    /** @var array<string, Stock> */
+    private array $stocksByKey = [];
+
     public function __construct(
         private readonly EntityManagerInterface $em,
     ) {
@@ -101,6 +104,11 @@ final class StockMutationService
 
     private function findOrCreateStock(Piece $piece, ?Site $site, StockScope $scope): Stock
     {
+        $cacheKey = $this->buildStockKey($piece, $site, $scope);
+        if (isset($this->stocksByKey[$cacheKey])) {
+            return $this->stocksByKey[$cacheKey];
+        }
+
         $stock = $this->em->getRepository(Stock::class)->findOneBy([
             'piece' => $piece,
             'site' => $site,
@@ -108,6 +116,7 @@ final class StockMutationService
         ]);
 
         if ($stock) {
+            $this->stocksByKey[$cacheKey] = $stock;
             return $stock;
         }
 
@@ -116,8 +125,17 @@ final class StockMutationService
         $stock->setSite($site);
         $stock->setScope($scope);
         $this->em->persist($stock);
+        $this->stocksByKey[$cacheKey] = $stock;
 
         return $stock;
+    }
+
+    private function buildStockKey(Piece $piece, ?Site $site, StockScope $scope): string
+    {
+        $pieceKey = $piece->getId() !== null ? (string) $piece->getId() : spl_object_hash($piece);
+        $siteKey = $site?->getId() !== null ? (string) $site->getId() : ($site instanceof Site ? spl_object_hash($site) : 'global');
+
+        return $pieceKey . '|' . $siteKey . '|' . $scope->value;
     }
 
     private function createMovement(

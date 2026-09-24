@@ -1,19 +1,26 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState, type FormEvent } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   fetchImprimante,
+  fetchPrinterAssignments,
   fetchRapports,
   fetchAlertes,
+  fetchSites,
   fetchTonerReplacements,
+  reinstallImprimante,
   updateAlerteActive,
   UnauthorizedError,
   type Imprimante,
+  type PrinterAssignment,
   type RapportImprimante,
   type Alerte,
+  type Site,
   type TonerReplacementEvent,
 } from '../api/client'
+import { useAuth } from '../context/AuthContext'
 import { isAlerteActive } from '../domain/alertes/rules'
 import { colorLabel, parseLevelPercent as parseWastePercent, sortRapportsByDateDesc, sourceLabel } from '../domain/imprimantes/rules'
+import { isAdmin as isUserAdmin } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import './ImprimantePage.css'
 
@@ -26,8 +33,18 @@ const RAPPORTS_PER_PAGE = 10
 type PrinterAnalyticsTab = 'CYCLES' | 'YIELD' | 'QUALITY'
 
 export default function ImprimantePage() {
+  const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
   const [imprimante, setImprimante] = useState<Imprimante | null>(null)
+  const [sites, setSites] = useState<Site[]>([])
+  const [assignments, setAssignments] = useState<PrinterAssignment[]>([])
+  const [assignmentsLoading, setAssignmentsLoading] = useState(false)
+  const [assignmentsError, setAssignmentsError] = useState<string | null>(null)
+  const [reinstallSiteId, setReinstallSiteId] = useState('')
+  const [reinstallEffectiveAt, setReinstallEffectiveAt] = useState('')
+  const [reinstallNotes, setReinstallNotes] = useState('')
+  const [reinstallBusy, setReinstallBusy] = useState(false)
+  const [reinstallMessage, setReinstallMessage] = useState<string | null>(null)
   const [rapports, setRapports] = useState<RapportImprimante[]>([])
   const [rapportsPage, setRapportsPage] = useState(1)
   const [rapportsTotal, setRapportsTotal] = useState(0)
@@ -46,6 +63,22 @@ export default function ImprimantePage() {
   const [error, setError] = useState<string | null>(null)
 
   const imprimanteId = id ? parseInt(id, 10) : NaN
+  const isAdmin = isUserAdmin(user)
+
+  const loadAssignments = useCallback(async () => {
+    if (!Number.isFinite(imprimanteId)) return
+    setAssignmentsLoading(true)
+    setAssignmentsError(null)
+    try {
+      const data = await fetchPrinterAssignments(imprimanteId)
+      setAssignments(Array.isArray(data) ? data : [])
+    } catch (e) {
+      setAssignments([])
+      setAssignmentsError(e instanceof Error ? e.message : 'Erreur chargement historique affectations')
+    } finally {
+      setAssignmentsLoading(false)
+    }
+  }, [imprimanteId])
 
   useEffect(() => {
     if (!Number.isFinite(imprimanteId)) {
@@ -85,6 +118,30 @@ export default function ImprimantePage() {
       cancelled = true
     }
   }, [imprimanteId])
+
+  useEffect(() => {
+    void loadAssignments()
+  }, [loadAssignments])
+
+  useEffect(() => {
+    if (!isAdmin) {
+      setSites([])
+      return
+    }
+
+    let cancelled = false
+    fetchSites()
+      .then((items) => {
+        if (!cancelled) setSites(Array.isArray(items) ? items : [])
+      })
+      .catch(() => {
+        if (!cancelled) setSites([])
+      })
+
+    return () => {
+      cancelled = true
+    }
+  }, [isAdmin])
 
   useEffect(() => {
     if (!imprimante?.numeroSerie) return
@@ -250,6 +307,37 @@ export default function ImprimantePage() {
     }
   }
 
+  const handleReinstall = async (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!imprimante) return
+    const siteId = parseInt(reinstallSiteId, 10)
+    if (!Number.isFinite(siteId)) {
+      setReinstallMessage('Choisir un site cible.')
+      return
+    }
+    if (!window.confirm(`Reinstaller ${imprimante.numeroSerie} sur le site selectionne ?`)) return
+
+    setReinstallBusy(true)
+    setReinstallMessage(null)
+    try {
+      const result = await reinstallImprimante(imprimante.id, {
+        siteId,
+        effectiveAt: reinstallEffectiveAt ? new Date(reinstallEffectiveAt).toISOString() : null,
+        notes: reinstallNotes.trim() || null,
+      })
+      setImprimante(result.imprimante)
+      setReinstallSiteId('')
+      setReinstallEffectiveAt('')
+      setReinstallNotes('')
+      setReinstallMessage('Reinstallation tracee.')
+      await loadAssignments()
+    } catch (e) {
+      setReinstallMessage(e instanceof Error ? e.message : 'Erreur reinstallation imprimante')
+    } finally {
+      setReinstallBusy(false)
+    }
+  }
+
   if (loading) {
     return (
       <div className="imprimante-page">
@@ -272,6 +360,9 @@ export default function ImprimantePage() {
   }
 
   const lastScan = imprimante.lastReport?.lastScanDate ?? imprimante.lastReport?.dateScan ?? null
+  const availableSites = sites
+    .filter((site) => site.id !== imprimante.site?.id)
+    .sort((a, b) => a.nom.localeCompare(b.nom))
 
   return (
     <div className="imprimante-page">
@@ -290,6 +381,68 @@ export default function ImprimantePage() {
         )}
         <p className="imprimante-header__last">Dernier scan : {formatDate(lastScan)}</p>
       </header>
+
+      <section className="imprimante-section imprimante-lifecycle">
+        <div className="imprimante-section__head">
+          <h2>Cycle de vie</h2>
+          {assignmentsLoading && <span>Chargement...</span>}
+        </div>
+        {assignmentsError && <p className="imprimante-alertes-error">{assignmentsError}</p>}
+        {!assignmentsError && assignments.length === 0 ? (
+          <p className="imprimante-empty">Aucune affectation tracee.</p>
+        ) : (
+          <ol className="imprimante-assignments">
+            {assignments.map((assignment) => (
+              <li key={assignment.id}>
+                <div>
+                  <strong>{assignment.site?.nom ?? 'Atelier / site non renseigne'}</strong>
+                  <span>{assignment.status}</span>
+                </div>
+                <p>
+                  {formatDate(assignment.startedAt)}
+                  {assignment.endedAt ? ` - ${formatDate(assignment.endedAt)}` : ' - en cours'}
+                </p>
+                {assignment.notes && <em>{assignment.notes}</em>}
+              </li>
+            ))}
+          </ol>
+        )}
+
+        {isAdmin && (
+          <form className="imprimante-reinstall-form" onSubmit={(event) => void handleReinstall(event)}>
+            <select
+              value={reinstallSiteId}
+              onChange={(event) => setReinstallSiteId(event.target.value)}
+              disabled={reinstallBusy}
+              aria-label="Site cible"
+            >
+              <option value="">Site cible</option>
+              {availableSites.map((site) => (
+                <option key={site.id} value={site.id}>{site.nom}</option>
+              ))}
+            </select>
+            <input
+              type="datetime-local"
+              value={reinstallEffectiveAt}
+              onChange={(event) => setReinstallEffectiveAt(event.target.value)}
+              disabled={reinstallBusy}
+              aria-label="Date effective"
+            />
+            <input
+              type="text"
+              value={reinstallNotes}
+              onChange={(event) => setReinstallNotes(event.target.value)}
+              disabled={reinstallBusy}
+              placeholder="Note atelier"
+              aria-label="Note atelier"
+            />
+            <button type="submit" disabled={reinstallBusy || !reinstallSiteId}>
+              {reinstallBusy ? '...' : 'Reinstaller'}
+            </button>
+            {reinstallMessage && <p>{reinstallMessage}</p>}
+          </form>
+        )}
+      </section>
 
       <section className="imprimante-section">
         <h2>Analyses imprimante</h2>

@@ -5,8 +5,10 @@ declare(strict_types=1);
 namespace App\Controller\Api;
 
 use App\Entity\Enum\ContractStatus;
+use App\Entity\Enum\PrinterAssignmentStatus;
 use App\Entity\Imprimante;
 use App\Entity\LigneContrat;
+use App\Entity\PrinterAssignment;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Entity\TonerReplacementEvent;
@@ -166,6 +168,106 @@ class ImprimanteController extends AbstractController
         }, $events);
 
         return new JsonResponse($data, Response::HTTP_OK);
+    }
+
+    /**
+     * GET /api/imprimantes/{id}/assignments : historique des affectations site de la machine.
+     */
+    #[Route('/{id}/assignments', name: 'assignments', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function listAssignments(int $id): JsonResponse|Response
+    {
+        $imprimante = $this->em->getRepository(Imprimante::class)->find($id);
+        if (!$imprimante) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+        if (!$this->canAccessImprimante($imprimante)) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+
+        /** @var list<PrinterAssignment> $assignments */
+        $assignments = $this->em->getRepository(PrinterAssignment::class)
+            ->createQueryBuilder('assignment')
+            ->leftJoin('assignment.site', 'site')
+            ->andWhere('assignment.imprimante = :imprimante')
+            ->setParameter('imprimante', $imprimante)
+            ->orderBy('assignment.startedAt', 'DESC')
+            ->addOrderBy('assignment.id', 'DESC')
+            ->getQuery()
+            ->getResult();
+
+        return new JsonResponse(array_map([$this, 'assignmentToArray'], $assignments), Response::HTTP_OK);
+    }
+
+    /**
+     * POST /api/imprimantes/{id}/reinstall : rattache une machine reconditionnee a un nouveau site.
+     * Body: { "siteId": 226, "effectiveAt": "2026-08-10T16:41:00+02:00", "notes": "..." }
+     */
+    #[Route('/{id}/reinstall', name: 'reinstall', requirements: ['id' => '\d+'], methods: ['POST'])]
+    public function reinstall(int $id, Request $request): JsonResponse|Response
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee aux administrateurs'], Response::HTTP_FORBIDDEN);
+        }
+
+        $imprimante = $this->em->getRepository(Imprimante::class)->find($id);
+        if (!$imprimante) {
+            return new JsonResponse(['error' => 'Imprimante non trouvee'], Response::HTTP_NOT_FOUND);
+        }
+
+        $body = json_decode($request->getContent(), true);
+        if (!\is_array($body)) {
+            return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $siteId = $body['siteId'] ?? null;
+        if ($siteId === null || $siteId === '') {
+            return new JsonResponse(['error' => 'siteId requis'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $site = $this->em->getRepository(Site::class)->find((int) $siteId);
+        if (!$site instanceof Site) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+
+        $effectiveAt = $this->parseDateTime($body['effectiveAt'] ?? null) ?? new \DateTimeImmutable();
+        $notes = array_key_exists('notes', $body) ? $this->nullIfEmpty(trim((string) $body['notes'])) : null;
+        $currentSite = $imprimante->getSite();
+        $now = new \DateTimeImmutable();
+
+        $active = $this->findActiveAssignment($imprimante);
+        if ($active instanceof PrinterAssignment) {
+            $active
+                ->setEndedAt($effectiveAt)
+                ->setStatus(PrinterAssignmentStatus::RETOUR_ATELIER)
+                ->setUpdatedAt($now);
+        }
+
+        $assignmentNotes = $notes;
+        if ($currentSite instanceof Site) {
+            $prefix = sprintf('Reinstallation depuis %s.', $currentSite->getNom());
+            $assignmentNotes = $assignmentNotes ? $prefix . ' ' . $assignmentNotes : $prefix;
+        }
+
+        $assignment = (new PrinterAssignment())
+            ->setImprimante($imprimante)
+            ->setSite($site)
+            ->setStatus(PrinterAssignmentStatus::REINSTALLEE)
+            ->setStartedAt($effectiveAt)
+            ->setSource('MANUAL_REINSTALL')
+            ->setNotes($assignmentNotes);
+        $this->em->persist($assignment);
+
+        $imprimante
+            ->setSite($site)
+            ->setGerer(true)
+            ->setUpdatedAt($now);
+
+        $this->em->flush();
+
+        return new JsonResponse([
+            'imprimante' => $this->imprimanteToArray($imprimante),
+            'assignment' => $this->assignmentToArray($assignment),
+        ], Response::HTTP_OK);
     }
 
     /**
@@ -333,9 +435,12 @@ class ImprimanteController extends AbstractController
 
     private function rapportToArray(RapportImprimante $r): array
     {
+        $siteSnapshot = $r->getSiteSnapshot();
         return [
             'id' => $r->getId(),
             'lastScanDate' => $r->getLastScanDate()?->format(\DateTimeInterface::ATOM),
+            'siteSnapshot' => $siteSnapshot ? ['id' => $siteSnapshot->getId(), 'nom' => $siteSnapshot->getNom()] : null,
+            'assignmentId' => $r->getAssignment()?->getId(),
             'monoLifeCount' => $r->getMonoLifeCount(),
             'colorLifeCount' => $r->getColorLifeCount(),
             'blackLevel' => $r->getBlackLevel(),
@@ -344,6 +449,22 @@ class ImprimanteController extends AbstractController
             'yellowLevel' => $r->getYellowLevel(),
             'wasteLevel' => $r->getWasteLevel(),
             'createdAt' => $r->getCreatedAt()->format(\DateTimeInterface::ATOM),
+        ];
+    }
+
+    private function assignmentToArray(PrinterAssignment $assignment): array
+    {
+        $site = $assignment->getSite();
+        return [
+            'id' => $assignment->getId(),
+            'site' => $site ? ['id' => $site->getId(), 'nom' => $site->getNom()] : null,
+            'status' => $assignment->getStatus()->value,
+            'startedAt' => $assignment->getStartedAt()->format(\DateTimeInterface::ATOM),
+            'endedAt' => $assignment->getEndedAt()?->format(\DateTimeInterface::ATOM),
+            'source' => $assignment->getSource(),
+            'notes' => $assignment->getNotes(),
+            'createdAt' => $assignment->getCreatedAt()->format(\DateTimeInterface::ATOM),
+            'updatedAt' => $assignment->getUpdatedAt()->format(\DateTimeInterface::ATOM),
         ];
     }
 
@@ -358,6 +479,29 @@ class ImprimanteController extends AbstractController
             return true;
         }
         return false;
+    }
+
+    private function parseDateTime(mixed $value): ?\DateTimeImmutable
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        try {
+            return new \DateTimeImmutable((string) $value);
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    private function findActiveAssignment(Imprimante $imprimante): ?PrinterAssignment
+    {
+        $assignment = $this->em->getRepository(PrinterAssignment::class)->findOneBy([
+            'imprimante' => $imprimante,
+            'endedAt' => null,
+        ]);
+
+        return $assignment instanceof PrinterAssignment ? $assignment : null;
     }
 
     private function hasActiveContractLink(Imprimante $imprimante): bool
@@ -397,4 +541,3 @@ class ImprimanteController extends AbstractController
         return true;
     }
 }
-

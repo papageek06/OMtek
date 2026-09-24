@@ -21,6 +21,14 @@ class RapportImprimante
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
     private ?Imprimante $imprimante = null;
 
+    #[ORM\ManyToOne(targetEntity: Site::class)]
+    #[ORM\JoinColumn(name: 'site_id_snapshot', nullable: true, onDelete: 'SET NULL')]
+    private ?Site $siteSnapshot = null;
+
+    #[ORM\ManyToOne(targetEntity: PrinterAssignment::class)]
+    #[ORM\JoinColumn(name: 'assignment_id', nullable: true, onDelete: 'SET NULL')]
+    private ?PrinterAssignment $assignment = null;
+
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $dateScan = null;
 
@@ -123,6 +131,28 @@ class RapportImprimante
     public function setImprimante(?Imprimante $imprimante): static
     {
         $this->imprimante = $imprimante;
+        return $this;
+    }
+
+    public function getSiteSnapshot(): ?Site
+    {
+        return $this->siteSnapshot;
+    }
+
+    public function setSiteSnapshot(?Site $siteSnapshot): static
+    {
+        $this->siteSnapshot = $siteSnapshot;
+        return $this;
+    }
+
+    public function getAssignment(): ?PrinterAssignment
+    {
+        return $this->assignment;
+    }
+
+    public function setAssignment(?PrinterAssignment $assignment): static
+    {
+        $this->assignment = $assignment;
         return $this;
     }
 
