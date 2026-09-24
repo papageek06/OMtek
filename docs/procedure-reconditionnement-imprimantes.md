@@ -195,6 +195,38 @@ Validation de la suite logique:
 
 Attention: les anomalies creees avant correction/reinstallation restent ouvertes. Une action admin de resolution/ignorance des anomalies sera utile avant production pour distinguer les anciens tests des vrais conflits courants.
 
+## Incident prod: chargement des imprimantes
+
+Constat du 24/09/2026:
+
+- La page `/sites` charge les sites, mais l'appel `GET /api/imprimantes` retourne une erreur HTTP 500.
+- La migration metier est presente en prod: `printer_assignment`, `csv_import_anomaly`, `site_id_snapshot` et `assignment_id` existent.
+- Les volumes prod observes sont beaucoup plus hauts que les tests rapides: environ 548 imprimantes et 109108 rapports.
+
+Cause probable:
+
+- L'endpoint `GET /api/imprimantes` recuperait tous les rapports des imprimantes puis gardait seulement le dernier rapport par machine en PHP.
+- Avec le volume prod, cette lecture pouvait saturer le temps ou la memoire PHP et provoquer le 500 avant meme l'affichage de la liste.
+
+Correctif local applique:
+
+- La recherche du dernier rapport est faite en deux temps:
+  - calcul SQL de la derniere date de scan par imprimante;
+  - recuperation uniquement des rapports candidats a cette date.
+- Le comportement metier attendu reste identique: une seule synthese de dernier scan par imprimante dans la liste.
+
+Controle apres deploiement prod:
+
+```bash
+cd ~/OMtek
+git pull --ff-only origin main
+cd api
+APP_ENV=prod APP_DEBUG=0 php bin/console cache:clear --env=prod --no-debug
+APP_ENV=prod APP_DEBUG=0 php bin/console cache:warmup --env=prod --no-debug
+```
+
+Puis verifier dans le navigateur que `GET /api/imprimantes` retourne 200 et que la page `/sites` n'affiche plus `Erreur chargement des imprimantes`.
+
 ## Decisions encore a valider avant prod
 
 - Faut-il creer une intervention automatiquement lors d'une reinstallation?

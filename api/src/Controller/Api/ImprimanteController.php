@@ -409,14 +409,56 @@ class ImprimanteController extends AbstractController
             return [];
         }
 
-        /** @var list<RapportImprimante> $rapports */
-        $rapports = $this->em->getRepository(RapportImprimante::class)
+        $effectiveScanDate = 'COALESCE(rapport.lastScanDate, rapport.dateScan, rapport.createdAt)';
+
+        /** @var list<array{imprimanteId: int|string, latestScanDate: string|\DateTimeInterface|null}> $latestRows */
+        $latestRows = $this->em->getRepository(RapportImprimante::class)
             ->createQueryBuilder('rapport')
-            ->addSelect('CASE WHEN rapport.lastScanDate IS NULL THEN rapport.dateScan ELSE rapport.lastScanDate END AS HIDDEN effectiveScanDate')
+            ->select('IDENTITY(rapport.imprimante) AS imprimanteId')
+            ->addSelect(sprintf('MAX(%s) AS latestScanDate', $effectiveScanDate))
             ->where('rapport.imprimante IN (:imprimanteIds)')
             ->setParameter('imprimanteIds', $imprimanteIds)
-            ->orderBy('effectiveScanDate', 'DESC')
-            ->addOrderBy('rapport.id', 'DESC')
+            ->groupBy('rapport.imprimante')
+            ->getQuery()
+            ->getArrayResult();
+
+        if ($latestRows === []) {
+            return [];
+        }
+
+        $qb = $this->em->getRepository(RapportImprimante::class)->createQueryBuilder('rapport');
+        $orExpressions = [];
+        foreach ($latestRows as $index => $row) {
+            if ($row['latestScanDate'] === null) {
+                continue;
+            }
+
+            $imprimanteParameter = sprintf('imprimante_%d', $index);
+            $dateParameter = sprintf('latestScanDate_%d', $index);
+            $orExpressions[] = sprintf(
+                '(IDENTITY(rapport.imprimante) = :%s AND %s = :%s)',
+                $imprimanteParameter,
+                $effectiveScanDate,
+                $dateParameter
+            );
+
+            $qb->setParameter($imprimanteParameter, (int) $row['imprimanteId']);
+            $qb->setParameter(
+                $dateParameter,
+                $row['latestScanDate'] instanceof \DateTimeInterface
+                    ? $row['latestScanDate']->format('Y-m-d H:i:s')
+                    : (string) $row['latestScanDate']
+            );
+        }
+
+        if ($orExpressions === []) {
+            return [];
+        }
+
+        /** @var list<RapportImprimante> $rapports */
+        $rapports = $qb
+            ->where(implode(' OR ', $orExpressions))
+            ->orderBy('rapport.id', 'DESC')
             ->getQuery()
             ->getResult();
 
