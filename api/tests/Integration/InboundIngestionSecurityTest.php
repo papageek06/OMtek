@@ -161,7 +161,7 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
     }
 
-    public function testCsvBackupImportKeepsCurrentSiteWhenSameSerialAppearsOnMultipleSites(): void
+    public function testCsvBackupImportKeepsCurrentSiteWhenSameSerialHasSameLastScanOnMultipleSites(): void
     {
         $sievi = (new Site())->setNom('SIEVI');
         $teleconcept = (new Site())->setNom('TELECONCEPT TSM');
@@ -206,8 +206,8 @@ final class InboundIngestionSecurityTest extends WebTestCase
                         'BRAND' => 'RICOH',
                         'IPADDRESS' => '10.1.1.102',
                         'MANAGED' => 'true',
-                        'READING_DATE' => '10/08/2026 23:44',
-                        'LAST_SCAN_DATE' => '10/08/2026 23:44',
+                        'READING_DATE' => '10/08/2026 16:41',
+                        'LAST_SCAN_DATE' => '10/08/2026 16:41',
                     ],
                 ],
             ], JSON_THROW_ON_ERROR)
@@ -237,6 +237,145 @@ final class InboundIngestionSecurityTest extends WebTestCase
         $anomalies = $this->em->getRepository(CsvImportAnomaly::class)->findBy(['serialNumber' => 'C718J401401']);
         self::assertCount(1, $anomalies);
         self::assertSame('TELECONCEPT TSM', $anomalies[0]->getIncomingSiteName());
+    }
+
+    public function testCsvBackupImportMovesPrinterToCustomerWithMostRecentLastScan(): void
+    {
+        $varlet = (new Site())->setNom('VARLET ROURET IMC4500 et CAP AIL MPC2003');
+        $this->em->persist($varlet);
+        $this->em->flush();
+
+        // Premier import: la machine est chez VARLET.
+        $this->postCsvBackup([$this->varletRow()]);
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+
+        // Import suivant: la meme machine remonte chez GLAESNER avec un dernier scan plus recent,
+        // et l'ancienne ligne VARLET est toujours presente dans le CSV.
+        $this->postCsvBackup([$this->glaesnerRow(), $this->varletRow()]);
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, $body['rapportsCreated'] ?? null);
+        self::assertSame(1, $body['printersMoved'] ?? null);
+        self::assertSame(1, $body['skippedOutdatedRows'] ?? null);
+
+        $this->em->clear();
+        $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '3129M530546']);
+        self::assertInstanceOf(Imprimante::class, $printer);
+        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $printer->getSite()?->getNom());
+        self::assertSame('10.179.206.21', $printer->getIpAddress());
+
+        $active = $this->em->getRepository(PrinterAssignment::class)->findOneBy(['imprimante' => $printer, 'endedAt' => null]);
+        self::assertInstanceOf(PrinterAssignment::class, $active);
+        self::assertSame('CSV_AUTO_MOVE', $active->getSource());
+        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $active->getSite()?->getNom());
+        self::assertCount(2, $this->em->getRepository(PrinterAssignment::class)->findBy(['imprimante' => $printer]));
+
+        $anomalies = $this->em->getRepository(CsvImportAnomaly::class)->findBy(['serialNumber' => '3129M530546']);
+        self::assertCount(1, $anomalies);
+        self::assertSame('SERIAL_SITE_AUTO_MOVED', $anomalies[0]->getType());
+
+        // Re-import du meme CSV: rien de neuf, aucune ligne perimee ne doit ramener la machine chez VARLET.
+        $this->postCsvBackup([$this->glaesnerRow(), $this->varletRow()]);
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(0, $body['rapportsCreated'] ?? null);
+        self::assertSame(2, $body['skippedOutdatedRows'] ?? null);
+
+        $this->em->clear();
+        $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '3129M530546']);
+        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $printer?->getSite()?->getNom());
+        self::assertCount(2, $this->em->getRepository(RapportImprimante::class)->findBy(['imprimante' => $printer]));
+    }
+
+    public function testCsvBackupImportIgnoresRowWhoseLastScanIsNotNewer(): void
+    {
+        $this->postCsvBackup([$this->glaesnerRow()]);
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+
+        // Seule la ligne VARLET (dernier scan plus ancien) arrive: elle est ignoree.
+        $this->postCsvBackup([$this->varletRow()]);
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(0, $body['rapportsCreated'] ?? null);
+        self::assertSame(1, $body['skippedOutdatedRows'] ?? null);
+        self::assertSame(0, $body['printersMoved'] ?? null);
+
+        $this->em->clear();
+        $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '3129M530546']);
+        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $printer?->getSite()?->getNom());
+        self::assertSame('10.179.206.21', $printer?->getIpAddress());
+    }
+
+    public function testCsvBackupImportDoesNotMovePrinterWhenCounterGoesBackwards(): void
+    {
+        $this->postCsvBackup([$this->glaesnerRow()]);
+
+        $row = $this->varletRow();
+        $row['LAST_SCAN_DATE'] = '11/08/2026 09:00';
+        $row['READING_DATE'] = '11/08/2026 09:00';
+        $this->postCsvBackup([$row]);
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(0, $body['rapportsCreated'] ?? null);
+        self::assertSame(0, $body['printersMoved'] ?? null);
+        self::assertSame(1, $body['skippedSiteConflicts'] ?? null);
+
+        $this->em->clear();
+        $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '3129M530546']);
+        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $printer?->getSite()?->getNom());
+    }
+
+    /** @param list<array<string, string>> $rows */
+    private function postCsvBackup(array $rows): void
+    {
+        $this->client->request(
+            'POST',
+            '/api/csv-backup',
+            [],
+            [],
+            [
+                'CONTENT_TYPE' => 'application/json',
+                'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN,
+            ],
+            json_encode(['rows' => $rows], JSON_THROW_ON_ERROR)
+        );
+    }
+
+    /** @return array<string, string> */
+    private function glaesnerRow(): array
+    {
+        return [
+            'CUSTOMER' => 'GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE',
+            'SERIAL_NUMBER' => '3129M530546',
+            'MODEL' => 'IM C4500',
+            'BRAND' => 'RICOH',
+            'LOCATION' => 'RICOH IM C 4000 MAITRE DUCREUX',
+            'MANAGED' => 'True',
+            'COLOR_MONO' => 'Couleur',
+            'READING_DATE' => '10/08/2026 17:27',
+            'LAST_SCAN_DATE' => '10/08/2026 17:27',
+            'LIFE_COUNT' => '197747',
+            'MONO_LIFE_COUNT' => '158323',
+            'COLOR_LIFE_COUNT' => '39424',
+            'IPADDRESS' => '10.179.206.21',
+        ];
+    }
+
+    /** @return array<string, string> */
+    private function varletRow(): array
+    {
+        return [
+            'CUSTOMER' => 'VARLET ROURET IMC4500 et CAP AIL MPC2003',
+            'SERIAL_NUMBER' => '3129M530546',
+            'MODEL' => 'IM C4500',
+            'BRAND' => 'RICOH',
+            'LOCATION' => '',
+            'MANAGED' => 'True',
+            'COLOR_MONO' => 'Couleur',
+            'READING_DATE' => '09/03/2026 10:28',
+            'LAST_SCAN_DATE' => '09/03/2026 10:28',
+            'LIFE_COUNT' => '196775',
+            'MONO_LIFE_COUNT' => '157452',
+            'COLOR_LIFE_COUNT' => '39323',
+            'IPADDRESS' => '10.1.1.210',
+        ];
     }
 
     public function testAlertesCreateLinksAlertToExistingPrinter(): void
