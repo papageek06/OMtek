@@ -1,0 +1,404 @@
+.admin-page {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  display: grid;
+  gap: 1rem;
+}
+
+.admin-page__header h1 {
+  margin: 0;
+  color: #f2f3f5;
+}
+
+.admin-page__tabs {
+  display: flex;
+  gap: 0.5rem;
+  overflow-x: auto;
+  border-bottom: 1px solid #1e1f22;
+}
+
+.admin-page__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.6rem 1rem 0.65rem;
+  border-bottom: 2px solid transparent;
+  color: #b5bac1;
+  white-space: nowrap;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.admin-page__tab:hover {
+  color: #f2f3f5;
+}
+
+.admin-page__tab--active {
+  color: #f2f3f5;
+  border-bottom-color: #00a8fc;
+}
+
+/* --- CSV Alert --- */
+
+.csv-alert {
+  display: grid;
+  gap: 1rem;
+}
+
+.csv-alert__intro p {
+  margin: 0;
+  color: #b5bac1;
+  font-size: 0.92rem;
+}
+
+.csv-alert__filters {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.csv-alert__segmented {
+  display: flex;
+  gap: 0.35rem;
+  overflow-x: auto;
+  padding-bottom: 2px;
+}
+
+.csv-alert__segment,
+.csv-alert__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  border: 1px solid #3f4147;
+  background: #2b2d31;
+  color: #dcddde;
+  border-radius: 999px;
+  padding: 0.45rem 0.85rem;
+  font-size: 0.88rem;
+  min-height: 38px;
+  white-space: nowrap;
+}
+
+.csv-alert__segment--active {
+  background: rgba(0, 168, 252, 0.16);
+  border-color: #00a8fc;
+  color: #f2f3f5;
+}
+
+.csv-alert__count {
+  min-width: 1.4rem;
+  padding: 0 0.35rem;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  font-size: 0.76rem;
+  text-align: center;
+}
+
+.csv-alert__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+}
+
+.csv-alert__chip {
+  font-size: 0.82rem;
+  min-height: 34px;
+  padding: 0.3rem 0.7rem;
+}
+
+.csv-alert__chip--danger { border-color: rgba(237, 66, 69, 0.45); }
+.csv-alert__chip--warning { border-color: rgba(240, 178, 50, 0.45); }
+.csv-alert__chip--success { border-color: rgba(35, 165, 90, 0.45); }
+
+.csv-alert__chip--active {
+  background: #404249;
+  color: #fff;
+  border-color: #b5bac1;
+}
+
+.csv-alert__search {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.csv-alert__search input {
+  flex: 1;
+  min-width: 0;
+  background: #1e1f22;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  color: #f2f3f5;
+  padding: 0.55rem 0.75rem;
+  font-size: 0.95rem;
+}
+
+.csv-alert__search button,
+.csv-alert__more {
+  border: none;
+  border-radius: 8px;
+  background: #4e5058;
+  color: #f2f3f5;
+  padding: 0.55rem 0.9rem;
+  min-height: 40px;
+}
+
+.csv-alert__message,
+.csv-alert__error,
+.csv-alert__empty {
+  margin: 0;
+  border-radius: 12px;
+  padding: 0.85rem 1rem;
+}
+
+.csv-alert__message {
+  background: rgba(35, 165, 90, 0.14);
+  border: 1px solid rgba(35, 165, 90, 0.25);
+  color: #57f287;
+}
+
+.csv-alert__error {
+  background: rgba(237, 66, 69, 0.14);
+  border: 1px solid rgba(237, 66, 69, 0.25);
+  color: #ff6b6b;
+}
+
+.csv-alert__empty {
+  background: #2b2d31;
+  color: #b5bac1;
+  text-align: center;
+}
+
+.csv-alert__loading {
+  margin: 0;
+  color: #b5bac1;
+}
+
+.csv-alert__list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.85rem;
+}
+
+.csv-card {
+  background: linear-gradient(180deg, rgba(43, 45, 49, 0.98), rgba(30, 31, 34, 0.98));
+  border: 1px solid #1e1f22;
+  border-left: 4px solid #4e5058;
+  border-radius: 14px;
+  padding: 0.9rem 1rem;
+  display: grid;
+  gap: 0.6rem;
+}
+
+.csv-card--danger { border-left-color: #ed4245; }
+.csv-card--warning { border-left-color: #f0b232; }
+.csv-card--success { border-left-color: #23a55a; }
+.csv-card--info { border-left-color: #00a8fc; }
+.csv-card--closed { opacity: 0.85; }
+
+.csv-card__head {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+.csv-card__type {
+  font-weight: 600;
+  font-size: 0.85rem;
+  padding: 0.2rem 0.6rem;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.csv-card__type--danger { color: #ff8a8c; background: rgba(237, 66, 69, 0.14); }
+.csv-card__type--warning { color: #f0b232; background: rgba(240, 178, 50, 0.14); }
+.csv-card__type--success { color: #57f287; background: rgba(35, 165, 90, 0.14); }
+.csv-card__type--info { color: #58b4f0; background: rgba(0, 168, 252, 0.12); }
+
+.csv-card__status {
+  font-size: 0.78rem;
+  color: #b5bac1;
+}
+
+.csv-card__status--open { color: #f0b232; }
+.csv-card__status--resolved { color: #57f287; }
+
+.csv-card__serial {
+  font-size: 1.05rem;
+  font-weight: 600;
+  color: #f2f3f5;
+  word-break: break-word;
+}
+
+.csv-card__muted {
+  color: #949ba4;
+  font-weight: 400;
+}
+
+.csv-card__message,
+.csv-card__help,
+.csv-card__meta,
+.csv-card__resolution {
+  margin: 0;
+}
+
+.csv-card__message {
+  color: #f2f3f5;
+}
+
+.csv-card__help,
+.csv-card__meta {
+  color: #949ba4;
+  font-size: 0.84rem;
+}
+
+.csv-card__resolution {
+  color: #57f287;
+  font-size: 0.86rem;
+}
+
+.csv-card__sites {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.5rem;
+  background: rgba(0, 0, 0, 0.18);
+  border-radius: 10px;
+  padding: 0.6rem 0.75rem;
+}
+
+.csv-card__sites > div {
+  display: grid;
+  gap: 0.1rem;
+  word-break: break-word;
+}
+
+.csv-card__label,
+.csv-card__fields dt,
+.csv-card__raw-list dt {
+  font-size: 0.74rem;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+  color: #949ba4;
+}
+
+.csv-card__fields {
+  margin: 0;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem 0.9rem;
+}
+
+.csv-card__fields dd,
+.csv-card__raw-list dd {
+  margin: 0;
+  color: #dcddde;
+  word-break: break-word;
+}
+
+.csv-card__toggle {
+  background: none;
+  border: none;
+  color: #00a8fc;
+  padding: 0.25rem 0;
+  font-size: 0.86rem;
+}
+
+.csv-card__raw-list {
+  margin: 0.4rem 0 0;
+  display: grid;
+  gap: 0.35rem;
+  max-height: 320px;
+  overflow-y: auto;
+  background: #1e1f22;
+  border-radius: 8px;
+  padding: 0.6rem 0.75rem;
+  font-size: 0.84rem;
+}
+
+.csv-card__actions {
+  display: grid;
+  gap: 0.55rem;
+  border-top: 1px solid #3f4147;
+  padding-top: 0.7rem;
+}
+
+.csv-card__actions textarea,
+.csv-card__assign select {
+  width: 100%;
+  box-sizing: border-box;
+  background: #1e1f22;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  color: #f2f3f5;
+  padding: 0.5rem 0.7rem;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.csv-card__assign {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.csv-card__assign button,
+.csv-card__btn {
+  border: none;
+  border-radius: 8px;
+  padding: 0.6rem 0.9rem;
+  min-height: 44px;
+  font-size: 0.9rem;
+  color: #fff;
+  background: #4e5058;
+}
+
+.csv-card__buttons {
+  display: grid;
+  gap: 0.45rem;
+}
+
+.csv-card__btn--primary { background: #5865f2; }
+.csv-card__btn--secondary { background: #248046; }
+.csv-card__btn--ghost {
+  background: transparent;
+  border: 1px solid #4e5058;
+  color: #dcddde;
+}
+
+.csv-card button:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
+@media (min-width: 640px) {
+  .csv-card__sites {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .csv-card__fields {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .csv-card__assign {
+    grid-template-columns: 1fr auto;
+  }
+
+  .csv-card__buttons {
+    display: flex;
+    flex-wrap: wrap;
+  }
+}
+
+.admin-page__loading {
+  max-width: 980px;
+  margin: 0 auto;
+  padding: 1.25rem;
+  color: #b5bac1;
+}
+
+.admin-page__tab .csv-alert-icon,
+.header__nav-link--admin .csv-alert-icon {
+  margin-right: 0.45rem;
+}

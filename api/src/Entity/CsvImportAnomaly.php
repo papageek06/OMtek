@@ -13,6 +13,7 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(columns: ['serial_number', 'status'], name: 'idx_csv_anomaly_serial_status')]
 #[ORM\Index(columns: ['type', 'status'], name: 'idx_csv_anomaly_type_status')]
 #[ORM\Index(columns: ['created_at'], name: 'idx_csv_anomaly_created')]
+#[ORM\Index(columns: ['fingerprint', 'status'], name: 'idx_csv_anomaly_fingerprint_status')]
 class CsvImportAnomaly
 {
     #[ORM\Id]
@@ -53,9 +54,35 @@ class CsvImportAnomaly
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $resolvedAt = null;
 
+    /** Cle de dedoublonnage: une meme anomalie encore ouverte n'est pas recreee a chaque import. */
+    #[ORM\Column(type: Types::STRING, length: 64, nullable: true)]
+    private ?string $fingerprint = null;
+
+    /** Explication lisible pour l'admin. */
+    #[ORM\Column(type: Types::STRING, length: 255, nullable: true)]
+    private ?string $message = null;
+
+    /** Nombre d'imports dans lesquels l'anomalie a ete rencontree. */
+    #[ORM\Column(type: Types::INTEGER, options: ['default' => 1])]
+    private int $occurrences = 1;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $lastSeenAt = null;
+
+    #[ORM\Column(type: Types::STRING, length: 40, nullable: true)]
+    private ?string $resolutionAction = null;
+
+    #[ORM\Column(type: Types::TEXT, nullable: true)]
+    private ?string $resolutionNote = null;
+
+    #[ORM\ManyToOne(targetEntity: User::class)]
+    #[ORM\JoinColumn(name: 'resolved_by_id', nullable: true, onDelete: 'SET NULL')]
+    private ?User $resolvedBy = null;
+
     public function __construct()
     {
         $this->createdAt = new \DateTimeImmutable();
+        $this->lastSeenAt = $this->createdAt;
     }
 
     public function getId(): ?int
@@ -165,6 +192,80 @@ class CsvImportAnomaly
     public function setResolvedAt(?\DateTimeImmutable $resolvedAt): static
     {
         $this->resolvedAt = $resolvedAt;
+        return $this;
+    }
+
+    public function getFingerprint(): ?string
+    {
+        return $this->fingerprint;
+    }
+
+    public function setFingerprint(?string $fingerprint): static
+    {
+        $this->fingerprint = $fingerprint;
+        return $this;
+    }
+
+    public function getMessage(): ?string
+    {
+        return $this->message;
+    }
+
+    public function setMessage(?string $message): static
+    {
+        $message = $message !== null ? trim($message) : null;
+        $this->message = $message !== '' && $message !== null ? mb_substr($message, 0, 255) : null;
+        return $this;
+    }
+
+    public function getOccurrences(): int
+    {
+        return $this->occurrences;
+    }
+
+    public function incrementOccurrences(): static
+    {
+        $this->occurrences++;
+        $this->lastSeenAt = new \DateTimeImmutable();
+        return $this;
+    }
+
+    public function getLastSeenAt(): ?\DateTimeImmutable
+    {
+        return $this->lastSeenAt;
+    }
+
+    public function getResolutionAction(): ?string
+    {
+        return $this->resolutionAction;
+    }
+
+    public function setResolutionAction(?string $resolutionAction): static
+    {
+        $this->resolutionAction = $resolutionAction !== null ? mb_substr($resolutionAction, 0, 40) : null;
+        return $this;
+    }
+
+    public function getResolutionNote(): ?string
+    {
+        return $this->resolutionNote;
+    }
+
+    public function setResolutionNote(?string $resolutionNote): static
+    {
+        $resolutionNote = $resolutionNote !== null ? trim($resolutionNote) : null;
+        $this->resolutionNote = $resolutionNote !== '' ? $resolutionNote : null;
+        return $this;
+    }
+
+    public function getResolvedBy(): ?User
+    {
+        return $this->resolvedBy;
+    }
+
+    public function setResolvedBy(?User $resolvedBy): static
+    {
+        $this->resolvedBy = $resolvedBy;
         return $this;
     }
 }

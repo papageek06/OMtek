@@ -17,6 +17,9 @@ import AlertesPage from './pages/AlertesPage'
 import AlertRuleSettingsPage from './pages/AlertRuleSettingsPage'
 import AnalyticsPage from './pages/AnalyticsPage'
 import ContactsPage from './pages/ContactsPage'
+import AdminPage from './pages/AdminPage'
+import CsvAlertIcon from './shared/csvAlert/CsvAlertIcon'
+import { useCsvAlertSummary } from './shared/csvAlert/useCsvAlertSummary'
 import { isAdmin } from './shared/auth/permissions'
 import './App.css'
 
@@ -25,6 +28,7 @@ function HeaderNav() {
   const location = useLocation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const userIsAdmin = isAdmin(user)
+  const csvAlertSummary = useCsvAlertSummary(userIsAdmin)
 
   useEffect(() => {
     setIsMenuOpen(false)
@@ -86,6 +90,10 @@ function HeaderNav() {
             </NavLink>
             {userIsAdmin && (
               <>
+                <NavLink to="/admin" className={(state) => navLinkClass(state) + ' header__nav-link--admin'} onClick={closeMenu}>
+                  <span>Admin</span>
+                  <CsvAlertIcon count={csvAlertSummary?.open} />
+                </NavLink>
                 <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
                   Utilisateurs
                 </NavLink>
@@ -131,6 +139,7 @@ function App() {
               <Route path="/interventions" element={<InterventionsPage />} />
               <Route path="/contracts" element={<ContractsPage />} />
               <Route path="/users" element={<UsersPage />} />
+              <Route path="/admin/*" element={<AdminPage />} />
               <Route path="/modeles" element={<ModelesPage />} />
               <Route path="/sites/:id" element={<SiteDetailPage />} />
               <Route path="/imprimantes/:id" element={<ImprimantePage />} />

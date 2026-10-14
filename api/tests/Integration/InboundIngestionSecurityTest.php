@@ -270,9 +270,11 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $active->getSite()?->getNom());
         self::assertCount(2, $this->em->getRepository(PrinterAssignment::class)->findBy(['imprimante' => $printer]));
 
-        $anomalies = $this->em->getRepository(CsvImportAnomaly::class)->findBy(['serialNumber' => '3129M530546']);
-        self::assertCount(1, $anomalies);
-        self::assertSame('SERIAL_SITE_AUTO_MOVED', $anomalies[0]->getType());
+        $anomalies = $this->em->getRepository(CsvImportAnomaly::class)->findBy(['serialNumber' => '3129M530546'], ['id' => 'ASC']);
+        self::assertCount(2, $anomalies);
+        $types = array_map(static fn (CsvImportAnomaly $a): string => $a->getType(), $anomalies);
+        self::assertContains('SERIAL_SITE_AUTO_MOVED', $types);
+        self::assertContains('SERIAL_DUPLICATE_IN_IMPORT', $types);
 
         // Re-import du meme CSV: rien de neuf, aucune ligne perimee ne doit ramener la machine chez VARLET.
         $this->postCsvBackup([$this->glaesnerRow(), $this->varletRow()]);
@@ -284,6 +286,12 @@ final class InboundIngestionSecurityTest extends WebTestCase
         $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '3129M530546']);
         self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $printer?->getSite()?->getNom());
         self::assertCount(2, $this->em->getRepository(RapportImprimante::class)->findBy(['imprimante' => $printer]));
+
+        // La ligne VARLET en double n'a pas cree de nouvelle anomalie: l'existante a ete incrementee.
+        $duplicate = $this->em->getRepository(CsvImportAnomaly::class)->findOneBy(['serialNumber' => '3129M530546', 'type' => 'SERIAL_DUPLICATE_IN_IMPORT']);
+        self::assertInstanceOf(CsvImportAnomaly::class, $duplicate);
+        self::assertSame(2, $duplicate->getOccurrences());
+        self::assertCount(2, $this->em->getRepository(CsvImportAnomaly::class)->findBy(['serialNumber' => '3129M530546']));
     }
 
     public function testCsvBackupImportIgnoresRowWhoseLastScanIsNotNewer(): void

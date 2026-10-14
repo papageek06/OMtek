@@ -2314,3 +2314,111 @@ export async function deleteItem(id: number): Promise<void> {
   const res = await apiFetch(`${API_BASE}/items/${id}`, { method: 'DELETE' })
   if (!res.ok) throw new Error('Erreur suppression')
 }
+
+// --- Admin : anomalies d'import CSV (CSV Alert) ---
+
+export type CsvAnomalyStatus = 'OPEN' | 'RESOLVED' | 'IGNORED'
+
+export type CsvAnomalyAction =
+  | 'IGNORE'
+  | 'RESOLVE'
+  | 'REOPEN'
+  | 'KEEP_CURRENT_SITE'
+  | 'ASSIGN_TO_INCOMING_SITE'
+  | 'ASSIGN_TO_SITE'
+  | 'REVERT_MOVE'
+  | 'RETRY_IMPORT'
+
+export interface CsvAnomalySiteRef {
+  id: number | null
+  nom: string
+}
+
+export interface CsvAnomaly {
+  id: number
+  type: string
+  status: CsvAnomalyStatus
+  serialNumber: string
+  message: string | null
+  imprimante: {
+    id: number | null
+    numeroSerie: string
+    modeleNom: string
+    site: CsvAnomalySiteRef | null
+  } | null
+  currentSite: CsvAnomalySiteRef | null
+  incomingSite: CsvAnomalySiteRef | null
+  incomingSiteName: string | null
+  payload: {
+    row?: Record<string, unknown>
+    rowsCount?: number
+    error?: string
+    [key: string]: unknown
+  }
+  occurrences: number
+  createdAt: string
+  lastSeenAt: string | null
+  resolvedAt: string | null
+  resolutionAction: string | null
+  resolutionNote: string | null
+  resolvedBy: { id: number | null; name: string } | null
+  availableActions: CsvAnomalyAction[]
+}
+
+export interface CsvAnomalyList {
+  items: CsvAnomaly[]
+  total: number
+  countsByType: Record<string, number>
+  countsByStatus: Record<string, number>
+}
+
+export interface CsvAnomalySummary {
+  open: number
+  lastSeenAt: string | null
+}
+
+export async function fetchCsvAnomalySummary(): Promise<CsvAnomalySummary> {
+  const res = await apiFetch(`${API_BASE}/admin/csv-anomalies/summary`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement CSV Alert')
+  }
+  return body
+}
+
+export async function fetchCsvAnomalies(params: {
+  status?: CsvAnomalyStatus | 'ALL'
+  type?: string
+  q?: string
+  limit?: number
+  offset?: number
+}): Promise<CsvAnomalyList> {
+  const query = new URLSearchParams()
+  if (params.status) query.set('status', params.status)
+  if (params.type) query.set('type', params.type)
+  if (params.q) query.set('q', params.q)
+  if (params.limit) query.set('limit', String(params.limit))
+  if (params.offset) query.set('offset', String(params.offset))
+  const res = await apiFetch(`${API_BASE}/admin/csv-anomalies?${query.toString()}`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement des anomalies CSV')
+  }
+  return body
+}
+
+export async function applyCsvAnomalyAction(
+  id: number,
+  payload: { action: CsvAnomalyAction; siteId?: number; note?: string },
+): Promise<{ anomaly: CsvAnomaly; importResult: Record<string, unknown> | null }> {
+  const res = await apiFetch(`${API_BASE}/admin/csv-anomalies/${id}/actions`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur traitement de l\'anomalie')
+  }
+  return body
+}
