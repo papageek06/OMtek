@@ -879,6 +879,52 @@ export async function updateSiteVisibility(siteId: number, isHidden: boolean): P
   return body
 }
 
+export interface SiteDeletionPreview {
+  site: { id: number; nom: string }
+  deletable: boolean
+  blockers: {
+    contrats: number
+    lignesContrat: number
+    lignesFacturation: number
+    interventions: number
+  }
+  deleted: {
+    imprimantes: number
+    rapports: number
+    alertes: number
+    affectations: number
+    evenementsToner: number
+    stocks: number
+    fichiers: number
+    notes: number
+    identifiants: number
+    notscans: number
+    contacts: number
+  }
+  imprimantes: { id: number; numeroSerie: string; modele: string }[]
+}
+
+export async function fetchSiteDeletionPreview(siteId: number): Promise<SiteDeletionPreview> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}/deletion-preview`)
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur chargement apercu suppression')
+  }
+  return body as SiteDeletionPreview
+}
+
+export async function deleteSite(siteId: number, confirmName: string): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/sites/${siteId}`, {
+    method: 'DELETE',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ confirmName }),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error((body?.error as string) || 'Erreur suppression du site')
+  }
+}
+
 export async function fetchDashboardTechnicien(): Promise<DashboardTechnicien> {
   const res = await apiFetch(`${API_BASE}/dashboard/technicien`)
   if (!res.ok) throw new Error('Erreur chargement du tableau de bord')

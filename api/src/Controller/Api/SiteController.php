@@ -15,7 +15,9 @@ use App\Entity\Site;
 use App\Entity\SiteContact;
 use App\Entity\Stock;
 use App\Entity\User;
+use App\Service\SiteDeletionService;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -27,6 +29,8 @@ class SiteController extends AbstractController
 {
     public function __construct(
         private readonly EntityManagerInterface $em,
+        private readonly SiteDeletionService $siteDeletion,
+        private readonly LoggerInterface $logger,
     ) {
     }
 
@@ -269,6 +273,69 @@ class SiteController extends AbstractController
             'nom' => $site->getNom(),
             'isHidden' => $site->isHidden(),
         ], Response::HTTP_OK);
+    }
+
+    /**
+     * GET /api/sites/{id}/deletion-preview : ce que la suppression emporterait et ce qui la bloque.
+     */
+    #[Route('/{id}/deletion-preview', name: 'deletion_preview', requirements: ['id' => '\d+'], methods: ['GET'])]
+    public function deletionPreview(int $id): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        $site = $this->em->getRepository(Site::class)->find($id);
+        if (!$site instanceof Site) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+
+        return new JsonResponse($this->siteDeletion->preview($site), Response::HTTP_OK);
+    }
+
+    /**
+     * DELETE /api/sites/{id} body { "confirmName": "<nom du site>" }
+     * Supprime le site et ses imprimantes (rapports, alertes, affectations, evenements toner).
+     * Refuse (409) si contrats, facturation ou interventions sont rattaches au site ou a ses imprimantes.
+     */
+    #[Route('/{id}', name: 'delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
+    public function delete(int $id, Request $request): JsonResponse
+    {
+        if (!$this->isAdmin()) {
+            return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
+        }
+
+        $site = $this->em->getRepository(Site::class)->find($id);
+        if (!$site instanceof Site) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        $confirmName = \is_array($data) ? trim((string) ($data['confirmName'] ?? '')) : '';
+        if (mb_strtolower($confirmName) !== mb_strtolower(trim($site->getNom()))) {
+            return new JsonResponse(['error' => 'Confirmation invalide: saisir le nom exact du site'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $preview = $this->siteDeletion->preview($site);
+        if (!$preview['deletable']) {
+            return new JsonResponse([
+                'error' => 'Suppression impossible: le site ou ses imprimantes sont lies a des contrats, de la facturation ou des interventions.',
+                'preview' => $preview,
+            ], Response::HTTP_CONFLICT);
+        }
+
+        $user = $this->getUser();
+        $summary = $this->siteDeletion->delete($site);
+
+        $this->logger->warning('Site supprime avec ses imprimantes', [
+            'siteId' => $summary['site']['id'],
+            'siteNom' => $summary['site']['nom'],
+            'par' => $user instanceof User ? $user->getEmail() : null,
+            'supprime' => $summary['deleted'],
+            'numerosSerie' => array_column($summary['imprimantes'], 'numeroSerie'),
+        ]);
+
+        return new JsonResponse(['ok' => true, 'deleted' => $summary['deleted']], Response::HTTP_OK);
     }
 
     #[Route('/{id}/contacts', name: 'contact_link_create', requirements: ['id' => '\d+'], methods: ['POST'])]

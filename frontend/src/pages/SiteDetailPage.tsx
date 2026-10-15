@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useRef } from 'react'
-import { useParams, Link, useSearchParams } from 'react-router-dom'
+import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import {
   LineChart,
   Line,
@@ -48,6 +48,7 @@ import {
   INTERVENTION_STATUS_OPTIONS,
 } from '../domain/interventions/options'
 import SiteResourcesTab from './SiteResourcesTab'
+import SiteDeleteDialog from './SiteDeleteDialog'
 import './SiteDetailPage.css'
 
 function formatDate(iso: string | null): string {
@@ -1111,6 +1112,8 @@ export default function SiteDetailPage() {
   const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
   const [deliveryOpen, setDeliveryOpen] = useState(false)
+  const [deleteOpen, setDeleteOpen] = useState(false)
+  const navigate = useNavigate()
   const [deliveryDate, setDeliveryDate] = useState(dateInputValue())
   const [deliveryStatus, setDeliveryStatus] = useState('EN_COURS')
   const [deliveryQuantities, setDeliveryQuantities] = useState<Record<number, number>>({})
@@ -1614,9 +1617,16 @@ export default function SiteDetailPage() {
             <h1>{site.nom}</h1>
             <p className="site-detail-header__subtitle">Vue site terrain: imprimantes et stock visible.</p>
           </div>
-          <Link to={`/interventions?siteId=${site.id}&create=1`} className="site-detail-header__cta">
-            Créer une intervention
-          </Link>
+          <div className="site-detail-header__actions">
+            <Link to={`/interventions?siteId=${site.id}&create=1`} className="site-detail-header__cta">
+              Créer une intervention
+            </Link>
+            {isAdmin && (
+              <button type="button" className="site-detail-header__delete" onClick={() => setDeleteOpen(true)}>
+                Supprimer le site
+              </button>
+            )}
+          </div>
         </div>
       </header>
 
@@ -2667,6 +2677,15 @@ export default function SiteDetailPage() {
           onToggleAlerteInactive={(alerteId, inactiveChecked) => {
             void handleToggleAlerteInactive(selectedImprimante.id, selectedImprimante.numeroSerie, alerteId, inactiveChecked)
           }}
+        />
+      )}
+
+      {deleteOpen && isAdmin && (
+        <SiteDeleteDialog
+          siteId={site.id}
+          siteNom={site.nom}
+          onClose={() => setDeleteOpen(false)}
+          onDeleted={() => navigate('/sites', { replace: true })}
         />
       )}
     </div>
