@@ -49,6 +49,8 @@ import {
 } from '../domain/interventions/options'
 import SiteResourcesTab from './SiteResourcesTab'
 import SiteDeleteDialog from './SiteDeleteDialog'
+import PieceLinkDialog from './PieceLinkDialog'
+import PieceVariantBadge from '../shared/PieceVariantBadge'
 import './SiteDetailPage.css'
 
 function formatDate(iso: string | null): string {
@@ -475,6 +477,13 @@ function matchingSiteModeles(piece: PieceAvecStocks, imprimantes: Imprimante[]):
   return Array.from(new Set(labels)).sort((a, b) => a.localeCompare(b, 'fr', { sensitivity: 'base' }))
 }
 
+function printerModelTooltip(imp: Pick<Imprimante, 'modele' | 'constructeur' | 'emplacement'>): string {
+  return [
+    `Modele : ${[imp.constructeur, imp.modele].filter(Boolean).join(' ') || '-'}`,
+    imp.emplacement ? `Emplacement : ${imp.emplacement}` : null,
+  ].filter(Boolean).join('\n')
+}
+
 function matchingSiteModelesLabel(count: number): string {
   if (count === 0) return '0 modele site'
   return `${count} modele${count > 1 ? 's' : ''} site`
@@ -487,6 +496,41 @@ function dateInputValue(date = new Date()): string {
 function parseStockQuantity(value: string | number): number {
   const parsed = typeof value === 'number' ? value : Number.parseInt(value, 10)
   return Number.isFinite(parsed) ? parsed : 0
+}
+
+function StockStepper({
+  value,
+  onChange,
+  onEnter,
+  disabled,
+}: {
+  value: string
+  onChange: (value: string) => void
+  onEnter: () => void
+  disabled: boolean
+}) {
+  const step = (delta: number) => onChange(String(parseStockQuantity(value) + delta))
+  return (
+    <span className="stock-stepper">
+      <button type="button" className="stock-stepper__btn" onClick={() => step(-1)} disabled={disabled} aria-label="Retirer 1">
+        −
+      </button>
+      <input
+        type="number"
+        inputMode="numeric"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') onEnter()
+        }}
+        className="pieces-table__input stock-stepper__input"
+        disabled={disabled}
+      />
+      <button type="button" className="stock-stepper__btn" onClick={() => step(1)} disabled={disabled} aria-label="Ajouter 1">
+        +
+      </button>
+    </span>
+  )
 }
 
 function formatDateInputLabel(value: string): string {
@@ -1113,6 +1157,7 @@ export default function SiteDetailPage() {
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
   const [deliveryOpen, setDeliveryOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [pieceLinkOpen, setPieceLinkOpen] = useState(false)
   const navigate = useNavigate()
   const [deliveryDate, setDeliveryDate] = useState(dateInputValue())
   const [deliveryStatus, setDeliveryStatus] = useState('EN_COURS')
@@ -1680,7 +1725,7 @@ export default function SiteDetailPage() {
                   </span>
                   <span className="site-printer-card__meta">
                     {imp.ipAddress && <span className="site-printer-card__ip">{imp.ipAddress}</span>}
-                    <span className="site-printer-card__model">
+                    <span className="site-printer-card__model" title={printerModelTooltip(imp)}>
                       {imp.modele || '-'}
                       {imp.emplacement ? ' - ' + imp.emplacement : ''}
                     </span>
@@ -1760,7 +1805,7 @@ export default function SiteDetailPage() {
                     </span>
                     <span className="site-printer-card__meta">
                       {imp.ipAddress && <span className="site-printer-card__ip">{imp.ipAddress}</span>}
-                      <span className="site-printer-card__model">
+                      <span className="site-printer-card__model" title={printerModelTooltip(imp)}>
                         {imp.modele || '-'}
                         {imp.emplacement ? ' - ' + imp.emplacement : ''}
                       </span>
@@ -1908,6 +1953,15 @@ export default function SiteDetailPage() {
             >
               Livraison
             </button>
+            <button
+              type="button"
+              onClick={() => setPieceLinkOpen(true)}
+              className="site-detail-add-btn"
+              disabled={stockChanges.length > 0 || imprimantes.length === 0}
+              title={stockChanges.length > 0 ? 'Validez ou annulez d\'abord les modifications de stock' : undefined}
+            >
+              Lier une pièce
+            </button>
             <Link
               to={`/interventions?siteId=${site.id}&create=1&type=DEPANNAGE${interventionPrinterId ? `&imprimanteId=${interventionPrinterId}` : ''}`}
               className="site-detail-add-btn site-detail-add-btn--link"
@@ -1951,20 +2005,21 @@ export default function SiteDetailPage() {
                     <span className="piece-mobile-row__identity">
                       <strong>{refBisValues[p.pieceId] ?? p.refBis ?? 'Sans ref-bis'}</strong>
                       <small>{p.reference}</small>
+                      <PieceVariantBadge variant={p.variant} />
                     </span>
-                    <label className="piece-mobile-row__stock" onClick={(e) => e.stopPropagation()}>
+                    <span
+                      className="piece-mobile-row__stock"
+                      onClick={(e) => e.preventDefault()}
+                      onKeyDown={(e) => e.stopPropagation()}
+                    >
                       <span>Stock site</span>
-                      <input
-                        type="number"
+                      <StockStepper
                         value={stockQuantites[p.pieceId] ?? String(p.quantiteStockSite)}
-                        onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: e.target.value }))}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') void handleSaveStockChanges()
-                        }}
-                        className="pieces-table__input"
+                        onChange={(value) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: value }))}
+                        onEnter={() => void handleSaveStockChanges()}
                         disabled={stockSaveSubmitting}
                       />
-                    </label>
+                    </span>
                   </summary>
                   <div className="piece-mobile-row__details">
                     <dl>
@@ -1982,7 +2037,7 @@ export default function SiteDetailPage() {
                       </div>
                       <div>
                         <dt>Variant</dt>
-                        <dd>{p.variant ?? '-'}</dd>
+                        <dd><PieceVariantBadge variant={p.variant} /></dd>
                       </div>
                       <div>
                         <dt>Nature</dt>
@@ -2023,29 +2078,37 @@ export default function SiteDetailPage() {
                 )
               })}
             </div>
-            <div className="pieces-table-wrap pieces-table-wrap--desktop">
-              <table className="pieces-table">
+            <div className="pieces-table-wrap pieces-table-wrap--desktop pieces-table-wrap--compact">
+              <table className="pieces-table pieces-table--compact">
                 <thead>
                   <tr>
                     <th>Référence</th>
-                    <th>Ref-bis</th>
-                    <th>Libellé</th>
-                    <th>Catégorie</th>
-                    <th>Variant</th>
-                    <th>Nature</th>
-                    <th className="pieces-table__th--models-site">Modèles site</th>
-                    <th className="pieces-table__th--num">Stock général (agent)</th>
-                    <th className="pieces-table__th--num">Stock site</th>
+                    <th className="pieces-table__th--label">Libellé</th>
+                    <th className="pieces-table__th--variant">Variant</th>
+                    <th className="pieces-table__th--ref-bis">Ref-bis</th>
+                    <th className="pieces-table__th--stepper">Stock site</th>
                   </tr>
                 </thead>
                 <tbody>
                   {piecesAvecStocks.map((p) => {
                     const matchedModeles = matchingSiteModeles(p, imprimantes)
                     const stockValue = stockQuantites[p.pieceId] ?? String(p.quantiteStockSite)
+                    // Colonnes retirees de l'affichage: infos conservees dans l'info-bulle du libelle.
+                    const pieceDetails = [
+                      p.libelle,
+                      `Categorie : ${pieceTypeLabel(p.categorie ?? p.type)}`,
+                      `Nature : ${pieceNatureDisplay(p)}`,
+                      `Modeles site : ${matchedModeles.join(', ') || 'aucun'}`,
+                      `Stock general : ${p.quantiteStockGeneral}`,
+                    ].join('\n')
                     return (
                       <tr key={p.pieceId}>
                         <td className="pieces-table__ref">{p.reference}</td>
-                        <td>
+                        <td className="pieces-table__label-cell pieces-table__label-cell--compact">
+                          <span className="pieces-table__label-text" title={pieceDetails}>{p.libelle}</span>
+                        </td>
+                        <td><PieceVariantBadge variant={p.variant} /></td>
+                        <td className="pieces-table__ref-bis-cell">
                           <input
                             type="text"
                             value={refBisValues[p.pieceId] ?? p.refBis ?? ''}
@@ -2059,39 +2122,11 @@ export default function SiteDetailPage() {
                             disabled={quickSavingPieceId === p.pieceId}
                           />
                         </td>
-                        <td className="pieces-table__label-cell">
-                          <span className="pieces-table__label-text" title={p.libelle}>{p.libelle}</span>
-                        </td>
-                        <td>
-                          <span className={'piece-type-badge piece-type-badge--' + pieceTypeClass(p.categorie ?? p.type)}>
-                            {pieceTypeLabel(p.categorie ?? p.type)}
-                          </span>
-                        </td>
-                        <td><span>{p.variant ?? '-'}</span></td>
-                        <td>
-                          <span>
-                            {p.nature === 'CONSUMABLE' ? 'Consommable' :
-                             p.nature === 'SPARE_PART' ? 'Piece detachee' :
-                             p.nature === 'VENTE' ? 'Vente' :
-                             p.nature === 'LOCATION' ? 'Location' :
-                             p.nature === 'MOBILIER' ? 'Mobilier' : '-'}
-                          </span>
-                        </td>
-                        <td className="pieces-table__models-count-cell">
-                          <span className="pieces-table__site-model-count" title={matchedModeles.join(', ') || 'Aucun modele du site'}>
-                            {matchingSiteModelesLabel(matchedModeles.length)}
-                          </span>
-                        </td>
-                        <td className="pieces-table__num">{p.quantiteStockGeneral}</td>
                         <td className="pieces-table__num">
-                          <input
-                            type="number"
+                          <StockStepper
                             value={stockValue}
-                            onChange={(e) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: e.target.value }))}
-                            onKeyDown={(e) => {
-                              if (e.key === 'Enter') void handleSaveStockChanges()
-                            }}
-                            className="pieces-table__input"
+                            onChange={(value) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: value }))}
+                            onEnter={() => void handleSaveStockChanges()}
                             disabled={stockSaveSubmitting}
                           />
                         </td>
@@ -2676,6 +2711,18 @@ export default function SiteDetailPage() {
           }}
           onToggleAlerteInactive={(alerteId, inactiveChecked) => {
             void handleToggleAlerteInactive(selectedImprimante.id, selectedImprimante.numeroSerie, alerteId, inactiveChecked)
+          }}
+        />
+      )}
+
+      {pieceLinkOpen && (
+        <PieceLinkDialog
+          siteNom={site.nom}
+          imprimantes={imprimantes}
+          onClose={() => setPieceLinkOpen(false)}
+          onLinked={() => {
+            setPieceLinkOpen(false)
+            loadSite()
           }}
         />
       )}
