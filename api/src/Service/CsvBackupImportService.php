@@ -65,6 +65,7 @@ class CsvBackupImportService
         $skippedSerialConflicts = 0;
         $skippedSiteConflicts = 0;
         $skippedOutdatedRows = 0;
+        $modelesRefreshed = 0;
         $skippedInvalidRows = 0;
         $printersMoved = 0;
         $csvImportAnomalies = 0;
@@ -200,6 +201,11 @@ class CsvBackupImportService
                 $latestKnownRapport = $imprimante instanceof Imprimante ? $this->findLatestRapport($imprimante) : null;
                 $latestKnownScanDate = $this->rapportScanDate($latestKnownRapport);
                 if ($lastScanDate !== null && $latestKnownScanDate !== null && $lastScanDate <= $latestKnownScanDate) {
+                    // Meme rapport renvoye: pas de nouveau rapport, mais le modele est recalcule (corrige les anciens imports).
+                    if ($lastScanDate == $latestKnownScanDate && $imprimante instanceof Imprimante && $this->applyModele($imprimante, $row)) {
+                        $imprimante->setUpdatedAt(new \DateTimeImmutable());
+                        $modelesRefreshed++;
+                    }
                     $skippedOutdatedRows++;
                     $skipped++;
                     continue;
@@ -338,6 +344,7 @@ class CsvBackupImportService
             'skippedSerialConflicts' => $skippedSerialConflicts,
             'skippedSiteConflicts' => $skippedSiteConflicts,
             'skippedOutdatedRows' => $skippedOutdatedRows,
+            'modelesRefreshed' => $modelesRefreshed,
             'skippedInvalidRows' => $skippedInvalidRows,
             'printersMoved' => $printersMoved,
             'skipped' => $skipped,
@@ -387,38 +394,13 @@ class CsvBackupImportService
         }
 
         $imprimante->setSite($site);
-        $modeleNom = $this->trunc(trim((string) ($row['MODEL'] ?? '')), 255);
-        $constructeurNom = $this->trunc(trim((string) ($row['BRAND'] ?? '')), 100);
-        $imprimante->setModeleNom($modeleNom);
-        $imprimante->setConstructeur($constructeurNom);
         $imprimante->setEmplacement($this->nullIfEmpty($this->trunc(trim((string) ($row['LOCATION'] ?? '')), 255)));
         $gerer = $this->parseBool($row['MANAGED'] ?? true);
         $imprimante->setGerer($gerer);
         $imprimante->setColor(stripos((string) ($row['COLOR_MONO'] ?? ''), 'Couleur') !== false || strtolower((string) ($row['COLOR_MONO'] ?? '')) === 'color');
         $imprimante->setIpAddress($this->nullIfEmpty(trim((string) ($row['IPADDRESS'] ?? ''))));
         $imprimante->setUpdatedAt(new \DateTimeImmutable());
-
-        if ($gerer && $modeleNom !== '' && $constructeurNom !== '') {
-            $modeleKey = $modeleNom . '|' . $constructeurNom;
-            if (isset($this->modelesByKey[$modeleKey])) {
-                $modele = $this->modelesByKey[$modeleKey];
-            } else {
-                $modele = $this->em->getRepository(Modele::class)->findOneBy([
-                    'nom' => $modeleNom,
-                    'constructeur' => $constructeurNom,
-                ]);
-                if (!$modele) {
-                    $modele = new Modele();
-                    $modele->setNom($modeleNom);
-                    $modele->setConstructeur($constructeurNom);
-                    $this->em->persist($modele);
-                }
-                $this->modelesByKey[$modeleKey] = $modele;
-            }
-            $imprimante->setModele($modele);
-        } else {
-            $imprimante->setModele(null);
-        }
+        $this->applyModele($imprimante, $row);
 
         $this->em->persist($imprimante);
         $assignment = $this->ensureActiveAssignment(
@@ -463,6 +445,42 @@ class CsvBackupImportService
         $this->tonerReplacementService->registerFromRapport($rapport);
 
         return $rapport;
+    }
+
+    /** @return bool true si le modele de l'imprimante a change */
+    private function applyModele(Imprimante $imprimante, array $row): bool
+    {
+        $previousModeleId = $imprimante->getModele()?->getId();
+        $previousModeleNom = $imprimante->getModeleNom();
+        $modeleNom = $this->trunc($this->resolveModelName($row), 255);
+        $constructeurNom = $this->trunc(trim((string) ($row['BRAND'] ?? '')), 100);
+        $imprimante->setModeleNom($modeleNom);
+        $imprimante->setConstructeur($constructeurNom);
+        $gerer = $this->parseBool($row['MANAGED'] ?? true);
+
+        if ($gerer && $modeleNom !== '' && $constructeurNom !== '') {
+            $modeleKey = $modeleNom . '|' . $constructeurNom;
+            if (isset($this->modelesByKey[$modeleKey])) {
+                $modele = $this->modelesByKey[$modeleKey];
+            } else {
+                $modele = $this->em->getRepository(Modele::class)->findOneBy([
+                    'nom' => $modeleNom,
+                    'constructeur' => $constructeurNom,
+                ]) ?? $this->findModeleByNormalizedName($modeleNom, $constructeurNom);
+                if (!$modele) {
+                    $modele = new Modele();
+                    $modele->setNom($modeleNom);
+                    $modele->setConstructeur($constructeurNom);
+                    $this->em->persist($modele);
+                }
+                $this->modelesByKey[$modeleKey] = $modele;
+            }
+            $imprimante->setModele($modele);
+        } else {
+            $imprimante->setModele(null);
+        }
+
+        return $imprimante->getModele()?->getId() !== $previousModeleId || $imprimante->getModeleNom() !== $previousModeleNom;
     }
 
     /**
@@ -800,6 +818,77 @@ class CsvBackupImportService
     private function nullIfEmpty(string $s): ?string
     {
         return $s === '' ? null : $s;
+    }
+
+    /**
+     * Certains agents (ex. Lexmark) remontent un MODEL generique ("Color Device", "Monochrome Device")
+     * et le vrai modele dans NAME: on prend alors NAME. Sinon MODEL reste la reference.
+     *
+     * @param array<string, mixed> $row
+     */
+    private function resolveModelName(array $row): string
+    {
+        $model = trim((string) ($row['MODEL'] ?? ''));
+        if (!$this->isGenericModelName($model)) {
+            return $model;
+        }
+
+        $name = trim((string) ($row['NAME'] ?? ''));
+        if ($name === '' || $this->isGenericModelName($name) || stripos($name, 'total ') === 0) {
+            return $model;
+        }
+
+        return $name;
+    }
+
+    private function isGenericModelName(string $value): bool
+    {
+        return $value === ''
+            || preg_match('/^(unknown|(colou?r|mono(chrome)?)?\s*device)$/i', $value) === 1;
+    }
+
+    /**
+     * Rapproche "XC2326" d'un modele existant "XC 2326" (espaces, tirets et casse ignores),
+     * en privilegiant celui qui a des pieces liees. A defaut, ignore le suffixe "ex" des noms Ricoh
+     * ("MP C2004ex" -> "MP C2004").
+     */
+    private function findModeleByNormalizedName(string $modeleNom, string $constructeurNom): ?Modele
+    {
+        $needle = $this->normalizeModelName($modeleNom);
+        if ($needle === '') {
+            return null;
+        }
+
+        $candidates = $this->em->getRepository(Modele::class)->findBy(['constructeur' => $constructeurNom], ['id' => 'ASC']);
+        $match = $this->pickModele($candidates, $needle);
+        if ($match === null && str_ends_with($needle, 'EX') && \strlen($needle) > 4) {
+            $match = $this->pickModele($candidates, substr($needle, 0, -2));
+        }
+
+        return $match;
+    }
+
+    /**
+     * @param list<Modele> $candidates
+     */
+    private function pickModele(array $candidates, string $normalizedName): ?Modele
+    {
+        $best = null;
+        foreach ($candidates as $candidate) {
+            if ($this->normalizeModelName($candidate->getNom()) !== $normalizedName) {
+                continue;
+            }
+            if ($best === null || ($best->getPieces()->isEmpty() && !$candidate->getPieces()->isEmpty())) {
+                $best = $candidate;
+            }
+        }
+
+        return $best;
+    }
+
+    private function normalizeModelName(string $value): string
+    {
+        return mb_strtoupper((string) preg_replace('/[\s\-_]+/u', '', $value));
     }
 
     private function trunc(string $s, int $maxLen): string
