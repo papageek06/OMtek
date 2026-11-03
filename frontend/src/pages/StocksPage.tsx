@@ -23,6 +23,8 @@ import {
   pieceTypeClass,
   pieceTypeLabel,
 } from '../domain/pieces/catalog'
+import { useAuth } from '../context/AuthContext'
+import { canManagePieces } from '../shared/auth/permissions'
 import './StocksPage.css'
 
 type PieceFormValues = {
@@ -80,6 +82,8 @@ function modeleLabel(modele: Pick<ModeleItem, 'constructeur' | 'nom'>): string {
 }
 
 export default function StocksPage() {
+  const { user } = useAuth()
+  const canEdit = canManagePieces(user)
   const [stocks, setStocks] = useState<StockGlobalItem[]>([])
   const [modeles, setModeles] = useState<ModeleItem[]>([])
   const [loading, setLoading] = useState(true)
@@ -429,20 +433,22 @@ export default function StocksPage() {
         </button>
       </div>
 
-      <div className="stocks-page__actions">
-        <button
-          type="button"
-          onClick={() => {
-            setShowAddForm((value) => !value)
-            setNewPieceForm(emptyPieceForm)
-          }}
-          className="stocks-page__add-btn"
-        >
-          {showAddForm ? 'Annuler' : '+ Nouvelle reference'}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="stocks-page__actions">
+          <button
+            type="button"
+            onClick={() => {
+              setShowAddForm((value) => !value)
+              setNewPieceForm(emptyPieceForm)
+            }}
+            className="stocks-page__add-btn"
+          >
+            {showAddForm ? 'Annuler' : '+ Nouvelle reference'}
+          </button>
+        </div>
+      )}
 
-      {showAddForm && (
+      {canEdit && showAddForm && (
         <section className="stocks-page__add-form">
           <h2>Nouvelle reference piece</h2>
           <div className="stocks-page__form-grid">
@@ -697,14 +703,16 @@ export default function StocksPage() {
                               </>
                             )}
                           </select>
-                          <button
-                            type="button"
-                            className="stocks-table__modele-add"
-                            onClick={() => handleOpenModeleModal(row)}
-                            aria-label={`Modifier les modeles de ${row.reference}`}
-                          >
-                            +
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              className="stocks-table__modele-add"
+                              onClick={() => handleOpenModeleModal(row)}
+                              aria-label={`Modifier les modeles de ${row.reference}`}
+                            >
+                              +
+                            </button>
+                          )}
                         </div>
                       )}
                     </td>
@@ -735,7 +743,7 @@ export default function StocksPage() {
                             Annuler
                           </button>
                         </div>
-                      ) : (
+                      ) : canEdit ? (
                         <div className="stocks-table__actions">
                           <button type="button" onClick={() => handleStartEdit(row)} className="stocks-page__edit-btn">
                             Modifier
@@ -744,7 +752,7 @@ export default function StocksPage() {
                             Supprimer
                           </button>
                         </div>
-                      )}
+                      ) : null}
                     </td>
                   </tr>
                 )

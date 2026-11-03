@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Entity\User;
 use App\Entity\Enum\NaturePiece;
 use App\Entity\Modele;
 use Doctrine\ORM\EntityManagerInterface;
@@ -58,6 +59,10 @@ class ModeleController extends AbstractController
     #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $data = json_decode($request->getContent(), true);
         if (!\is_array($data)) {
             return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
@@ -106,6 +111,10 @@ class ModeleController extends AbstractController
     #[Route('/{id}', name: 'update', requirements: ['id' => '\d+'], methods: ['PUT', 'PATCH'])]
     public function update(int $id, Request $request): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $modele = $this->em->getRepository(Modele::class)->find($id);
         if (!$modele) {
             return new JsonResponse(['error' => 'Modèle non trouvé'], Response::HTTP_NOT_FOUND);

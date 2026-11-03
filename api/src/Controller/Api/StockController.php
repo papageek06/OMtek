@@ -297,6 +297,10 @@ class StockController extends AbstractController
     #[Route('/stocks/general', name: 'stocks_upsert_general', methods: ['PUT'])]
     public function upsertGeneral(Request $request): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $user = $this->getUser();
         if (!$user instanceof User) {
             return new JsonResponse(['error' => 'Non authentifie'], Response::HTTP_UNAUTHORIZED);
@@ -334,6 +338,10 @@ class StockController extends AbstractController
     #[Route('/stocks/general/{pieceId}', name: 'stocks_delete_general', requirements: ['pieceId' => '\d+'], methods: ['DELETE'])]
     public function deleteGeneral(int $pieceId, Request $request): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $scope = $this->resolveScopeFromRequest(['scope' => $request->query->get('scope')]);
         if (!$this->canManageScope($scope)) {
             return new JsonResponse(['error' => 'Acces refuse pour cette portee de stock'], Response::HTTP_FORBIDDEN);

@@ -2,6 +2,11 @@ security:
     password_hashers:
         Symfony\Component\Security\Core\User\PasswordAuthenticatedUserInterface: 'auto'
 
+    # Les admins ont tous les droits fins; un technicien n'a que ceux coches par un admin (User::permissions).
+    role_hierarchy:
+        ROLE_ADMIN: [ROLE_PERM_PIECES, ROLE_PERM_CONTRATS, ROLE_PERM_SITES]
+        ROLE_SUPER_ADMIN: [ROLE_ADMIN]
+
     providers:
         app_user_provider:
             entity:
@@ -29,6 +34,7 @@ security:
         - { path: ^/api/csv-backup$, roles: PUBLIC_ACCESS, methods: [POST] }
         - { path: ^/api/users/me, roles: ROLE_USER }
         - { path: ^/api/users, roles: [ROLE_ADMIN, ROLE_SUPER_ADMIN] }
+        - { path: ^/api/admin/csv-anomalies, roles: ROLE_PERM_SITES }
         - { path: ^/api/admin, roles: [ROLE_ADMIN, ROLE_SUPER_ADMIN] }
         - { path: ^/api/pieces, roles: ROLE_USER }
         - { path: ^/api/modeles, roles: ROLE_USER }

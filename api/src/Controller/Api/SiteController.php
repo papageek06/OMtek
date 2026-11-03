@@ -281,12 +281,12 @@ class SiteController extends AbstractController
     #[Route('/{id}/deletion-preview', name: 'deletion_preview', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function deletionPreview(int $id): JsonResponse
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
         }
 
         $site = $this->em->getRepository(Site::class)->find($id);
-        if (!$site instanceof Site) {
+        if (!$site instanceof Site || !$this->canAccessSite($site)) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
@@ -301,12 +301,12 @@ class SiteController extends AbstractController
     #[Route('/{id}', name: 'delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
     public function delete(int $id, Request $request): JsonResponse
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
         }
 
         $site = $this->em->getRepository(Site::class)->find($id);
-        if (!$site instanceof Site) {
+        if (!$site instanceof Site || !$this->canAccessSite($site)) {
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
@@ -341,7 +341,7 @@ class SiteController extends AbstractController
     #[Route('/{id}/contacts', name: 'contact_link_create', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function addContact(int $id, Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
         }
 
@@ -379,7 +379,7 @@ class SiteController extends AbstractController
     #[Route('/{id}/contacts/{contactId}', name: 'contact_link_update', requirements: ['id' => '\d+', 'contactId' => '\d+'], methods: ['PATCH'])]
     public function updateContactLink(int $id, int $contactId, Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
         }
 
@@ -411,7 +411,7 @@ class SiteController extends AbstractController
     #[Route('/{id}/contacts/{contactId}', name: 'contact_link_delete', requirements: ['id' => '\d+', 'contactId' => '\d+'], methods: ['DELETE'])]
     public function removeContactLink(int $id, int $contactId): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Action reservee admin'], Response::HTTP_FORBIDDEN);
         }
 
@@ -576,6 +576,11 @@ class SiteController extends AbstractController
     private function isAdmin(): bool
     {
         return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+    }
+
+    private function canManageSites(): bool
+    {
+        return $this->isGranted(User::PERM_SITES);
     }
 
     private function hydrateSiteContactLink(SiteContact $link, array $data): void

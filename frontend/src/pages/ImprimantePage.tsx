@@ -20,7 +20,7 @@ import {
 import { useAuth } from '../context/AuthContext'
 import { isAlerteActive } from '../domain/alertes/rules'
 import { colorLabel, parseLevelPercent as parseWastePercent, sortRapportsByDateDesc, sourceLabel } from '../domain/imprimantes/rules'
-import { isAdmin as isUserAdmin } from '../shared/auth/permissions'
+import { canManageSites } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import './ImprimantePage.css'
 
@@ -63,7 +63,7 @@ export default function ImprimantePage() {
   const [error, setError] = useState<string | null>(null)
 
   const imprimanteId = id ? parseInt(id, 10) : NaN
-  const isAdmin = isUserAdmin(user)
+  const canReinstall = canManageSites(user)
 
   const loadAssignments = useCallback(async () => {
     if (!Number.isFinite(imprimanteId)) return
@@ -124,7 +124,7 @@ export default function ImprimantePage() {
   }, [loadAssignments])
 
   useEffect(() => {
-    if (!isAdmin) {
+    if (!canReinstall) {
       setSites([])
       return
     }
@@ -141,7 +141,7 @@ export default function ImprimantePage() {
     return () => {
       cancelled = true
     }
-  }, [isAdmin])
+  }, [canReinstall])
 
   useEffect(() => {
     if (!imprimante?.numeroSerie) return
@@ -408,7 +408,7 @@ export default function ImprimantePage() {
           </ol>
         )}
 
-        {isAdmin && (
+        {canReinstall && (
           <form className="imprimante-reinstall-form" onSubmit={(event) => void handleReinstall(event)}>
             <select
               value={reinstallSiteId}

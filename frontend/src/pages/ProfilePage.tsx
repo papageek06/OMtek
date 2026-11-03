@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Navigate } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { fetchProfile, updateProfile, UnauthorizedError } from '../api/client'
+import ProfileVault from './ProfileVault'
 import './ProfilePage.css'
 
 export default function ProfilePage() {
@@ -201,6 +202,8 @@ export default function ProfilePage() {
           </button>
         </form>
       </section>
+
+      <ProfileVault />
     </div>
   )
 }

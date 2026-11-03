@@ -252,3 +252,83 @@
     padding: 1rem;
   }
 }
+
+/* Droits par utilisateur */
+.users-access {
+  margin: 0.5rem 0 0;
+  padding: 0.6rem 0.7rem;
+  border: 1px solid #3f4147;
+  border-radius: 10px;
+  display: grid;
+  gap: 0.5rem;
+  min-width: 0;
+}
+
+.users-access:disabled {
+  opacity: 0.75;
+}
+
+.users-access__legend {
+  padding: 0 0.3rem;
+  color: #b5bac1;
+  font-size: 0.78rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.users-access__role {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.users-access__role select {
+  min-height: 2.5rem;
+  border: 1px solid #3f4147;
+  border-radius: 8px;
+  background: #1e1f22;
+  color: #f2f3f5;
+  padding: 0 0.6rem;
+}
+
+.users-access__perms {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem 1rem;
+}
+
+.users-access__perm {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  min-height: 2.5rem;
+  cursor: pointer;
+}
+
+.users-access__perm input {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
+.users-list .users-access__perm span,
+.users-list .users-access__role span {
+  color: #f2f3f5;
+}
+
+.users-access__hint {
+  color: #949ba4;
+  font-size: 0.8rem;
+}
+
+.users-access__error {
+  color: #ff6b6b;
+  font-size: 0.82rem;
+}
+
+.users-access__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}

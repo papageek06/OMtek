@@ -17,9 +17,13 @@ import {
   type PieceItem,
 } from '../api/client'
 import { CATEGORIES, NATURES, VARIANTS } from '../domain/pieces/catalog'
+import { useAuth } from '../context/AuthContext'
+import { canManagePieces } from '../shared/auth/permissions'
 import './ModelesPage.css'
 
 export default function ModelesPage() {
+  const { user } = useAuth()
+  const canEdit = canManagePieces(user)
   const [modeles, setModeles] = useState<ModeleItem[]>([])
   const [modelesDetails, setModelesDetails] = useState<Record<number, ModeleDetail>>({})
   const [allPieces, setAllPieces] = useState<PieceItem[]>([])
@@ -311,17 +315,19 @@ export default function ModelesPage() {
       {message && <div className="modeles-page__message">{message}</div>}
       {error && <div className="modeles-page__error">{error}</div>}
 
-      <div className="modeles-page__actions">
-        <button
-          type="button"
-          onClick={showAddForm ? handleCancel : handleStartAdd}
-          className="modeles-page__add-btn"
-        >
-          {showAddForm ? 'Annuler' : '+ Ajouter un modele'}
-        </button>
-      </div>
+      {canEdit && (
+        <div className="modeles-page__actions">
+          <button
+            type="button"
+            onClick={showAddForm ? handleCancel : handleStartAdd}
+            className="modeles-page__add-btn"
+          >
+            {showAddForm ? 'Annuler' : '+ Ajouter un modele'}
+          </button>
+        </div>
+      )}
 
-      {showAddForm && (
+      {canEdit && showAddForm && (
         <div className="modeles-page__form">
           <h2>{editingId ? 'Modifier le modele' : 'Nouveau modele'}</h2>
           <div className="modeles-page__form-grid">
@@ -533,9 +539,11 @@ export default function ModelesPage() {
                       : '-'}
                   </td>
                   <td>
-                    <button type="button" onClick={() => void handleStartEdit(m.id)}>
-                      Modifier
-                    </button>
+                    {canEdit && (
+                      <button type="button" onClick={() => void handleStartEdit(m.id)}>
+                        Modifier
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

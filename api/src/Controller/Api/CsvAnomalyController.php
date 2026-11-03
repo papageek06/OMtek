@@ -47,7 +47,7 @@ class CsvAnomalyController extends AbstractController
     #[Route('/summary', name: 'summary', methods: ['GET'])]
     public function summary(): JsonResponse
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Acces reserve aux administrateurs'], Response::HTTP_FORBIDDEN);
         }
 
@@ -72,7 +72,7 @@ class CsvAnomalyController extends AbstractController
     #[Route('', name: 'list', methods: ['GET'])]
     public function list(Request $request): JsonResponse
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Acces reserve aux administrateurs'], Response::HTTP_FORBIDDEN);
         }
 
@@ -146,7 +146,7 @@ class CsvAnomalyController extends AbstractController
     #[Route('/{id}/actions', name: 'action', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function action(int $id, Request $request): JsonResponse
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Acces reserve aux administrateurs'], Response::HTTP_FORBIDDEN);
         }
 
@@ -398,8 +398,8 @@ class CsvAnomalyController extends AbstractController
         return $user instanceof User ? $user : null;
     }
 
-    private function isAdmin(): bool
+    private function canManageSites(): bool
     {
-        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+        return $this->isGranted(User::PERM_SITES);
     }
 }

@@ -134,7 +134,7 @@ class BillingPeriodController extends AbstractController
 
     private function findContractForAdmin(int $contractId): Contrat|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
         $contract = $this->em->getRepository(Contrat::class)->find($contractId);
@@ -147,7 +147,7 @@ class BillingPeriodController extends AbstractController
 
     private function findPeriodForAdmin(int $periodId): PeriodeFacturation|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
         $period = $this->em->getRepository(PeriodeFacturation::class)->find($periodId);
@@ -278,8 +278,8 @@ class BillingPeriodController extends AbstractController
         return null;
     }
 
-    private function isAdmin(): bool
+    private function canManageContracts(): bool
     {
-        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+        return $this->isGranted(User::PERM_CONTRATS);
     }
 }

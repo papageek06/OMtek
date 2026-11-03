@@ -323,7 +323,7 @@ class ContratLineController extends AbstractController
 
     private function findContractForAdmin(int $contractId): Contrat|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -396,8 +396,8 @@ class ContratLineController extends AbstractController
         return !preg_match('/^0(?:\.0+)?$/', $value);
     }
 
-    private function isAdmin(): bool
+    private function canManageContracts(): bool
     {
-        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+        return $this->isGranted(User::PERM_CONTRATS);
     }
 }

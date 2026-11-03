@@ -69,6 +69,7 @@ final class TonerReplacementService
         $equivalentEvent = $this->findEquivalentReplacementRecently($imprimante, $color, $detectedAt, $alerte->getNiveauPourcent());
         if ($equivalentEvent instanceof TonerReplacementEvent) {
             $this->attachAlerteToExistingEvent($equivalentEvent, $alerte);
+            $this->consumeStockForEventIfMissing($equivalentEvent, $imprimante, $color, self::SOURCE_ALERTE);
             $this->deactivateOpenTonerAlertsBeforeReplacement($imprimante, $color, $detectedAt);
             return;
         }
@@ -149,6 +150,7 @@ final class TonerReplacementService
             $equivalentEvent = $this->findEquivalentReplacementRecently($imprimante, $color, $detectedAt, $levelAfter);
             if ($equivalentEvent instanceof TonerReplacementEvent) {
                 $this->attachRapportToExistingEvent($equivalentEvent, $rapport);
+                $this->consumeStockForEventIfMissing($equivalentEvent, $imprimante, $color, self::SOURCE_REPORT_LEVEL_ASC);
                 $this->deactivateOpenTonerAlertsBeforeReplacement($imprimante, $color, $detectedAt);
                 continue;
             }
@@ -342,6 +344,37 @@ final class TonerReplacementService
         }
     }
 
+    /**
+     * Un evenement cree sans piece (modele sans toner lie a ce moment-la) n'a pas
+     * sorti de stock. Quand la deuxieme source (mail ou rapport) le confirme, on
+     * retente la sortie : une seule par evenement, donc pas de doublon.
+     */
+    private function consumeStockForEventIfMissing(
+        TonerReplacementEvent $event,
+        Imprimante $imprimante,
+        string $color,
+        string $sourceType,
+    ): void {
+        if ($event->getStockMovement() instanceof StockMovement) {
+            return;
+        }
+
+        $piece = $event->getPiece() ?? $this->resolveTonerPiece($imprimante, $color);
+        $movement = $this->consumeOneTonerFromStock(
+            $piece,
+            $imprimante->getSite(),
+            $event->getEventKey(),
+            $sourceType,
+            $color,
+            $event->getLevelAfter(),
+            $event->getCounterValue(),
+        );
+        if ($movement instanceof StockMovement) {
+            $event->setPiece($piece);
+            $event->setStockMovement($movement);
+        }
+    }
+
     private function buildRuntimeDuplicateKey(
         Imprimante $imprimante,
         string $color,
@@ -526,6 +559,7 @@ final class TonerReplacementService
             default => null,
         };
 
+        $matches = [];
         $fallbackPiece = null;
         foreach ($modele->getPieces() as $piece) {
             if (!$piece instanceof Piece || $piece->getCategorie() !== CategoriePiece::TONER) {
@@ -534,20 +568,42 @@ final class TonerReplacementService
 
             $variant = $piece->getVariant();
             if ($expectedVariant instanceof VariantPiece && $variant === $expectedVariant) {
-                return $piece;
-            }
-
-            if ($fallbackPiece === null) {
-                $fallbackPiece = $piece;
+                $matches[] = $piece;
                 continue;
             }
 
-            if ($variant === VariantPiece::NONE || $variant === VariantPiece::UNIT || $variant === null) {
+            // Jamais un toner d'une autre couleur : seul un toner sans couleur sert de repli.
+            if ($fallbackPiece === null && ($variant === VariantPiece::NONE || $variant === VariantPiece::UNIT || $variant === null)) {
                 $fallbackPiece = $piece;
             }
         }
 
-        return $fallbackPiece;
+        if (count($matches) > 1) {
+            // Plusieurs toners de la bonne couleur lies au modele : on prend celui stocke sur le site.
+            foreach ($matches as $piece) {
+                if ($this->hasPositiveStock($piece, $imprimante->getSite())) {
+                    return $piece;
+                }
+            }
+        }
+
+        return $matches[0] ?? $fallbackPiece;
+    }
+
+    private function hasPositiveStock(Piece $piece, ?Site $site): bool
+    {
+        foreach ([StockScope::TECH_VISIBLE, StockScope::ADMIN_ONLY] as $scope) {
+            $stock = $this->em->getRepository(Stock::class)->findOneBy([
+                'piece' => $piece,
+                'site' => $site,
+                'scope' => $scope,
+            ]);
+            if ($stock instanceof Stock && $stock->getQuantite() > 0) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function isTonerChangeAlerte(Alerte $alerte): bool
@@ -602,6 +658,11 @@ final class TonerReplacementService
     {
         if ($raw === null || trim($raw) === '') {
             return null;
+        }
+
+        // Les rapports peuvent exprimer un toner presque vide par "Low".
+        if (strcasecmp(trim($raw), 'low') === 0) {
+            return 1;
         }
 
         if (preg_match('/(\d+)/', $raw, $matches) !== 1) {

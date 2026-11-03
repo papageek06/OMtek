@@ -17,6 +17,8 @@ export interface User {
   firstName: string
   lastName: string
   roles: string[]
+  /** Droits fins donnes par un admin (ROLE_PERM_*), aussi presents dans roles */
+  permissions?: string[]
   emailVerified: boolean
 }
 
@@ -290,6 +292,111 @@ export async function deleteUser(userId: number): Promise<void> {
     const err = (body?.error as string) || 'Erreur suppression utilisateur'
     throw new Error(err)
   }
+}
+
+export interface UserAccessUpdate {
+  role?: 'ROLE_ADMIN' | 'ROLE_TECH'
+  permissions?: string[]
+}
+
+export async function updateUserAccess(userId: number, patch: UserAccessUpdate): Promise<User> {
+  const res = await apiFetch(`${API_BASE}/users/${userId}/access`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  })
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((body?.error as string) || 'Erreur mise a jour des droits')
+  return body as User
+}
+
+// --- Coffre personnel (profil) ---
+
+export type VaultEntryType = 'NOTE' | 'CREDENTIAL'
+
+export interface VaultEntry {
+  id: number
+  type: VaultEntryType
+  title: string
+  username: string | null
+  url: string | null
+  notes: string | null
+  hasSecret: boolean
+  createdAt: string
+  updatedAt: string
+  /** Present si l'element ne peut pas etre dechiffre (cle serveur changee) */
+  unreadable?: boolean
+}
+
+export interface VaultEntryPayload {
+  type?: VaultEntryType
+  title?: string
+  username?: string | null
+  url?: string | null
+  notes?: string | null
+  /** Absent = inchange, '' = supprimer le mot de passe */
+  secret?: string
+}
+
+export class VaultLockedError extends Error {}
+
+async function vaultJson<T>(res: Response, fallback: string): Promise<T> {
+  const body = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    if (res.status === 403 && body?.locked) throw new VaultLockedError((body?.error as string) || 'Coffre verrouille')
+    throw new Error((body?.error as string) || fallback)
+  }
+  return body as T
+}
+
+export async function fetchVault(): Promise<VaultEntry[]> {
+  const res = await apiFetch(`${API_BASE}/users/me/vault`)
+  return vaultJson<VaultEntry[]>(res, 'Erreur chargement du coffre')
+}
+
+export async function createVaultEntry(payload: VaultEntryPayload): Promise<VaultEntry> {
+  const res = await apiFetch(`${API_BASE}/users/me/vault`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return vaultJson<VaultEntry>(res, 'Erreur enregistrement')
+}
+
+export async function updateVaultEntry(id: number, payload: VaultEntryPayload): Promise<VaultEntry> {
+  const res = await apiFetch(`${API_BASE}/users/me/vault/${id}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  })
+  return vaultJson<VaultEntry>(res, 'Erreur enregistrement')
+}
+
+export async function deleteVaultEntry(id: number): Promise<void> {
+  const res = await apiFetch(`${API_BASE}/users/me/vault/${id}`, { method: 'DELETE' })
+  if (!res.ok) await vaultJson<unknown>(res, 'Erreur suppression')
+}
+
+export async function unlockVault(password: string): Promise<{ unlockToken: string; expiresAt: string }> {
+  const res = await apiFetch(`${API_BASE}/users/me/vault/unlock`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ password }),
+  })
+  return vaultJson(res, 'Deverrouillage impossible')
+}
+
+export async function lockVault(): Promise<void> {
+  await apiFetch(`${API_BASE}/users/me/vault/lock`, { method: 'POST' }).catch(() => undefined)
+}
+
+export async function revealVaultSecret(id: number, unlockToken: string): Promise<string> {
+  const res = await apiFetch(`${API_BASE}/users/me/vault/${id}/secret`, {
+    method: 'POST',
+    headers: { 'X-Vault-Unlock': unlockToken },
+  })
+  const body = await vaultJson<{ secret: string }>(res, 'Mot de passe indisponible')
+  return body.secret
 }
 
 // --- Contacts ---

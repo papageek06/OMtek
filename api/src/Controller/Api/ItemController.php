@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Controller\Api;
 
+use App\Entity\User;
 use App\Entity\Item;
 use Doctrine\ORM\EntityManagerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -48,6 +49,10 @@ class ItemController extends AbstractController
     #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $data = json_decode($request->getContent(), true);
         if (!\is_array($data) || empty($data['title'])) {
             return new JsonResponse(['error' => 'Title is required'], Response::HTTP_BAD_REQUEST);
@@ -66,6 +71,10 @@ class ItemController extends AbstractController
     #[Route('/{id}', name: 'update', requirements: ['id' => '\d+'], methods: ['PUT', 'PATCH'])]
     public function update(int $id, Request $request): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $item = $this->em->getRepository(Item::class)->find($id);
         if (!$item) {
             return new JsonResponse(['error' => 'Item not found'], Response::HTTP_NOT_FOUND);
@@ -90,6 +99,10 @@ class ItemController extends AbstractController
     #[Route('/{id}', name: 'delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
     public function delete(int $id): JsonResponse|Response
     {
+        if (!$this->isGranted(User::PERM_PIECES)) {
+            return new JsonResponse(['error' => 'Droit Pieces & stocks globaux requis'], Response::HTTP_FORBIDDEN);
+        }
+
         $item = $this->em->getRepository(Item::class)->find($id);
         if (!$item) {
             return new JsonResponse(['error' => 'Item not found'], Response::HTTP_NOT_FOUND);

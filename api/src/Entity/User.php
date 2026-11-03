@@ -17,6 +17,12 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public const ROLE_ADMIN = 'ROLE_ADMIN';
     public const ROLE_TECH = 'ROLE_TECH';
 
+    /** Droits fins attribuables par un admin. Ils sont exposes comme roles (ROLE_PERM_*), les admins les ont tous via role_hierarchy. */
+    public const PERM_PIECES = 'ROLE_PERM_PIECES';
+    public const PERM_CONTRATS = 'ROLE_PERM_CONTRATS';
+    public const PERM_SITES = 'ROLE_PERM_SITES';
+    public const PERMISSIONS = [self::PERM_PIECES, self::PERM_CONTRATS, self::PERM_SITES];
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: Types::INTEGER)]
@@ -30,6 +36,10 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     #[ORM\Column(type: Types::JSON)]
     private array $roles = [];
+
+    /** @var list<string> sous-ensemble de self::PERMISSIONS */
+    #[ORM\Column(type: Types::JSON)]
+    private array $permissions = [];
 
     #[ORM\Column(type: Types::STRING, length: 80)]
     private string $firstName = '';
@@ -54,6 +64,20 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
     private ?\DateTimeImmutable $emailVerificationTokenExpiresAt = null;
+
+    /** Coffre personnel: hash SHA-256 du jeton de deverrouillage temporaire (jamais le jeton en clair) */
+    #[ORM\Column(type: Types::STRING, length: 64, nullable: true)]
+    private ?string $vaultUnlockTokenHash = null;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vaultUnlockExpiresAt = null;
+
+    /** Echecs consecutifs de mot de passe au deverrouillage du coffre */
+    #[ORM\Column(type: Types::SMALLINT, options: ['default' => 0])]
+    private int $vaultFailedAttempts = 0;
+
+    #[ORM\Column(type: Types::DATETIME_IMMUTABLE, nullable: true)]
+    private ?\DateTimeImmutable $vaultLockedUntil = null;
 
     #[ORM\Column(type: Types::DATETIME_IMMUTABLE)]
     private \DateTimeImmutable $createdAt;
@@ -90,9 +114,22 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
 
     public function getRoles(): array
     {
-        $roles = $this->roles;
+        $roles = [...$this->roles, ...$this->getPermissions()];
         $roles[] = 'ROLE_USER';
-        return array_unique($roles);
+        return array_values(array_unique($roles));
+    }
+
+    /** @return list<string> */
+    public function getPermissions(): array
+    {
+        return array_values(array_intersect(self::PERMISSIONS, $this->permissions));
+    }
+
+    /** @param list<string> $permissions valeurs inconnues ignorees */
+    public function setPermissions(array $permissions): static
+    {
+        $this->permissions = array_values(array_intersect(self::PERMISSIONS, $permissions));
+        return $this;
     }
 
     public function setRoles(array $roles): static
@@ -190,6 +227,45 @@ class User implements UserInterface, PasswordAuthenticatedUserInterface
     public function setEmailVerificationTokenExpiresAt(?\DateTimeImmutable $expiresAt): static
     {
         $this->emailVerificationTokenExpiresAt = $expiresAt;
+        return $this;
+    }
+
+    public function getVaultUnlockTokenHash(): ?string
+    {
+        return $this->vaultUnlockTokenHash;
+    }
+
+    public function getVaultUnlockExpiresAt(): ?\DateTimeImmutable
+    {
+        return $this->vaultUnlockExpiresAt;
+    }
+
+    public function setVaultUnlock(?string $tokenHash, ?\DateTimeImmutable $expiresAt): static
+    {
+        $this->vaultUnlockTokenHash = $tokenHash;
+        $this->vaultUnlockExpiresAt = $expiresAt;
+        return $this;
+    }
+
+    public function getVaultFailedAttempts(): int
+    {
+        return $this->vaultFailedAttempts;
+    }
+
+    public function setVaultFailedAttempts(int $attempts): static
+    {
+        $this->vaultFailedAttempts = $attempts;
+        return $this;
+    }
+
+    public function getVaultLockedUntil(): ?\DateTimeImmutable
+    {
+        return $this->vaultLockedUntil;
+    }
+
+    public function setVaultLockedUntil(?\DateTimeImmutable $lockedUntil): static
+    {
+        $this->vaultLockedUntil = $lockedUntil;
         return $this;
     }
 

@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { createUser, deleteUser, fetchUsers, UnauthorizedError, type User } from '../api/client'
-import { canManageUsers } from '../shared/auth/permissions'
+import { createUser, deleteUser, fetchUsers, UnauthorizedError, updateUserAccess, type User } from '../api/client'
+import { canManageUsers, PERMISSION_OPTIONS } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
 import './UsersPage.css'
 
@@ -248,8 +248,22 @@ export default function UsersPage() {
               <li key={item.id}>
                 <strong>{item.firstName} {item.lastName}</strong>
                 <span>{item.email}</span>
-                <span>{item.roles.join(', ')}</span>
                 <span>{item.emailVerified ? 'Email verifie' : 'Email non verifie'}</span>
+                <UserAccessEditor
+                  item={item}
+                  readOnlyReason={
+                    item.roles.includes('ROLE_SUPER_ADMIN')
+                      ? 'Super admin : tous les droits'
+                      : item.id === currentUserId
+                        ? 'Vos propres droits ne sont pas modifiables'
+                        : null
+                  }
+                  onSaved={(updated) => {
+                    setUsers((prev) => prev.map((u) => (u.id === updated.id ? updated : u)))
+                    setMessage(`Droits de ${`${updated.firstName} ${updated.lastName}`.trim() || updated.email} mis a jour`)
+                  }}
+                />
+
                 <div className="users-list__actions">
                   <button
                     type="button"
@@ -316,5 +330,107 @@ export default function UsersPage() {
         </div>
       )}
     </div>
+  )
+}
+
+function userRole(item: User): 'ROLE_ADMIN' | 'ROLE_TECH' {
+  return item.roles.includes('ROLE_ADMIN') || item.roles.includes('ROLE_SUPER_ADMIN') ? 'ROLE_ADMIN' : 'ROLE_TECH'
+}
+
+/** Role et droits fins d'un compte. Les droits sont verifies cote API: cet ecran ne fait que les attribuer. */
+function UserAccessEditor({
+  item,
+  readOnlyReason,
+  onSaved,
+}: {
+  item: User
+  readOnlyReason: string | null
+  onSaved: (user: User) => void
+}) {
+  const initialRole = userRole(item)
+  const initialPermissions = item.permissions ?? []
+  const [role, setRole] = useState(initialRole)
+  const [permissions, setPermissions] = useState<string[]>(initialPermissions)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    setRole(userRole(item))
+    setPermissions(item.permissions ?? [])
+  }, [item])
+
+  const isAdminRole = role === 'ROLE_ADMIN'
+  const dirty =
+    role !== initialRole ||
+    permissions.length !== initialPermissions.length ||
+    permissions.some((p) => !initialPermissions.includes(p))
+  const readOnly = readOnlyReason !== null || saving
+
+  const togglePermission = (value: string) => {
+    setPermissions((prev) => (prev.includes(value) ? prev.filter((p) => p !== value) : [...prev, value]))
+  }
+
+  const save = async () => {
+    setSaving(true)
+    setError(null)
+    try {
+      onSaved(await updateUserAccess(item.id, { role, permissions }))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Erreur mise a jour des droits')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <fieldset className="users-access" disabled={readOnly}>
+      <legend className="users-access__legend">Droits</legend>
+      <label className="users-access__role">
+        <span>Role</span>
+        <select value={role} onChange={(e) => setRole(e.target.value as 'ROLE_ADMIN' | 'ROLE_TECH')}>
+          {ROLE_OPTIONS.map((option) => (
+            <option key={option.value} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </select>
+      </label>
+      <div className="users-access__perms">
+        {PERMISSION_OPTIONS.map((option) => (
+          <label key={option.value} className="users-access__perm" title={option.description}>
+            <input
+              type="checkbox"
+              checked={isAdminRole || permissions.includes(option.value)}
+              disabled={isAdminRole}
+              onChange={() => togglePermission(option.value)}
+            />
+            <span>{option.label}</span>
+          </label>
+        ))}
+      </div>
+      {readOnlyReason ? (
+        <small className="users-access__hint">{readOnlyReason}</small>
+      ) : isAdminRole ? (
+        <small className="users-access__hint">Admin : tous les droits, y compris stocks caches et utilisateurs.</small>
+      ) : null}
+      {error && <small className="users-access__error">{error}</small>}
+      {!readOnlyReason && dirty && (
+        <div className="users-access__actions">
+          <button
+            type="button"
+            className="users-modal__cancel-btn"
+            onClick={() => {
+              setRole(initialRole)
+              setPermissions(initialPermissions)
+            }}
+          >
+            Annuler
+          </button>
+          <button type="button" className="users-page__primary-btn" onClick={() => void save()}>
+            {saving ? 'Enregistrement...' : 'Enregistrer les droits'}
+          </button>
+        </div>
+      )}
+    </fieldset>
   )
 }

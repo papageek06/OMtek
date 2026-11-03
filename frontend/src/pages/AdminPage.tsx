@@ -1,6 +1,6 @@
 import { Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
-import { isAdmin } from '../shared/auth/permissions'
+import { canManageSites } from '../shared/auth/permissions'
 import CsvAlertIcon from '../shared/csvAlert/CsvAlertIcon'
 import { useCsvAlertSummary } from '../shared/csvAlert/useCsvAlertSummary'
 import CsvAlertTab from './admin/CsvAlertTab'
@@ -8,7 +8,7 @@ import './AdminPage.css'
 
 export default function AdminPage() {
   const { user, loading } = useAuth()
-  const userIsAdmin = isAdmin(user)
+  const userIsAdmin = canManageSites(user)
   const summary = useCsvAlertSummary(userIsAdmin)
 
   if (loading) {

@@ -41,7 +41,7 @@ import {
   type ContactAddress,
   type SiteContactLink,
 } from '../api/client'
-import { isAdmin as isUserAdmin } from '../shared/auth/permissions'
+import { canManagePieces, canManageSites, isAdmin as isUserAdmin } from '../shared/auth/permissions'
 import { useAuth } from '../context/AuthContext'
 import {
   INTERVENTION_STATUS_LABELS,
@@ -1183,6 +1183,8 @@ export default function SiteDetailPage() {
   const shouldRestoreScrollRef = useRef<boolean>(false)
 
   const isAdmin = isUserAdmin(user)
+  const canSites = canManageSites(user)
+  const canPieces = canManagePieces(user)
 
   const siteId = id ? parseInt(id, 10) : NaN
   const requestedImprimanteId = searchParams.get('imprimanteId')
@@ -1666,7 +1668,7 @@ export default function SiteDetailPage() {
             <Link to={`/interventions?siteId=${site.id}&create=1`} className="site-detail-header__cta">
               Créer une intervention
             </Link>
-            {isAdmin && (
+            {canSites && (
               <button type="button" className="site-detail-header__delete" onClick={() => setDeleteOpen(true)}>
                 Supprimer le site
               </button>
@@ -1953,15 +1955,17 @@ export default function SiteDetailPage() {
             >
               Livraison
             </button>
-            <button
-              type="button"
-              onClick={() => setPieceLinkOpen(true)}
-              className="site-detail-add-btn"
-              disabled={stockChanges.length > 0 || imprimantes.length === 0}
-              title={stockChanges.length > 0 ? 'Validez ou annulez d\'abord les modifications de stock' : undefined}
-            >
-              Lier une pièce
-            </button>
+            {canPieces && (
+              <button
+                type="button"
+                onClick={() => setPieceLinkOpen(true)}
+                className="site-detail-add-btn"
+                disabled={stockChanges.length > 0 || imprimantes.length === 0}
+                title={stockChanges.length > 0 ? 'Validez ou annulez d\'abord les modifications de stock' : undefined}
+              >
+                Lier une pièce
+              </button>
+            )}
             <Link
               to={`/interventions?siteId=${site.id}&create=1&type=DEPANNAGE${interventionPrinterId ? `&imprimanteId=${interventionPrinterId}` : ''}`}
               className="site-detail-add-btn site-detail-add-btn--link"
@@ -2064,7 +2068,8 @@ export default function SiteDetailPage() {
                         }}
                         placeholder="Ref entreprise"
                         className="pieces-table__ref-bis-input"
-                        disabled={quickSavingPieceId === p.pieceId}
+                        disabled={!canPieces || quickSavingPieceId === p.pieceId}
+                        title={canPieces ? undefined : 'Droit Pièces & stocks globaux requis'}
                       />
                     </label>
                     <div className="piece-mobile-row__actions">
@@ -2119,7 +2124,8 @@ export default function SiteDetailPage() {
                             }}
                             placeholder="Ref entreprise"
                             className="pieces-table__ref-bis-input"
-                            disabled={quickSavingPieceId === p.pieceId}
+                            disabled={!canPieces || quickSavingPieceId === p.pieceId}
+                            title={canPieces ? undefined : 'Droit Pièces & stocks globaux requis'}
                           />
                         </td>
                         <td className="pieces-table__num">
@@ -2274,7 +2280,7 @@ export default function SiteDetailPage() {
               </div>
             </div>
 
-            {isAdmin && (
+            {canSites && (
               <div className="site-contact-linker">
                 <div className="site-contact-linker__search">
                   <input
@@ -2489,7 +2495,7 @@ export default function SiteDetailPage() {
                         </div>
                       )}
 
-                      {isAdmin ? (
+                      {canSites ? (
                         <div className="site-contact-card__edit">
                           <input
                             type="text"
@@ -2727,7 +2733,7 @@ export default function SiteDetailPage() {
         />
       )}
 
-      {deleteOpen && isAdmin && (
+      {deleteOpen && canSites && (
         <SiteDeleteDialog
           siteId={site.id}
           siteNom={site.nom}

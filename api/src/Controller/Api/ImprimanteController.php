@@ -205,7 +205,7 @@ class ImprimanteController extends AbstractController
     #[Route('/{id}/reinstall', name: 'reinstall', requirements: ['id' => '\d+'], methods: ['POST'])]
     public function reinstall(int $id, Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageSites()) {
             return new JsonResponse(['error' => 'Action reservee aux administrateurs'], Response::HTTP_FORBIDDEN);
         }
 
@@ -571,6 +571,11 @@ class ImprimanteController extends AbstractController
     private function isAdmin(): bool
     {
         return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+    }
+
+    private function canManageSites(): bool
+    {
+        return $this->isGranted(User::PERM_SITES);
     }
 
     private function canAccessImprimante(Imprimante $imprimante): bool

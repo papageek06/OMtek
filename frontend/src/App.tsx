@@ -20,7 +20,7 @@ import ContactsPage from './pages/ContactsPage'
 import AdminPage from './pages/AdminPage'
 import CsvAlertIcon from './shared/csvAlert/CsvAlertIcon'
 import { useCsvAlertSummary } from './shared/csvAlert/useCsvAlertSummary'
-import { isAdmin } from './shared/auth/permissions'
+import { canManageSites, isAdmin } from './shared/auth/permissions'
 import './App.css'
 
 function HeaderNav() {
@@ -28,7 +28,8 @@ function HeaderNav() {
   const location = useLocation()
   const [isMenuOpen, setIsMenuOpen] = useState(false)
   const userIsAdmin = isAdmin(user)
-  const csvAlertSummary = useCsvAlertSummary(userIsAdmin)
+  const userCanManageSites = canManageSites(user)
+  const csvAlertSummary = useCsvAlertSummary(userCanManageSites)
 
   useEffect(() => {
     setIsMenuOpen(false)
@@ -88,16 +89,16 @@ function HeaderNav() {
             <NavLink to="/parametres/alertes" className={navLinkClass} onClick={closeMenu}>
               Parametres
             </NavLink>
+            {userCanManageSites && (
+              <NavLink to="/admin" className={(state) => navLinkClass(state) + ' header__nav-link--admin'} onClick={closeMenu}>
+                <span>Admin</span>
+                <CsvAlertIcon count={csvAlertSummary?.open} />
+              </NavLink>
+            )}
             {userIsAdmin && (
-              <>
-                <NavLink to="/admin" className={(state) => navLinkClass(state) + ' header__nav-link--admin'} onClick={closeMenu}>
-                  <span>Admin</span>
-                  <CsvAlertIcon count={csvAlertSummary?.open} />
-                </NavLink>
-                <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
-                  Utilisateurs
-                </NavLink>
-              </>
+              <NavLink to="/users" className={navLinkClass} onClick={closeMenu}>
+                Utilisateurs
+              </NavLink>
             )}
             <NavLink to="/profil" className={navLinkClass} onClick={closeMenu}>
               Profil

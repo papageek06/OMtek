@@ -8,6 +8,7 @@ use App\Entity\User;
 use App\Repository\UserRepository;
 use App\Service\EmailVerificationService;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -156,6 +157,73 @@ class UserController extends AbstractController
     }
 
     /**
+     * PATCH /api/users/{id}/access : role et droits fins d'un utilisateur (admin uniquement).
+     * Body: { "role"?: "ROLE_ADMIN"|"ROLE_TECH", "permissions"?: ["ROLE_PERM_PIECES", ...] }
+     * Un admin ne peut pas modifier ses propres acces ni ceux d'un super admin.
+     */
+    #[Route('/{id}/access', name: 'access_update', requirements: ['id' => '\d+'], methods: ['PATCH'])]
+    public function updateAccess(int $id, Request $request, LoggerInterface $logger): JsonResponse|Response
+    {
+        $this->denyAccessUnlessGranted('ROLE_ADMIN');
+
+        $targetUser = $this->userRepository->find($id);
+        if (!$targetUser instanceof User) {
+            return new JsonResponse(['error' => 'Utilisateur introuvable'], Response::HTTP_NOT_FOUND);
+        }
+
+        $currentUser = $this->getUser();
+        if ($currentUser instanceof User && $currentUser->getId() === $targetUser->getId()) {
+            return new JsonResponse(['error' => 'Modification de vos propres acces interdite'], Response::HTTP_BAD_REQUEST);
+        }
+        if ($targetUser->isSuperAdmin()) {
+            return new JsonResponse(['error' => 'Les acces d\'un super admin ne sont pas modifiables'], Response::HTTP_FORBIDDEN);
+        }
+
+        $data = json_decode($request->getContent(), true);
+        if (!\is_array($data)) {
+            return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
+        }
+
+        $before = ['roles' => $targetUser->getRoles(), 'permissions' => $targetUser->getPermissions()];
+
+        if (\array_key_exists('role', $data)) {
+            $role = \is_string($data['role']) ? strtoupper(trim($data['role'])) : '';
+            if (!\in_array($role, self::ASSIGNABLE_ROLES, true)) {
+                return new JsonResponse(['error' => 'Role invalide', 'allowedRoles' => self::ASSIGNABLE_ROLES], Response::HTTP_BAD_REQUEST);
+            }
+            $targetUser->setRoles([$role]);
+        }
+
+        if (\array_key_exists('permissions', $data)) {
+            if (!\is_array($data['permissions'])) {
+                return new JsonResponse(['error' => 'Le champ permissions doit etre un tableau'], Response::HTTP_BAD_REQUEST);
+            }
+            $requested = array_values(array_unique(array_map(
+                static fn (mixed $p): string => \is_string($p) ? strtoupper(trim($p)) : '',
+                $data['permissions']
+            )));
+            $invalid = array_values(array_diff($requested, User::PERMISSIONS));
+            if ($invalid !== []) {
+                return new JsonResponse(['error' => 'Droits invalides', 'details' => $invalid, 'allowedPermissions' => User::PERMISSIONS], Response::HTTP_BAD_REQUEST);
+            }
+            $targetUser->setPermissions($requested);
+        }
+
+        $targetUser->setUpdatedAt(new \DateTimeImmutable());
+        $this->em->flush();
+
+        $logger->warning('Acces utilisateur modifies', [
+            'targetUserId' => $targetUser->getId(),
+            'targetEmail' => $targetUser->getEmail(),
+            'by' => $currentUser instanceof User ? $currentUser->getEmail() : null,
+            'before' => $before,
+            'after' => ['roles' => $targetUser->getRoles(), 'permissions' => $targetUser->getPermissions()],
+        ]);
+
+        return new JsonResponse($this->userToArray($targetUser), Response::HTTP_OK);
+    }
+
+    /**
      * GET /api/auth/profile ou PATCH : profil de l'utilisateur connecté.
      * On utilise /api/users/me pour cohérence.
      */
@@ -218,6 +286,7 @@ class UserController extends AbstractController
             'firstName' => $user->getFirstName(),
             'lastName' => $user->getLastName(),
             'roles' => $user->getRoles(),
+            'permissions' => $user->getPermissions(),
             'emailVerified' => $user->isEmailVerified(),
         ];
     }

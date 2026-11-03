@@ -27,7 +27,7 @@ class ContratController extends AbstractController
     #[Route('', name: 'list', methods: ['GET'])]
     public function list(Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -61,7 +61,7 @@ class ContratController extends AbstractController
     #[Route('', name: 'create', methods: ['POST'])]
     public function create(Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -143,7 +143,7 @@ class ContratController extends AbstractController
     #[Route('/{id}', name: 'show', requirements: ['id' => '\d+'], methods: ['GET'])]
     public function show(int $id): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -158,7 +158,7 @@ class ContratController extends AbstractController
     #[Route('/{id}', name: 'update', requirements: ['id' => '\d+'], methods: ['PATCH'])]
     public function update(int $id, Request $request): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -261,7 +261,7 @@ class ContratController extends AbstractController
     #[Route('/{id}', name: 'delete', requirements: ['id' => '\d+'], methods: ['DELETE'])]
     public function delete(int $id): JsonResponse|Response
     {
-        if (!$this->isAdmin()) {
+        if (!$this->canManageContracts()) {
             return new JsonResponse(['error' => 'Acces refuse'], Response::HTTP_FORBIDDEN);
         }
 
@@ -312,8 +312,8 @@ class ContratController extends AbstractController
         return null;
     }
 
-    private function isAdmin(): bool
+    private function canManageContracts(): bool
     {
-        return $this->isGranted(User::ROLE_ADMIN) || $this->isGranted(User::ROLE_SUPER_ADMIN);
+        return $this->isGranted(User::PERM_CONTRATS);
     }
 }
