@@ -312,7 +312,7 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertSame('10.179.206.21', $printer?->getIpAddress());
     }
 
-    public function testCsvBackupImportDoesNotMovePrinterWhenCounterGoesBackwards(): void
+    public function testCsvBackupImportAppliesMoreRecentReportEvenWhenCounterGoesBackwards(): void
     {
         $this->postCsvBackup([$this->glaesnerRow()]);
 
@@ -321,13 +321,88 @@ final class InboundIngestionSecurityTest extends WebTestCase
         $row['READING_DATE'] = '11/08/2026 09:00';
         $this->postCsvBackup([$row]);
         $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
-        self::assertSame(0, $body['rapportsCreated'] ?? null);
-        self::assertSame(0, $body['printersMoved'] ?? null);
-        self::assertSame(1, $body['skippedSiteConflicts'] ?? null);
+        self::assertSame(1, $body['rapportsCreated'] ?? null);
+        self::assertSame(1, $body['printersMoved'] ?? null);
+        self::assertSame(0, $body['skippedSiteConflicts'] ?? null);
 
         $this->em->clear();
         $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '3129M530546']);
-        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $printer?->getSite()?->getNom());
+        self::assertSame('VARLET ROURET IMC4500 et CAP AIL MPC2003', $printer?->getSite()?->getNom());
+
+        // Le deplacement reste ouvert pour verification (compteur qui recule).
+        $anomaly = $this->em->getRepository(CsvImportAnomaly::class)->findOneBy([
+            'serialNumber' => '3129M530546',
+            'type' => 'SERIAL_SITE_MOVED_UNVERIFIED',
+        ]);
+        self::assertInstanceOf(CsvImportAnomaly::class, $anomaly);
+        self::assertSame('OPEN', $anomaly->getStatus()->value);
+        self::assertSame('GLAESNER (Ducreux)  NOTAIRE ST PAUL DE VENCE', $anomaly->getCurrentSite()?->getNom());
+    }
+
+    public function testCsvBackupImportRealignsPrinterOnSiteOfLatestReport(): void
+    {
+        // Etat prod: le dernier rapport de la machine vient de SIEVI mais elle est rattachee a un autre site.
+        $sievi = (new Site())->setNom('SIEVI');
+        $other = (new Site())->setNom('AUTRE CLIENT');
+        $printer = (new Imprimante())
+            ->setSite($other)
+            ->setNumeroSerie('9154R240639')
+            ->setModeleNom('IM C3010')
+            ->setConstructeur('RICOH')
+            ->setIpAddress('172.20.7.110')
+            ->setGerer(true);
+        $rapport = (new RapportImprimante())
+            ->setImprimante($printer)
+            ->setSiteSnapshot($sievi)
+            ->setDateScan(new \DateTimeImmutable('2026-01-07 11:09'))
+            ->setLastScanDate(new \DateTimeImmutable('2026-01-07 11:09'));
+        $this->em->persist($sievi);
+        $this->em->persist($other);
+        $this->em->persist($printer);
+        $this->em->persist($rapport);
+        $this->em->flush();
+
+        $this->postCsvBackup([[
+            'CUSTOMER' => 'SIEVI',
+            'SERIAL_NUMBER' => '9154R240639',
+            'MODEL' => 'IM C3010',
+            'BRAND' => 'RICOH',
+            'MANAGED' => 'True',
+            'COLOR_MONO' => 'Couleur',
+            'READING_DATE' => '07/01/2026 11:09',
+            'LAST_SCAN_DATE' => '07/01/2026 11:09',
+            'MONO_LIFE_COUNT' => '32878',
+            'COLOR_LIFE_COUNT' => '32517',
+            'IPADDRESS' => '172.20.7.110',
+        ]]);
+        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, $body['printersMoved'] ?? null);
+        self::assertSame(0, $body['rapportsCreated'] ?? null);
+
+        $this->em->clear();
+        $stored = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => '9154R240639']);
+        self::assertSame('SIEVI', $stored?->getSite()?->getNom());
+        $active = $this->em->getRepository(PrinterAssignment::class)->findOneBy(['imprimante' => $stored, 'endedAt' => null]);
+        self::assertSame('SIEVI', $active?->getSite()?->getNom());
+    }
+
+    public function testCsvBackupImportAttachesUnknownPrinterEvenWhenSameScanOnTwoCustomers(): void
+    {
+        $this->postCsvBackup([
+            ['CUSTOMER' => 'SIEVI', 'SERIAL_NUMBER' => 'SN-TIE-0001', 'MODEL' => 'IM C3010', 'BRAND' => 'RICOH', 'LAST_SCAN_DATE' => '07/01/2026 11:09', 'MONO_LIFE_COUNT' => '500'],
+            ['CUSTOMER' => 'AUTRE CLIENT', 'SERIAL_NUMBER' => 'SN-TIE-0001', 'MODEL' => 'IM C3010', 'BRAND' => 'RICOH', 'LAST_SCAN_DATE' => '07/01/2026 11:09', 'MONO_LIFE_COUNT' => '100'],
+        ]);
+        $body = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, $body['rapportsCreated'] ?? null);
+        self::assertSame(1, $body['skippedSerialConflicts'] ?? null);
+
+        $this->em->clear();
+        $printer = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => 'SN-TIE-0001']);
+        self::assertSame('SIEVI', $printer?->getSite()?->getNom());
+        $anomaly = $this->em->getRepository(CsvImportAnomaly::class)->findOneBy(['serialNumber' => 'SN-TIE-0001']);
+        self::assertSame('SERIAL_MULTI_SITE_UNKNOWN_PRINTER', $anomaly?->getType());
+        self::assertSame('AUTRE CLIENT', $anomaly?->getIncomingSiteName());
     }
 
     /** @param list<array<string, string>> $rows */

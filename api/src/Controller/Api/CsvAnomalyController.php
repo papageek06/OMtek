@@ -217,7 +217,7 @@ class CsvAnomalyController extends AbstractController
                     self::RESOLUTION_SOURCE,
                     sprintf('Deplacement automatique annule (anomalie #%d).%s', (int) $anomaly->getId(), $note ? ' ' . $note : ''),
                 );
-                $anomaly->setResolutionAction($action)->setResolutionNote($note)->setResolvedBy($this->currentUser())->setResolvedAt(new \DateTimeImmutable());
+                $this->close($anomaly, CsvImportAnomalyStatus::RESOLVED, $action, $note);
                 break;
 
             case self::ACTION_RETRY_IMPORT:
@@ -325,6 +325,14 @@ class CsvAnomalyController extends AbstractController
         }
 
         $actions = [];
+        if (
+            $type === CsvAnomalyType::SERIAL_SITE_MOVED_UNVERIFIED
+            && $anomaly->getCurrentSite() instanceof Site
+            && $anomaly->getImprimante() instanceof Imprimante
+            && $anomaly->getImprimante()->getSite() !== $anomaly->getCurrentSite()
+        ) {
+            $actions[] = self::ACTION_REVERT_MOVE;
+        }
         if ($type === CsvAnomalyType::IMPORT_FAILED) {
             $actions[] = self::ACTION_RETRY_IMPORT;
         }

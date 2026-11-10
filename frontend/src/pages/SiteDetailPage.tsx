@@ -30,6 +30,7 @@ import {
   UnauthorizedError,
   type SiteDetail,
   type Imprimante,
+  type ImprimanteAutreSite,
   type RapportImprimante,
   type Alerte,
   type TonerReplacementEvent,
@@ -62,6 +63,50 @@ function formatDate(iso: string | null): string {
     hour: '2-digit',
     minute: '2-digit',
   })
+}
+
+function formatShortDate(iso: string | null): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  return d.toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: '2-digit' })
+}
+
+function multiSiteSourceLabel(source: string): string {
+  if (source === 'RAPPORT') return 'rapport'
+  if (source === 'CSV') return 'import CSV'
+  return 'rapport + import CSV'
+}
+
+function multiSiteTooltip(autresSites: ImprimanteAutreSite[]): string {
+  return 'Numéro de série vu aussi sur : ' + autresSites
+    .map((s) => `${s.siteNom}${s.lastSeenAt ? ' (' + formatShortDate(s.lastSeenAt) + ', ' + multiSiteSourceLabel(s.source) + ')' : ''}`)
+    .join(', ')
+}
+
+function MultiSiteNotice({ autresSites }: { autresSites: ImprimanteAutreSite[] }) {
+  if (autresSites.length === 0) return null
+  return (
+    <span className="site-printer-card__multisite" title={multiSiteTooltip(autresSites)}>
+      <span aria-hidden="true">⚠</span>
+      <span>
+        Aussi vu sur :{' '}
+        {autresSites.map((s, i) => (
+          <span key={`${s.siteId ?? 'x'}-${s.siteNom}`}>
+            {i > 0 && ', '}
+            {s.siteId != null ? (
+              <Link to={`/sites/${s.siteId}`} onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}>
+                {s.siteNom}
+              </Link>
+            ) : (
+              s.siteNom
+            )}
+            {s.lastSeenAt && <span className="site-printer-card__multisite-date"> ({formatShortDate(s.lastSeenAt)})</span>}
+          </span>
+        ))}
+      </span>
+    </span>
+  )
 }
 
 function parseLevelPercent(raw: string | null | undefined): number | null {
@@ -1209,6 +1254,7 @@ export default function SiteDetailPage() {
     }, [])
 
   const anciennesImprimantes = site?.anciennesImprimantes ?? []
+  const seriesRemonteesAilleurs = site?.seriesRemonteesAilleurs ?? []
 
   const loadSite = useCallback(() => {
     if (!Number.isFinite(siteId)) return
@@ -1677,6 +1723,44 @@ export default function SiteDetailPage() {
         </div>
       </header>
 
+      {seriesRemonteesAilleurs.length > 0 && (
+        <section className="site-detail-reported-elsewhere" aria-label="Numéros de série remontés par ce site mais rattachés ailleurs">
+          <div className="site-detail-reported-elsewhere__header">
+            <h2>
+              <span aria-hidden="true">⚠</span> Remontés par ce site, rattachés ailleurs
+            </h2>
+            <strong>{seriesRemonteesAilleurs.length}</strong>
+          </div>
+          <p className="site-detail-reported-elsewhere__help">
+            Les rapports de ce site contiennent ces numéros de série, mais l'imprimante est rattachée à un autre site
+            (rapport plus récent ailleurs ou conflit à vérifier dans CSV Alert).
+          </p>
+          <ul className="site-detail-reported-elsewhere__list">
+            {seriesRemonteesAilleurs.map((serie) => (
+              <li key={serie.numeroSerie} className="site-detail-reported-elsewhere__item" title={serie.message ?? undefined}>
+                <span className="site-printer-card__serial">{serie.numeroSerie}</span>
+                {serie.modele && <span className="site-detail-reported-elsewhere__model">{serie.modele}</span>}
+                <span className="site-detail-reported-elsewhere__holder">
+                  {serie.rattacheeA
+                    ? (
+                      <>
+                        Rattachée à{' '}
+                        {serie.rattacheeA.id != null
+                          ? <Link to={`/sites/${serie.rattacheeA.id}`}>{serie.rattacheeA.nom}</Link>
+                          : serie.rattacheeA.nom}
+                      </>
+                    )
+                    : 'Non rattachée'}
+                </span>
+                {serie.lastScanDate && (
+                  <span className="site-detail-reported-elsewhere__date">Scan de ce site : {serie.lastScanDate}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
       <section className="site-detail-printers" aria-label="Imprimantes du site">
         <div className="site-detail-printers__header">
           <h2>Imprimantes du site</h2>
@@ -1699,6 +1783,7 @@ export default function SiteDetailPage() {
                     'site-printer-card'
                     + (activeTab === imp.id ? ' site-printer-card--active' : '')
                     + (hasPrinterAlert ? ' site-printer-card--alert' : '')
+                    + ((imp.autresSites?.length ?? 0) > 0 ? ' site-printer-card--multisite' : '')
                   }
                   role="button"
                   tabIndex={0}
@@ -1718,6 +1803,11 @@ export default function SiteDetailPage() {
                   <span className="site-printer-card__top">
                     <span className="site-printer-card__serial">{imp.numeroSerie}</span>
                     <span className="site-printer-card__badges">
+                      {(imp.autresSites?.length ?? 0) > 0 && (
+                        <span className="site-printer-card__multisite-badge" title={multiSiteTooltip(imp.autresSites ?? [])}>
+                          Multi-sites
+                        </span>
+                      )}
                       {hasScanAlert && <span className="site-printer-card__alert-badge">S</span>}
                       {hasActiveMailAlert && <span className="site-printer-card__alert-badge site-printer-card__alert-badge--toner">T</span>}
                       <span className={imp.color ? 'site-printer-card__type site-printer-card__type--color' : 'site-printer-card__type'}>
@@ -1733,6 +1823,7 @@ export default function SiteDetailPage() {
                     </span>
                   </span>
                   <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
+                  <MultiSiteNotice autresSites={imp.autresSites ?? []} />
 
                   {imp.lastReport && (
                     <div className="site-printer-card__levels">
@@ -1800,6 +1891,11 @@ export default function SiteDetailPage() {
                       <span className="site-printer-card__serial">{imp.numeroSerie}</span>
                       <span className="site-printer-card__badges">
                         <span className="site-printer-card__old-badge">Ancienne</span>
+                        {(imp.autresSites?.length ?? 0) > 0 && (
+                          <span className="site-printer-card__multisite-badge" title={multiSiteTooltip(imp.autresSites ?? [])}>
+                            Multi-sites
+                          </span>
+                        )}
                         <span className={imp.color ? 'site-printer-card__type site-printer-card__type--color' : 'site-printer-card__type'}>
                           {imp.color ? 'Couleur' : 'Mono'}
                         </span>
@@ -1813,6 +1909,7 @@ export default function SiteDetailPage() {
                       </span>
                     </span>
                     <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
+                    <MultiSiteNotice autresSites={imp.autresSites ?? []} />
                     <span className="site-printer-card__actions">
                       <button
                         type="button"

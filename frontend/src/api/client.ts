@@ -597,6 +597,27 @@ export interface Imprimante {
   } | null
   createdAt: string
   updatedAt: string
+  /** Autres sites ou ce numero de serie a ete vu recemment (rapports / import CSV). */
+  autresSites?: ImprimanteAutreSite[]
+}
+
+export interface ImprimanteAutreSite {
+  siteId: number | null
+  siteNom: string
+  source: 'RAPPORT' | 'CSV' | 'RAPPORT+CSV' | string
+  lastSeenAt: string | null
+}
+
+/** Numero de serie remonte par les rapports d'un site mais rattache a un autre site. */
+export interface SerieRemonteeAilleurs {
+  numeroSerie: string
+  imprimanteId: number | null
+  modele: string | null
+  rattacheeA: { id: number | null; nom: string } | null
+  lastSeenAt: string | null
+  lastScanDate: string | null
+  message: string | null
+  type: string
 }
 
 export interface RapportImprimante {
@@ -1473,6 +1494,7 @@ export interface SiteDetail {
   createdAt: string
   imprimantes: Imprimante[]
   anciennesImprimantes?: Imprimante[]
+  seriesRemonteesAilleurs?: SerieRemonteeAilleurs[]
   stocks: StockItem[]
   piecesAvecStocks: PieceAvecStocks[]
   contacts?: SiteContactLink[]

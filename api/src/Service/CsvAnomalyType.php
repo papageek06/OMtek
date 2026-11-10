@@ -14,8 +14,10 @@ final class CsvAnomalyType
     public const SERIAL_MULTI_SITE_UNKNOWN_PRINTER = 'SERIAL_MULTI_SITE_UNKNOWN_PRINTER';
     /** Meme serial sur plusieurs clients: la ligne au dernier scan le plus recent a ete retenue, les autres ignorees. */
     public const SERIAL_DUPLICATE_IN_IMPORT = 'SERIAL_DUPLICATE_IN_IMPORT';
-    /** Imprimante connue remontee sur un autre client: deplacement refuse (date absente ou compteur qui recule). */
+    /** Imprimante connue remontee sur un autre client avec un rapport pas plus recent que le dernier connu: non deplacee. */
     public const SERIAL_SITE_MISMATCH = 'SERIAL_SITE_MISMATCH';
+    /** Imprimante deplacee vers le client du rapport malgre une date absente ou un compteur qui recule: a verifier. */
+    public const SERIAL_SITE_MOVED_UNVERIFIED = 'SERIAL_SITE_MOVED_UNVERIFIED';
     /** Imprimante deplacee automatiquement (trace, deja resolue). */
     public const SERIAL_SITE_AUTO_MOVED = 'SERIAL_SITE_AUTO_MOVED';
     public const MISSING_SERIAL = 'MISSING_SERIAL';
@@ -32,6 +34,7 @@ final class CsvAnomalyType
         self::SERIAL_MULTI_SITE_UNKNOWN_PRINTER,
         self::SERIAL_DUPLICATE_IN_IMPORT,
         self::SERIAL_SITE_MISMATCH,
+        self::SERIAL_SITE_MOVED_UNVERIFIED,
         self::SERIAL_SITE_AUTO_MOVED,
     ];
 

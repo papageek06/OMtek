@@ -10,18 +10,23 @@ export const CSV_ANOMALY_TYPES: Record<string, { label: string; help: string; to
   },
   SERIAL_MULTI_SITE_STALE_ROW: {
     label: 'N° de serie sur plusieurs clients',
-    help: 'Meme numero de serie chez plusieurs clients sans dernier scan permettant de trancher. A verifier sur place.',
+    help: 'Meme numero de serie chez plusieurs clients sans dernier scan permettant de trancher. La machine reste sur son site actuel (ou le plus gros compteur): a verifier sur place.',
     tone: 'danger',
   },
   SERIAL_MULTI_SITE_UNKNOWN_PRINTER: {
     label: 'Nouvelle machine sur plusieurs clients',
-    help: 'Machine inconnue remontee chez plusieurs clients en meme temps. Aucun client n\'a ete choisi.',
+    help: 'Machine inconnue remontee chez plusieurs clients en meme temps. Elle a ete rattachee a un seul client (plus gros compteur): a verifier.',
     tone: 'danger',
   },
   SERIAL_SITE_MISMATCH: {
-    label: 'Changement de client refuse',
-    help: 'Machine connue remontee chez un autre client, mais le deplacement n\'est pas fiable (date absente ou compteur qui recule).',
+    label: 'Remontee sur un autre client',
+    help: 'Machine connue remontee chez un autre client avec un rapport qui n\'est pas plus recent que le dernier connu: elle reste sur son site actuel. Repere "Multi-sites" affiche sur les deux sites.',
     tone: 'danger',
+  },
+  SERIAL_SITE_MOVED_UNVERIFIED: {
+    label: 'Deplacement a verifier',
+    help: 'Le rapport le plus recent vient d\'un autre client: la machine y a ete deplacee, mais la date de scan manque ou le compteur recule. Verifiez ou annulez le deplacement.',
+    tone: 'warning',
   },
   SERIAL_SITE_AUTO_MOVED: {
     label: 'Deplacement automatique',

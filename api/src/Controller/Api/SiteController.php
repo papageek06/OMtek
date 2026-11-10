@@ -15,6 +15,7 @@ use App\Entity\Site;
 use App\Entity\SiteContact;
 use App\Entity\Stock;
 use App\Entity\User;
+use App\Service\SerialMultiSiteService;
 use App\Service\SiteDeletionService;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
@@ -30,6 +31,7 @@ class SiteController extends AbstractController
     public function __construct(
         private readonly EntityManagerInterface $em,
         private readonly SiteDeletionService $siteDeletion,
+        private readonly SerialMultiSiteService $serialMultiSite,
         private readonly LoggerInterface $logger,
     ) {
     }
@@ -103,18 +105,21 @@ class SiteController extends AbstractController
                 static fn (Imprimante $imprimante): bool => !$imprimante->isGerer()
             ));
             $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante($allImprimantes);
+            $otherSitesByImprimanteId = $this->serialMultiSite->otherSitesByPrinter($site, $allImprimantes, $this->isAdmin());
 
             $imprimantesData = [];
             foreach ($imprimantes as $imp) {
                 $imprimanteId = $imp->getId();
                 $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
-                $imprimantesData[] = $this->imprimanteToArray($imp, $lastRapport);
+                $imprimantesData[] = $this->imprimanteToArray($imp, $lastRapport)
+                    + ['autresSites' => $imprimanteId !== null ? ($otherSitesByImprimanteId[$imprimanteId] ?? []) : []];
             }
             $anciennesImprimantesData = [];
             foreach ($anciennesImprimantes as $imp) {
                 $imprimanteId = $imp->getId();
                 $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
-                $anciennesImprimantesData[] = $this->imprimanteToArray($imp, $lastRapport);
+                $anciennesImprimantesData[] = $this->imprimanteToArray($imp, $lastRapport)
+                    + ['autresSites' => $imprimanteId !== null ? ($otherSitesByImprimanteId[$imprimanteId] ?? []) : []];
             }
 
             $stocks = $this->em->getRepository(Stock::class)->findBy(
@@ -235,6 +240,7 @@ class SiteController extends AbstractController
                 'createdAt' => $site->getCreatedAt()->format(\DateTimeInterface::ATOM),
                 'imprimantes' => $imprimantesData,
                 'anciennesImprimantes' => $anciennesImprimantesData,
+                'seriesRemonteesAilleurs' => $this->serialMultiSite->serialsReportedElsewhere($site, $this->isAdmin()),
                 'stocks' => $stocksData,
                 'piecesAvecStocks' => $piecesAvecStocks,
                 'contacts' => $this->siteContactsToArray($site),

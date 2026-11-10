@@ -155,6 +155,34 @@ final class CsvAnomalyControllerTest extends WebTestCase
         self::assertSame('CSV_ANOMALY_RESOLUTION', $active?->getSource());
     }
 
+    public function testSiteDetailFlagsSerialSeenOnSeveralSites(): void
+    {
+        $glaesner = ['CUSTOMER' => 'GLAESNER', 'SERIAL_NUMBER' => 'SN-MULTI-0001', 'MODEL' => 'IM C4500', 'BRAND' => 'RICOH', 'MANAGED' => 'True', 'LAST_SCAN_DATE' => '10/08/2026 17:27', 'READING_DATE' => '10/08/2026 17:27'];
+        $varlet = ['CUSTOMER' => 'VARLET', 'SERIAL_NUMBER' => 'SN-MULTI-0001', 'MODEL' => 'IM C4500', 'BRAND' => 'RICOH', 'MANAGED' => 'True', 'LAST_SCAN_DATE' => '09/03/2026 10:28', 'READING_DATE' => '09/03/2026 10:28'];
+        $this->postCsvBackup([$glaesner]);
+        // Le site VARLET remonte encore la machine avec un rapport plus ancien.
+        $this->postCsvBackup([$varlet]);
+        $this->em->clear();
+
+        $glaesnerSite = $this->em->getRepository(Site::class)->findOneBy(['nom' => 'GLAESNER']);
+        $varletSite = $this->em->getRepository(Site::class)->findOneBy(['nom' => 'VARLET']);
+        self::assertInstanceOf(Site::class, $glaesnerSite);
+        self::assertInstanceOf(Site::class, $varletSite);
+
+        $this->client->request('GET', sprintf('/api/sites/%d/detail', (int) $glaesnerSite->getId()), [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . self::ADMIN_TOKEN]);
+        self::assertSame(200, $this->client->getResponse()->getStatusCode(), (string) $this->client->getResponse()->getContent());
+        $detail = $this->json();
+        self::assertCount(1, $detail['imprimantes']);
+        self::assertSame('VARLET', $detail['imprimantes'][0]['autresSites'][0]['siteNom'] ?? null);
+
+        $this->client->request('GET', sprintf('/api/sites/%d/detail', (int) $varletSite->getId()), [], [], ['HTTP_AUTHORIZATION' => 'Bearer ' . self::ADMIN_TOKEN]);
+        self::assertSame(200, $this->client->getResponse()->getStatusCode(), (string) $this->client->getResponse()->getContent());
+        $detail = $this->json();
+        self::assertCount(0, $detail['imprimantes']);
+        self::assertSame('SN-MULTI-0001', $detail['seriesRemonteesAilleurs'][0]['numeroSerie'] ?? null);
+        self::assertSame('GLAESNER', $detail['seriesRemonteesAilleurs'][0]['rattacheeA']['nom'] ?? null);
+    }
+
     public function testUnavailableActionIsRejected(): void
     {
         $this->postCsvBackup([['CUSTOMER' => 'Client Sans Serie', 'SERIAL_NUMBER' => '']]);
