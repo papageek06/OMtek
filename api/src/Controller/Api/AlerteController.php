@@ -193,7 +193,19 @@ class AlerteController extends AbstractController
                 continue;
             }
 
-            $imprimante = $imprimanteRepo->findOneBy(['numeroSerie' => $incomingNumeroSerie]);
+            $incomingSite = trim((string) ($a['site'] ?? ''));
+            $candidates = $imprimanteRepo->findBy(['numeroSerie' => $incomingNumeroSerie]);
+            $imprimante = null;
+            foreach ($candidates as $candidate) {
+                if ($incomingSite !== '' && mb_strtoupper(trim($candidate->getSite()?->getNom() ?? '')) === mb_strtoupper($incomingSite)) {
+                    $imprimante = $candidate;
+                    break;
+                }
+            }
+            // A missing site is compatible only with an unambiguous serial.
+            if ($incomingSite === '' && \count($candidates) === 1) {
+                $imprimante = $candidates[0];
+            }
             if (!$imprimante instanceof Imprimante) {
                 $skipped++;
                 $skippedUnlinked++;
@@ -213,8 +225,8 @@ class AlerteController extends AbstractController
                 }
             }
             $alerte->setImprimante($imprimante);
-            $alerte->setSite($imprimante->getSite()?->getNom() ?? (string) $a['site']);
-            $alerte->setModeleImprimante($imprimante->getModeleNom() !== '' ? $imprimante->getModeleNom() : (string) $a['modeleImprimante']);
+            $alerte->setSite($imprimante->getSite()?->getNom() ?? (string) ($a['site'] ?? ''));
+            $alerte->setModeleImprimante($imprimante->getModeleNom() !== '' ? $imprimante->getModeleNom() : (string) ($a['modeleImprimante'] ?? ''));
             $alerte->setNumeroSerie($imprimante->getNumeroSerie());
             $alerte->setMotifAlerte((string) $a['motifAlerte']);
             $alerte->setPiece(isset($a['piece']) ? (string) $a['piece'] : '');
@@ -377,7 +389,7 @@ class AlerteController extends AbstractController
         if ($alerte->getMessageId() !== null && $alerte->getMessageId() !== '') {
             $byMessageId = $repo->findOneBy([
                 'messageId' => $alerte->getMessageId(),
-                'numeroSerie' => $alerte->getNumeroSerie(),
+                'imprimante' => $alerte->getImprimante(),
                 'motifAlerte' => $alerte->getMotifAlerte(),
                 'piece' => $alerte->getPiece(),
             ]);
@@ -387,7 +399,7 @@ class AlerteController extends AbstractController
         }
 
         $existing = $repo->findOneBy([
-            'numeroSerie' => $alerte->getNumeroSerie(),
+            'imprimante' => $alerte->getImprimante(),
             'motifAlerte' => $alerte->getMotifAlerte(),
             'piece' => $alerte->getPiece(),
             'recuLe' => $alerte->getRecuLe(),
@@ -503,11 +515,11 @@ class AlerteController extends AbstractController
 
         $candidates = $this->em->getRepository(Alerte::class)
             ->createQueryBuilder('a')
-            ->andWhere('a.numeroSerie = :numeroSerie')
+            ->andWhere('a.imprimante = :imprimante')
             ->andWhere('a.id <> :currentId')
             ->andWhere('a.ignorer = false')
             ->andWhere('(a.recuLe IS NULL OR a.recuLe <= :incomingDate)')
-            ->setParameter('numeroSerie', $incoming->getNumeroSerie())
+            ->setParameter('imprimante', $incoming->getImprimante())
             ->setParameter('currentId', $incoming->getId())
             ->setParameter('incomingDate', $incomingDate)
             ->orderBy('a.recuLe', 'DESC')
@@ -557,13 +569,13 @@ class AlerteController extends AbstractController
         $incomingDate = $this->alertReferenceDate($incoming);
         $candidates = $this->em->getRepository(Alerte::class)
             ->createQueryBuilder('a')
-            ->andWhere('a.numeroSerie = :numeroSerie')
+            ->andWhere('a.imprimante = :imprimante')
             ->andWhere('a.id <> :currentId')
             ->andWhere('a.ignorer = false')
             ->andWhere('(a.recuLe IS NULL OR a.recuLe <= :incomingDate)')
             ->andWhere('LOWER(a.motifAlerte) LIKE :toner_keyword')
             ->andWhere('LOWER(a.motifAlerte) NOT LIKE :toner_change_keyword')
-            ->setParameter('numeroSerie', $incoming->getNumeroSerie())
+            ->setParameter('imprimante', $incoming->getImprimante())
             ->setParameter('currentId', $incoming->getId())
             ->setParameter('incomingDate', $incomingDate)
             ->setParameter('toner_keyword', '%toner%')

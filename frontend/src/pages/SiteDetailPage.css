@@ -2964,3 +2964,40 @@
 .pieces-table--compact .pieces-table__label-cell--compact .pieces-table__label-text {
   max-width: 11rem;
 }
+.printer-serial-conflict {
+  border: 1px solid #c58b22;
+  border-radius: 8px;
+  background: rgba(197, 139, 34, 0.1);
+  font-size: 0.85rem;
+  margin: 8px 0;
+  overflow-wrap: anywhere;
+}
+
+.printer-serial-conflict summary {
+  min-height: 44px;
+  padding: 8px 12px;
+  cursor: pointer;
+  box-sizing: border-box;
+  align-content: center;
+}
+
+.printer-serial-conflict summary span + span {
+  margin-left: 6px;
+}
+
+.printer-serial-conflict summary:focus-visible,
+.printer-serial-conflict a:focus-visible {
+  outline: 2px solid var(--accent, #00aff0);
+  outline-offset: 2px;
+}
+
+.printer-serial-conflict ul {
+  margin: 0;
+  padding: 0 12px 8px 28px;
+}
+
+.printer-serial-conflict a {
+  display: inline-flex;
+  min-height: 44px;
+  align-items: center;
+}

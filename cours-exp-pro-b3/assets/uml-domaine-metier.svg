@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="760" viewBox="0 0 1200 760" role="img" aria-labelledby="title desc">
+  <title id="title">Modele de domaine OMtek</title>
+  <desc id="desc">Schema UML simplifie des objets metier principaux.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .entity{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:10}
+      .sensitive{fill:#fff2f2;stroke:#b23b3b;stroke-width:2;rx:10}
+      .flow{stroke:#24445c;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .name{font:700 17px Arial,sans-serif;fill:#13293d}
+      .attr{font:14px Arial,sans-serif;fill:#25445e}
+      .rel{font:13px Arial,sans-serif;fill:#5c7182}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#24445c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1200" height="760"/>
+  <text class="title" x="60" y="58">OMtek - UML simplifie du domaine metier</text>
+
+  <rect class="entity" x="70" y="120" width="220" height="135"/>
+  <text class="name" x="95" y="152">Site</text>
+  <text class="attr" x="95" y="182">nom</text>
+  <text class="attr" x="95" y="207">visible / masque</text>
+  <text class="attr" x="95" y="232">ressources techniques</text>
+
+  <rect class="entity" x="390" y="120" width="220" height="135"/>
+  <text class="name" x="415" y="152">Imprimante</text>
+  <text class="attr" x="415" y="182">numero serie</text>
+  <text class="attr" x="415" y="207">modele</text>
+  <text class="attr" x="415" y="232">dernier scan</text>
+
+  <rect class="entity" x="710" y="120" width="220" height="135"/>
+  <text class="name" x="735" y="152">Alerte</text>
+  <text class="attr" x="735" y="182">motif</text>
+  <text class="attr" x="735" y="207">niveau toner</text>
+  <text class="attr" x="735" y="232">active / ignoree</text>
+
+  <rect class="entity" x="390" y="330" width="220" height="135"/>
+  <text class="name" x="415" y="362">Intervention</text>
+  <text class="attr" x="415" y="392">type</text>
+  <text class="attr" x="415" y="417">priorite / statut</text>
+  <text class="attr" x="415" y="442">facturation future</text>
+
+  <rect class="entity" x="70" y="540" width="220" height="135"/>
+  <text class="name" x="95" y="572">Technicien</text>
+  <text class="attr" x="95" y="602">profil terrain</text>
+  <text class="attr" x="95" y="627">interventions</text>
+  <text class="attr" x="95" y="652">stock visible</text>
+
+  <rect class="entity" x="710" y="330" width="220" height="135"/>
+  <text class="name" x="735" y="362">Stock visible</text>
+  <text class="attr" x="735" y="392">piece</text>
+  <text class="attr" x="735" y="417">quantite site</text>
+  <text class="attr" x="735" y="442">accessible terrain</text>
+
+  <rect class="sensitive" x="710" y="540" width="220" height="135"/>
+  <text class="name" x="735" y="572">Stock cache</text>
+  <text class="attr" x="735" y="602">reserve admin</text>
+  <text class="attr" x="735" y="627">non expose tech</text>
+  <text class="attr" x="735" y="652">totaux separes</text>
+
+  <path class="flow" d="M290 187 H390"/>
+  <text class="rel" x="315" y="177">possede</text>
+  <path class="flow" d="M610 187 H710"/>
+  <text class="rel" x="630" y="177">genere</text>
+  <path class="flow" d="M820 255 V330"/>
+  <text class="rel" x="835" y="300">declenche</text>
+  <path class="flow" d="M390 397 H290 C230 397 210 470 195 540"/>
+  <text class="rel" x="245" y="387">assignee a</text>
+  <path class="flow" d="M610 397 H710"/>
+  <text class="rel" x="625" y="387">consomme</text>
+  <path class="flow" d="M180 255 V540"/>
+  <text class="rel" x="195" y="405">est visite par</text>
+  <path class="flow" d="M820 465 V540"/>
+  <text class="rel" x="835" y="510">meme piece, scope different</text>
+</svg>

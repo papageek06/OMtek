@@ -1,0 +1,62 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">Sequence mail-fetcher vers intervention</title>
+  <desc id="desc">Diagramme de sequence simplifie montrant l'ingestion mail et la creation d'une action terrain.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .actor{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:10}
+      .line{stroke:#7f8fa3;stroke-width:2;stroke-dasharray:6 6}
+      .msg{stroke:#24445c;stroke-width:2;fill:none;marker-end:url(#arrow)}
+      .return{stroke:#168a7a;stroke-width:2;stroke-dasharray:7 5;fill:none;marker-end:url(#arrowGreen)}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .label{font:700 16px Arial,sans-serif;fill:#13293d}
+      .text{font:14px Arial,sans-serif;fill:#25445e}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#24445c"/>
+    </marker>
+    <marker id="arrowGreen" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#168a7a"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1200" height="720"/>
+  <text class="title" x="60" y="58">Sequence V1 - du mail a l'action terrain</text>
+
+  <rect class="actor" x="70" y="110" width="170" height="55"/>
+  <text class="label" x="105" y="144">Boite mail</text>
+  <rect class="actor" x="310" y="110" width="170" height="55"/>
+  <text class="label" x="344" y="144">Mail-fetcher</text>
+  <rect class="actor" x="550" y="110" width="170" height="55"/>
+  <text class="label" x="592" y="144">API Symfony</text>
+  <rect class="actor" x="790" y="110" width="170" height="55"/>
+  <text class="label" x="835" y="144">BDD</text>
+  <rect class="actor" x="1010" y="110" width="170" height="55"/>
+  <text class="label" x="1038" y="144">Technicien</text>
+
+  <line class="line" x1="155" y1="165" x2="155" y2="660"/>
+  <line class="line" x1="395" y1="165" x2="395" y2="660"/>
+  <line class="line" x1="635" y1="165" x2="635" y2="660"/>
+  <line class="line" x1="875" y1="165" x2="875" y2="660"/>
+  <line class="line" x1="1095" y1="165" x2="1095" y2="660"/>
+
+  <path class="msg" d="M395 220 H155"/>
+  <text class="text" x="190" y="210">1. Lire les alertes et rapports</text>
+
+  <path class="return" d="M155 280 H395"/>
+  <text class="text" x="190" y="270">2. Mails recuperes</text>
+
+  <path class="msg" d="M395 340 H635"/>
+  <text class="text" x="420" y="330">3. Envoyer JSON + token inbound</text>
+
+  <path class="msg" d="M635 400 H875"/>
+  <text class="text" x="660" y="390">4. Persister alerte / rapport / liens</text>
+
+  <path class="return" d="M875 460 H635"/>
+  <text class="text" x="675" y="450">5. Donnees historisees</text>
+
+  <path class="msg" d="M1095 520 H635"/>
+  <text class="text" x="710" y="510">6. Consulter dashboard et interventions</text>
+
+  <path class="return" d="M635 580 H1095"/>
+  <text class="text" x="730" y="570">7. Sites en alerte, stocks, actions</text>
+</svg>

@@ -211,6 +211,13 @@ class CsvAnomalyController extends AbstractController
                 if (!$imprimante instanceof Imprimante || !$previousSite instanceof Site) {
                     return new JsonResponse(['error' => 'Imprimante ou site d\'origine introuvable'], Response::HTTP_UNPROCESSABLE_ENTITY);
                 }
+                $existing = $this->em->getRepository(Imprimante::class)->findOneBy([
+                    'numeroSerie' => $imprimante->getNumeroSerie(),
+                    'site' => $previousSite,
+                ]);
+                if ($existing instanceof Imprimante && $existing->getId() !== $imprimante->getId()) {
+                    return new JsonResponse(['error' => 'Une fiche avec ce numero de serie existe deja sur le site cible'], Response::HTTP_CONFLICT);
+                }
                 $this->importService->movePrinter(
                     $imprimante,
                     $previousSite,
@@ -256,8 +263,7 @@ class CsvAnomalyController extends AbstractController
             return new JsonResponse(['error' => 'Aucun numero de serie: impossible de rattacher une imprimante'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
 
-        $imprimante = $anomaly->getImprimante()
-            ?? $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial]);
+        $imprimante = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial, 'site' => $site]);
         $previousSite = $imprimante?->getSite();
         $assignmentNotes = sprintf(
             'Rattachement manuel depuis CSV Alert (anomalie #%d%s).%s',
@@ -266,12 +272,12 @@ class CsvAnomalyController extends AbstractController
             $note ? ' ' . $note : '',
         );
 
-        if ($row !== null && $this->importService->isRowFresherThanKnown($row, $imprimante)) {
+        if ($row !== null) {
             $row['SERIAL_NUMBER'] = $serial;
+            $row['CUSTOMER'] = $site->getNom();
             $this->importService->applyRow($row, $site, self::RESOLUTION_SOURCE, $assignmentNotes);
         } elseif ($imprimante instanceof Imprimante) {
-            // Donnees de la ligne plus anciennes que le dernier rapport: seul le rattachement est applique.
-            $this->importService->movePrinter($imprimante, $site, self::RESOLUTION_SOURCE, $assignmentNotes);
+            // La fiche de ce site existe deja: conserver ses donnees plus recentes.
         } else {
             return new JsonResponse(['error' => 'Aucune donnee exploitable pour creer l\'imprimante'], Response::HTTP_UNPROCESSABLE_ENTITY);
         }
@@ -281,6 +287,7 @@ class CsvAnomalyController extends AbstractController
         // Les autres anomalies ouvertes de conflit de site sur ce serial sont traitees par la meme decision.
         $siblings = $this->em->getRepository(CsvImportAnomaly::class)->findBy([
             'serialNumber' => $serial,
+            'incomingSiteName' => $site->getNom(),
             'status' => CsvImportAnomalyStatus::OPEN,
         ]);
         foreach ($siblings as $sibling) {

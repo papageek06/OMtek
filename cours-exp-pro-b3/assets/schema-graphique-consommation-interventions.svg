@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="760" viewBox="0 0 1300 760" role="img" aria-labelledby="title desc">
+  <title id="title">Graphique OMtek consommation, changements et interventions</title>
+  <desc id="desc">Schema explicatif du graphique OMtek qui superpose niveaux toner, changements de cartouche, interventions et impact sur le stock client.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .panel{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:12}
+      .grid{stroke:#d6dee8;stroke-width:1}
+      .axis{stroke:#13293d;stroke-width:2}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .subtitle{font:15px Arial,sans-serif;fill:#53687a}
+      .label{font:700 17px Arial,sans-serif;fill:#13293d}
+      .text{font:14px Arial,sans-serif;fill:#25445e}
+      .small{font:12px Arial,sans-serif;fill:#53687a}
+      .cyan{stroke:#16adc2;stroke-width:4;fill:none}
+      .magenta{stroke:#d61a69;stroke-width:4;fill:none}
+      .yellow{stroke:#f4bd24;stroke-width:4;fill:none}
+      .stock{stroke:#168a7a;stroke-width:4;fill:none}
+      .dash{stroke-dasharray:8 7}
+      .marker-change{stroke:#168a7a;stroke-width:3}
+      .marker-intervention{stroke:#c27a00;stroke-width:3}
+      .badge-change{fill:#e7f8f2;stroke:#168a7a;stroke-width:2;rx:8}
+      .badge-intervention{fill:#fff3dd;stroke:#c27a00;stroke-width:2;rx:8}
+      .badge-alert{fill:#ffe7e7;stroke:#c74747;stroke-width:2;rx:8}
+      .arrow{stroke:#24445c;stroke-width:2;fill:none;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="9" refY="5" orient="auto">
+      <path d="M1,1 L9,5 L1,9 Z" fill="#24445c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1300" height="760"/>
+  <text class="title" x="60" y="58">OMtek - un graphique pour relier consommation, stock et interventions</text>
+  <text class="subtitle" x="60" y="86">Le graphique ne montre pas seulement un niveau toner : il explique pourquoi une action terrain est necessaire et quel impact elle a sur le stock client.</text>
+
+  <rect class="panel" x="60" y="120" width="820" height="520"/>
+  <text class="label" x="90" y="158">Visualisation metier sur 6 mois</text>
+  <text class="small" x="90" y="184">Historique a gauche, aujourd'hui au centre, projection prudente a droite</text>
+
+  <line class="axis" x1="130" y1="565" x2="810" y2="565"/>
+  <line class="axis" x1="130" y1="220" x2="130" y2="565"/>
+  <text class="small" x="94" y="225">100%</text>
+  <text class="small" x="101" y="396">50%</text>
+  <text class="small" x="108" y="568">0%</text>
+  <line class="grid" x1="130" y1="220" x2="810" y2="220"/>
+  <line class="grid" x1="130" y1="392" x2="810" y2="392"/>
+  <line class="grid" x1="130" y1="478" x2="810" y2="478"/>
+  <text class="small" x="94" y="482">20%</text>
+
+  <line class="grid" x1="250" y1="220" x2="250" y2="565"/>
+  <line class="grid" x1="370" y1="220" x2="370" y2="565"/>
+  <line class="grid" x1="490" y1="220" x2="490" y2="565"/>
+  <line class="grid" x1="610" y1="220" x2="610" y2="565"/>
+  <line class="grid" x1="730" y1="220" x2="730" y2="565"/>
+
+  <polyline class="cyan" points="130,290 190,290 190,335 300,335 300,392 410,392 410,460 500,460 500,500 610,500 610,515"/>
+  <polyline class="magenta" points="130,250 250,250 250,278 370,278 370,330 490,330 490,360 610,360 610,382"/>
+  <polyline class="yellow" points="130,220 260,220 260,270 390,270 390,320 520,320 520,360 610,360"/>
+
+  <line class="axis" x1="610" y1="205" x2="610" y2="590" stroke="#149bd7"/>
+  <text class="text" x="578" y="199">Aujourd'hui</text>
+
+  <polyline class="cyan dash" points="610,515 700,548 810,565"/>
+  <polyline class="magenta dash" points="610,382 700,397 810,420"/>
+  <polyline class="yellow dash" points="610,360 700,430 810,510"/>
+
+  <line class="marker-change" x1="300" y1="220" x2="300" y2="565"/>
+  <rect class="badge-change" x="230" y="585" width="145" height="34"/>
+  <text class="small" x="247" y="607">Changement toner</text>
+
+  <line class="marker-intervention" x1="490" y1="220" x2="490" y2="565"/>
+  <rect class="badge-intervention" x="425" y="625" width="150" height="34"/>
+  <text class="small" x="444" y="647">Intervention terrain</text>
+
+  <rect class="badge-alert" x="665" y="452" width="135" height="34"/>
+  <text class="small" x="686" y="474">Risque rupture</text>
+
+  <circle cx="300" cy="392" r="7" fill="#168a7a"/>
+  <circle cx="490" cy="360" r="7" fill="#c27a00"/>
+  <circle cx="730" cy="478" r="7" fill="#c74747"/>
+
+  <rect class="panel" x="930" y="120" width="310" height="520"/>
+  <text class="label" x="960" y="158">Ce que le graphique apporte</text>
+
+  <rect class="badge-change" x="960" y="205" width="245" height="66"/>
+  <text class="text" x="980" y="230">1. Voir les changements</text>
+  <text class="small" x="980" y="252">Une cartouche changee devient un</text>
+  <text class="small" x="980" y="268">evenement visible dans l'historique.</text>
+
+  <rect class="badge-intervention" x="960" y="300" width="245" height="78"/>
+  <text class="text" x="980" y="325">2. Relier aux interventions</text>
+  <text class="small" x="980" y="347">Le technicien comprend quelle action</text>
+  <text class="small" x="980" y="363">a ete faite, quand, et pourquoi.</text>
+
+  <rect class="badge-change" x="960" y="407" width="245" height="78"/>
+  <text class="text" x="980" y="432">3. Mettre a jour le stock</text>
+  <text class="small" x="980" y="454">Le changement peut soustraire une</text>
+  <text class="small" x="980" y="470">piece du stock client.</text>
+
+  <rect class="badge-alert" x="960" y="515" width="245" height="78"/>
+  <text class="text" x="980" y="540">4. Decider plus vite</text>
+  <text class="small" x="980" y="562">Moins d'appels et moins de controle</text>
+  <text class="small" x="980" y="578">manuel pour prioriser les livraisons.</text>
+
+  <path class="arrow" d="M855 392 C900 392 900 445 960 445"/>
+</svg>

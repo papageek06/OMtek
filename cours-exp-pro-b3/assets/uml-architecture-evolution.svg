@@ -1,0 +1,68 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="650" viewBox="0 0 1200 650" role="img" aria-labelledby="title desc">
+  <title id="title">Evolution architecture OMtek</title>
+  <desc id="desc">Schema montrant la transition d'une application web dependante du mail-fetcher vers une application desktop autonome.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .box{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:12}
+      .box2{fill:#e9f7f4;stroke:#168a7a;stroke-width:2;rx:12}
+      .box3{fill:#fff6e6;stroke:#c27a00;stroke-width:2;rx:12}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .label{font:700 18px Arial,sans-serif;fill:#13293d}
+      .text{font:15px Arial,sans-serif;fill:#25445e}
+      .muted{font:13px Arial,sans-serif;fill:#5c7182}
+      .arrow{stroke:#24445c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#7f8fa3;stroke-width:2;stroke-dasharray:8 8;fill:none;marker-end:url(#arrowGrey)}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#24445c"/>
+    </marker>
+    <marker id="arrowGrey" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#7f8fa3"/>
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1200" height="650"/>
+  <text class="title" x="60" y="58">OMtek - evolution progressive de l'architecture</text>
+  <text class="muted" x="60" y="86">Objectif : livrer vite une application web fonctionnelle, puis reduire la dependance a l'ancien support par un programme desktop.</text>
+
+  <rect class="box3" x="60" y="140" width="250" height="125"/>
+  <text class="label" x="85" y="175">Ancien support</text>
+  <text class="text" x="85" y="205">Alertes et rapports</text>
+  <text class="text" x="85" y="230">recus par mail</text>
+
+  <rect class="box2" x="410" y="120" width="280" height="165"/>
+  <text class="label" x="435" y="155">Mail-fetcher</text>
+  <text class="text" x="435" y="185">Lecture IMAP</text>
+  <text class="text" x="435" y="210">Parsing des messages</text>
+  <text class="text" x="435" y="235">Envoi API securise</text>
+  <text class="muted" x="435" y="260">Brique temporaire mais utile</text>
+
+  <rect class="box" x="790" y="95" width="310" height="220"/>
+  <text class="label" x="815" y="130">Application web V1</text>
+  <text class="text" x="815" y="160">API Symfony</text>
+  <text class="text" x="815" y="185">Frontend React</text>
+  <text class="text" x="815" y="210">BDD metier</text>
+  <text class="text" x="815" y="235">Roles admin / technicien</text>
+  <text class="text" x="815" y="260">Interventions et stocks</text>
+  <text class="muted" x="815" y="290">Premiere valeur en production</text>
+
+  <path class="arrow" d="M310 202 H410"/>
+  <path class="arrow" d="M690 202 H790"/>
+
+  <rect class="box2" x="410" y="390" width="280" height="150"/>
+  <text class="label" x="435" y="425">Programme desktop</text>
+  <text class="text" x="435" y="455">Collecte locale</text>
+  <text class="text" x="435" y="480">Controle du flux</text>
+  <text class="text" x="435" y="505">Moins dependant du mail</text>
+
+  <rect class="box" x="790" y="370" width="310" height="190"/>
+  <text class="label" x="815" y="405">Cible stabilisee</text>
+  <text class="text" x="815" y="435">API conservee</text>
+  <text class="text" x="815" y="460">Process metier fluides</text>
+  <text class="text" x="815" y="485">Transition sans rupture</text>
+  <text class="text" x="815" y="510">Impact entreprise limite</text>
+
+  <path class="dash" d="M550 285 V390"/>
+  <path class="arrow" d="M690 465 H790"/>
+  <path class="dash" d="M945 315 V370"/>
+</svg>

@@ -229,6 +229,11 @@ class ImprimanteController extends AbstractController
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
+        $existing = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $imprimante->getNumeroSerie(), 'site' => $site]);
+        if ($existing instanceof Imprimante && $existing->getId() !== $imprimante->getId()) {
+            return new JsonResponse(['error' => 'Une fiche avec ce numero de serie existe deja sur le site cible'], Response::HTTP_CONFLICT);
+        }
+
         $effectiveAt = $this->parseDateTime($body['effectiveAt'] ?? null) ?? new \DateTimeImmutable();
         $notes = array_key_exists('notes', $body) ? $this->nullIfEmpty(trim((string) $body['notes'])) : null;
         $currentSite = $imprimante->getSite();
@@ -331,6 +336,11 @@ class ImprimanteController extends AbstractController
                 if ($site->isHidden() && !$this->isAdmin()) {
                     return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
                 }
+                $existing = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $imprimante->getNumeroSerie(), 'site' => $site]);
+                if ($existing instanceof Imprimante && $existing->getId() !== $imprimante->getId()) {
+                    return new JsonResponse(['error' => 'Une fiche avec ce numero de serie existe deja sur le site cible'], Response::HTTP_CONFLICT);
+                }
+
                 $imprimante->setSite($site);
             }
         }

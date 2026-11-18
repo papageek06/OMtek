@@ -1,0 +1,76 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="720" viewBox="0 0 1300 720" role="img" aria-labelledby="title desc">
+  <title id="title">Avant apres suivi consommables</title>
+  <desc id="desc">Comparaison entre l'ancien suivi disperse et le suivi OMtek avec graphique consolide.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .left{fill:#fff3f0;stroke:#c74747;stroke-width:2;rx:14}
+      .right{fill:#eefaf4;stroke:#168a7a;stroke-width:2;rx:14}
+      .card{fill:#ffffff;stroke:#d6dee8;stroke-width:2;rx:10}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .h{font:700 22px Arial,sans-serif;fill:#13293d}
+      .label{font:700 16px Arial,sans-serif;fill:#13293d}
+      .text{font:15px Arial,sans-serif;fill:#25445e}
+      .small{font:13px Arial,sans-serif;fill:#53687a}
+      .bad{fill:#c74747}
+      .good{fill:#168a7a}
+      .arrow{stroke:#24445c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#24445c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1300" height="720"/>
+  <text class="title" x="60" y="58">Avant / apres - le vrai avantage du suivi graphique</text>
+  <text class="small" x="60" y="86">OMtek centralise ce qui etait auparavant disperse entre rapports, memoire technicien, fichiers et ancien support.</text>
+
+  <rect class="left" x="60" y="130" width="530" height="500"/>
+  <text class="h" x="90" y="172">Avant OMtek</text>
+  <text class="small" x="90" y="198">Informations utiles mais dispersees</text>
+
+  <rect class="card" x="100" y="235" width="420" height="72"/>
+  <circle class="bad" cx="130" cy="271" r="8"/>
+  <text class="label" x="155" y="265">Rapport papier ou scanne</text>
+  <text class="small" x="155" y="287">Reference piece, compteur, notes parfois manuscrites</text>
+
+  <rect class="card" x="100" y="330" width="420" height="72"/>
+  <circle class="bad" cx="130" cy="366" r="8"/>
+  <text class="label" x="155" y="360">Stock dans un tableau separe</text>
+  <text class="small" x="155" y="382">Mise a jour manuelle, risque d'oubli</text>
+
+  <rect class="card" x="100" y="425" width="420" height="72"/>
+  <circle class="bad" cx="130" cy="461" r="8"/>
+  <text class="label" x="155" y="455">Alertes dans l'ancien support</text>
+  <text class="small" x="155" y="477">Donnees techniques peu orientees action terrain</text>
+
+  <rect class="card" x="100" y="520" width="420" height="72"/>
+  <circle class="bad" cx="130" cy="556" r="8"/>
+  <text class="label" x="155" y="550">Decision par recoupement manuel</text>
+  <text class="small" x="155" y="572">Appels, verification stock, interpretation humaine</text>
+
+  <path class="arrow" d="M590 380 H710"/>
+
+  <rect class="right" x="710" y="130" width="530" height="500"/>
+  <text class="h" x="740" y="172">Avec OMtek</text>
+  <text class="small" x="740" y="198">Une lecture unique pour comprendre et agir</text>
+
+  <rect class="card" x="750" y="235" width="420" height="72"/>
+  <circle class="good" cx="780" cy="271" r="8"/>
+  <text class="label" x="805" y="265">Graphique de consommation</text>
+  <text class="small" x="805" y="287">Historique, aujourd'hui et simulation prudente</text>
+
+  <rect class="card" x="750" y="330" width="420" height="72"/>
+  <circle class="good" cx="780" cy="366" r="8"/>
+  <text class="label" x="805" y="360">Changement de cartouche visible</text>
+  <text class="small" x="805" y="382">Evenement date et rattache a une machine</text>
+
+  <rect class="card" x="750" y="425" width="420" height="72"/>
+  <circle class="good" cx="780" cy="461" r="8"/>
+  <text class="label" x="805" y="455">Stock client mis a jour</text>
+  <text class="small" x="805" y="477">Sortie automatique ou controlee apres validation</text>
+
+  <rect class="card" x="750" y="520" width="420" height="72"/>
+  <circle class="good" cx="780" cy="556" r="8"/>
+  <text class="label" x="805" y="550">Interventions sur le meme graphique</text>
+  <text class="small" x="805" y="572">Comprendre la cause d'une baisse, d'un remplacement ou d'une alerte</text>
+</svg>

@@ -16,6 +16,7 @@ use App\Entity\SiteContact;
 use App\Entity\Stock;
 use App\Entity\User;
 use App\Service\SiteDeletionService;
+use App\Service\PrinterSerialConflictService;
 use Doctrine\ORM\EntityManagerInterface;
 use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
@@ -31,6 +32,7 @@ class SiteController extends AbstractController
         private readonly EntityManagerInterface $em,
         private readonly SiteDeletionService $siteDeletion,
         private readonly LoggerInterface $logger,
+        private readonly PrinterSerialConflictService $serialConflicts,
     ) {
     }
 
@@ -103,12 +105,13 @@ class SiteController extends AbstractController
                 static fn (Imprimante $imprimante): bool => !$imprimante->isGerer()
             ));
             $latestRapportsByImprimanteId = $this->findLatestRapportsByImprimante($allImprimantes);
+            $conflictSitesByPrinter = $this->serialConflicts->findForPrinters($allImprimantes, $this->isAdmin());
 
             $imprimantesData = [];
             foreach ($imprimantes as $imp) {
                 $imprimanteId = $imp->getId();
                 $lastRapport = $imprimanteId !== null ? ($latestRapportsByImprimanteId[$imprimanteId] ?? null) : null;
-                $imprimantesData[] = $this->imprimanteToArray($imp, $lastRapport);
+                $imprimantesData[] = $this->imprimanteToArray($imp, $lastRapport, $conflictSitesByPrinter[$imprimanteId] ?? []);
             }
             $anciennesImprimantesData = [];
             foreach ($anciennesImprimantes as $imp) {
@@ -464,13 +467,14 @@ class SiteController extends AbstractController
         return true;
     }
 
-    private function imprimanteToArray(Imprimante $imprimante, ?RapportImprimante $lastRapport = null): array
+    private function imprimanteToArray(Imprimante $imprimante, ?RapportImprimante $lastRapport = null, array $serialConflictSites = []): array
     {
         $site = $imprimante->getSite();
         $lastRapport ??= $this->findLatestRapportForImprimante($imprimante);
         return [
             'id' => $imprimante->getId(),
             'numeroSerie' => $imprimante->getNumeroSerie(),
+            'serialConflictSites' => $serialConflictSites,
             'modele' => $imprimante->getModeleNom(),
             'constructeur' => $imprimante->getConstructeur(),
             'modeleId' => $imprimante->getModele()?->getId(),

@@ -578,6 +578,7 @@ export interface Site {
 export interface Imprimante {
   id: number
   numeroSerie: string
+  serialConflictSites?: { id: number; nom: string }[]
   modele: string
   modeleId?: number | null
   constructeur: string

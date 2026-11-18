@@ -44,7 +44,7 @@ class PrinterReplacementService
                 continue;
             }
 
-            $candidate = $this->findCandidatePrinter($group['serials']);
+            $candidate = $this->findCandidatePrinter($group['serials'], $site);
             if (!$candidate instanceof Imprimante) {
                 continue;
             }
@@ -119,10 +119,10 @@ class PrinterReplacementService
     }
 
     /** @param list<string> $serials */
-    private function findCandidatePrinter(array $serials): ?Imprimante
+    private function findCandidatePrinter(array $serials, Site $site): ?Imprimante
     {
         foreach ($serials as $serial) {
-            $candidate = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial]);
+            $candidate = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial, 'site' => $site]);
             if ($candidate instanceof Imprimante) {
                 return $candidate;
             }

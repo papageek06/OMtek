@@ -1,0 +1,84 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="760" viewBox="0 0 1300 760" role="img" aria-labelledby="title desc">
+  <title id="title">Parametres des alertes OMtek</title>
+  <desc id="desc">Arbre de decision expliquant comment les parametres OMtek influencent le traitement d'une alerte.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .start{fill:#fff6e5;stroke:#c27a00;stroke-width:2;rx:12}
+      .test{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:12}
+      .ok{fill:#e9f7f4;stroke:#168a7a;stroke-width:2;rx:12}
+      .ko{fill:#ffecec;stroke:#c74747;stroke-width:2;rx:12}
+      .neutral{fill:#eef2f6;stroke:#7f8fa3;stroke-width:2;rx:12}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .label{font:700 17px Arial,sans-serif;fill:#13293d}
+      .text{font:15px Arial,sans-serif;fill:#25445e}
+      .small{font:13px Arial,sans-serif;fill:#53687a}
+      .arrow{stroke:#24445c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .yes{font:700 13px Arial,sans-serif;fill:#168a7a}
+      .no{font:700 13px Arial,sans-serif;fill:#c74747}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#24445c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1300" height="760"/>
+  <text class="title" x="60" y="58">OMtek - comment les parametres orientent le traitement des alertes</text>
+  <text class="small" x="60" y="86">Les reglages permettent de tester une logique prudente : gagner du temps sans masquer une alerte importante.</text>
+
+  <rect class="start" x="520" y="125" width="260" height="80"/>
+  <text class="label" x="565" y="157">Alerte recue</text>
+  <text class="text" x="565" y="182">Toner, bac recup, autre</text>
+
+  <rect class="test" x="520" y="255" width="260" height="95"/>
+  <text class="label" x="555" y="288">Machine identifiee ?</text>
+  <text class="small" x="555" y="314">Numero de serie relie a un site</text>
+
+  <rect class="ko" x="135" y="255" width="250" height="95"/>
+  <text class="label" x="170" y="288">A traiter a part</text>
+  <text class="small" x="170" y="314">Alerte non reliee ou donnee incomplete</text>
+
+  <rect class="test" x="520" y="400" width="260" height="105"/>
+  <text class="label" x="545" y="432">Regle active ?</text>
+  <text class="small" x="545" y="458">Seuils et modes de traitement</text>
+  <text class="small" x="545" y="480">definis dans les parametres</text>
+
+  <rect class="neutral" x="900" y="400" width="250" height="105"/>
+  <text class="label" x="932" y="432">Alerte ignoree</text>
+  <text class="small" x="932" y="458">Exclusion volontaire</text>
+  <text class="small" x="932" y="480">ou regle desactivee</text>
+
+  <rect class="test" x="245" y="560" width="260" height="120"/>
+  <text class="label" x="275" y="592">Stock suffisant ?</text>
+  <text class="small" x="275" y="620">Comparaison niveau alerte</text>
+  <text class="small" x="275" y="642">avec stock livre/client</text>
+
+  <rect class="ok" x="610" y="560" width="260" height="120"/>
+  <text class="label" x="642" y="592">Alerte active</text>
+  <text class="small" x="642" y="620">Priorite visible</text>
+  <text class="small" x="642" y="642">Creation intervention ou livraison</text>
+
+  <rect class="neutral" x="975" y="560" width="250" height="120"/>
+  <text class="label" x="1005" y="592">Alerte surveillee</text>
+  <text class="small" x="1005" y="620">Pas d'action immediate</text>
+  <text class="small" x="1005" y="642">mais trace conservee</text>
+
+  <path class="arrow" d="M650 205 V255"/>
+  <path class="arrow" d="M520 302 H385"/>
+  <text class="no" x="440" y="292">non</text>
+  <path class="arrow" d="M650 350 V400"/>
+  <text class="yes" x="665" y="378">oui</text>
+  <path class="arrow" d="M780 452 H900"/>
+  <text class="no" x="835" y="442">non</text>
+  <path class="arrow" d="M650 505 C650 535 375 530 375 560"/>
+  <text class="yes" x="590" y="535">oui</text>
+  <path class="arrow" d="M505 620 H610"/>
+  <text class="no" x="545" y="610">non</text>
+  <path class="arrow" d="M505 650 C675 720 975 705 1035 680"/>
+  <text class="yes" x="690" y="704">oui, stock couvre le besoin</text>
+
+  <rect class="ok" x="70" y="125" width="300" height="80"/>
+  <text class="label" x="98" y="157">Modes testables</text>
+  <text class="small" x="98" y="182">Regle actuelle, multi-imprimantes, filtre stock</text>
+
+  <path class="arrow" d="M370 165 H520"/>
+</svg>

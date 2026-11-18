@@ -1,0 +1,79 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="720" viewBox="0 0 1300 720" role="img" aria-labelledby="title desc">
+  <title id="title">Flux changement cartouche et stock client</title>
+  <desc id="desc">Schema expliquant le flux metier d'un changement de cartouche jusqu'a la mise a jour du stock client et au suivi d'intervention.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .box{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:12}
+      .box2{fill:#e9f7f4;stroke:#168a7a;stroke-width:2;rx:12}
+      .box3{fill:#fff5df;stroke:#c27a00;stroke-width:2;rx:12}
+      .danger{fill:#ffecec;stroke:#c74747;stroke-width:2;rx:12}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .label{font:700 18px Arial,sans-serif;fill:#13293d}
+      .text{font:15px Arial,sans-serif;fill:#25445e}
+      .small{font:13px Arial,sans-serif;fill:#53687a}
+      .arrow{stroke:#24445c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .soft{stroke:#7f8fa3;stroke-width:2;stroke-dasharray:7 6;fill:none;marker-end:url(#arrowGrey)}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#24445c"/>
+    </marker>
+    <marker id="arrowGrey" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#7f8fa3"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1300" height="720"/>
+  <text class="title" x="60" y="58">OMtek - du changement de cartouche a la decision stock</text>
+  <text class="small" x="60" y="86">Objectif : transformer un evenement technique en trace metier, mise a jour stock et aide a la decision.</text>
+
+  <rect class="box3" x="60" y="145" width="230" height="125"/>
+  <text class="label" x="88" y="180">1. Evenement terrain</text>
+  <text class="text" x="88" y="210">Changement toner</text>
+  <text class="text" x="88" y="235">ou intervention</text>
+
+  <rect class="box" x="390" y="120" width="250" height="175"/>
+  <text class="label" x="418" y="155">2. Donnee collectee</text>
+  <text class="text" x="418" y="185">Mail / rapport</text>
+  <text class="text" x="418" y="210">ou saisie OMtek</text>
+  <text class="small" x="418" y="240">Date, machine, couleur,</text>
+  <text class="small" x="418" y="260">site, technicien</text>
+
+  <rect class="box2" x="750" y="120" width="250" height="175"/>
+  <text class="label" x="778" y="155">3. Regle metier</text>
+  <text class="text" x="778" y="185">Identifier la piece</text>
+  <text class="text" x="778" y="210">Verifier le stock site</text>
+  <text class="text" x="778" y="235">Comparer les alertes</text>
+  <text class="small" x="778" y="265">Eviter doublon ou fausse alerte</text>
+
+  <rect class="box2" x="390" y="420" width="250" height="150"/>
+  <text class="label" x="418" y="455">4. Stock client</text>
+  <text class="text" x="418" y="485">Quantite avant : 2</text>
+  <text class="text" x="418" y="510">Sortie : -1</text>
+  <text class="text" x="418" y="535">Quantite apres : 1</text>
+
+  <rect class="box3" x="750" y="410" width="250" height="170"/>
+  <text class="label" x="778" y="445">5. Graphique enrichi</text>
+  <text class="text" x="778" y="475">Niveaux toner</text>
+  <text class="text" x="778" y="500">Changements</text>
+  <text class="text" x="778" y="525">Interventions</text>
+  <text class="text" x="778" y="550">Projection risque</text>
+
+  <rect class="danger" x="1060" y="260" width="190" height="190"/>
+  <text class="label" x="1085" y="295">Decision</text>
+  <text class="text" x="1085" y="325">Alerte active ?</text>
+  <text class="text" x="1085" y="350">Livraison ?</text>
+  <text class="text" x="1085" y="375">Intervention ?</text>
+  <text class="small" x="1085" y="415">Priorisation plus rapide</text>
+
+  <path class="arrow" d="M290 207 H390"/>
+  <path class="arrow" d="M640 207 H750"/>
+  <path class="arrow" d="M875 295 V410"/>
+  <path class="arrow" d="M750 495 H640"/>
+  <path class="arrow" d="M1000 495 C1050 495 1050 355 1060 355"/>
+  <path class="soft" d="M750 207 C660 335 605 365 515 420"/>
+
+  <text class="small" x="355" y="195">transmission</text>
+  <text class="small" x="675" y="195">interpretation</text>
+  <text class="small" x="650" y="485">historisation</text>
+  <text class="small" x="1035" y="480">aide a l'action</text>
+</svg>

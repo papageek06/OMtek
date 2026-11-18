@@ -11,7 +11,8 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'imprimante')]
-#[ORM\UniqueConstraint(name: 'uniq_imprimante_numero_serie', columns: ['numero_serie'])]
+#[ORM\UniqueConstraint(name: 'uniq_imprimante_serie_site', columns: ['numero_serie', 'site_id'])]
+#[ORM\Index(columns: ['numero_serie'], name: 'idx_imprimante_numero_serie')]
 #[ORM\Index(columns: ['site_id'], name: 'idx_imprimante_site')]
 #[ORM\Index(columns: ['modele_id'], name: 'idx_imprimante_modele')]
 class Imprimante

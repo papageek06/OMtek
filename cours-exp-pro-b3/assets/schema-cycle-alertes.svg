@@ -1,0 +1,87 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="760" viewBox="0 0 1300 760" role="img" aria-labelledby="title desc">
+  <title id="title">Cycle de traitement des alertes OMtek</title>
+  <desc id="desc">Schema montrant le parcours d'une alerte depuis sa reception mail jusqu'a son traitement dans OMtek.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .box{fill:#ffffff;stroke:#24445c;stroke-width:2;rx:12}
+      .mail{fill:#fff6e5;stroke:#c27a00;stroke-width:2;rx:12}
+      .rule{fill:#e9f7f4;stroke:#168a7a;stroke-width:2;rx:12}
+      .warn{fill:#ffecec;stroke:#c74747;stroke-width:2;rx:12}
+      .muted{fill:#eef2f6;stroke:#7f8fa3;stroke-width:2;rx:12}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .label{font:700 18px Arial,sans-serif;fill:#13293d}
+      .text{font:15px Arial,sans-serif;fill:#25445e}
+      .small{font:13px Arial,sans-serif;fill:#53687a}
+      .arrow{stroke:#24445c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+      .dash{stroke:#7f8fa3;stroke-width:2;stroke-dasharray:7 6;fill:none;marker-end:url(#arrowGrey)}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#24445c"/>
+    </marker>
+    <marker id="arrowGrey" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#7f8fa3"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1300" height="760"/>
+  <text class="title" x="60" y="58">OMtek - cycle complet de traitement des alertes</text>
+  <text class="small" x="60" y="86">But : transformer une alerte recue par mail en decision fiable, configurable et exploitable par le technicien.</text>
+
+  <rect class="mail" x="70" y="145" width="230" height="125"/>
+  <text class="label" x="98" y="180">1. Reception mail</text>
+  <text class="text" x="98" y="210">Alerte toner</text>
+  <text class="text" x="98" y="235">Bac recuperation</text>
+
+  <rect class="box" x="390" y="145" width="230" height="125"/>
+  <text class="label" x="418" y="180">2. Mail-fetcher</text>
+  <text class="text" x="418" y="210">Lecture IMAP</text>
+  <text class="text" x="418" y="235">Extraction donnees</text>
+
+  <rect class="box" x="710" y="145" width="230" height="125"/>
+  <text class="label" x="738" y="180">3. API OMtek</text>
+  <text class="text" x="738" y="210">Controle token</text>
+  <text class="text" x="738" y="235">Enregistrement</text>
+
+  <rect class="rule" x="1010" y="145" width="230" height="125"/>
+  <text class="label" x="1038" y="180">4. Verification</text>
+  <text class="text" x="1038" y="210">Machine connue ?</text>
+  <text class="text" x="1038" y="235">Doublon ?</text>
+
+  <rect class="rule" x="230" y="385" width="260" height="150"/>
+  <text class="label" x="258" y="420">5. Regles metier</text>
+  <text class="text" x="258" y="450">Toner &lt;= 20%</text>
+  <text class="text" x="258" y="475">Bac recup plein</text>
+  <text class="text" x="258" y="500">Changement recent</text>
+
+  <rect class="rule" x="590" y="385" width="260" height="150"/>
+  <text class="label" x="618" y="420">6. Parametres</text>
+  <text class="text" x="618" y="450">Regle actuelle</text>
+  <text class="text" x="618" y="475">Multi-imprimantes</text>
+  <text class="text" x="618" y="500">Filtre stock</text>
+
+  <rect class="warn" x="950" y="365" width="260" height="175"/>
+  <text class="label" x="978" y="400">7. Decision</text>
+  <text class="text" x="978" y="430">Alerte active</text>
+  <text class="text" x="978" y="455">Alerte ignoree</text>
+  <text class="text" x="978" y="480">Alerte remplacee</text>
+  <text class="small" x="978" y="510">Priorite terrain ajustee</text>
+
+  <rect class="muted" x="390" y="610" width="230" height="90"/>
+  <text class="label" x="418" y="645">Historique</text>
+  <text class="text" x="418" y="675">Trace et justification</text>
+
+  <rect class="muted" x="710" y="610" width="230" height="90"/>
+  <text class="label" x="738" y="645">Interface</text>
+  <text class="text" x="738" y="675">Liste, site, graphique</text>
+
+  <path class="arrow" d="M300 207 H390"/>
+  <path class="arrow" d="M620 207 H710"/>
+  <path class="arrow" d="M940 207 H1010"/>
+  <path class="arrow" d="M1125 270 C1125 330 1010 330 1010 385"/>
+  <path class="arrow" d="M950 460 H850"/>
+  <path class="arrow" d="M590 460 H490"/>
+  <path class="arrow" d="M850 460 H950"/>
+  <path class="dash" d="M505 535 V610"/>
+  <path class="dash" d="M720 535 V610"/>
+  <path class="dash" d="M940 460 C900 565 830 590 825 610"/>
+</svg>

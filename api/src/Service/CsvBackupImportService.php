@@ -17,14 +17,10 @@ use Doctrine\ORM\EntityManagerInterface;
 /**
  * Import des lignes CSV BACKUP (sites, imprimantes, rapports).
  *
- * La pertinence d'une ligne est determinee par sa LAST_SCAN_DATE:
- * - pour un meme numero de serie, seule la ligne au dernier scan le plus recent est retenue;
- * - une ligne dont le dernier scan n'est pas plus recent que le dernier scan connu en base est ignoree;
- * - une imprimante connue remontee sur un autre client avec un dernier scan plus recent (et des compteurs
- *   coherents) est deplacee automatiquement, le deplacement etant trace (affectation + anomalie resolue).
- *
- * Toute ligne qui ne peut pas etre traitee normalement est conservee dans csv_import_anomaly
- * (avec la ligne brute) pour traitement depuis l'ecran Admin > CSV Alert.
+ * Chaque couple site / numero de serie possede sa propre fiche et ses rapports.
+ * Les scans anciens sont conserves sans remplacer les donnees du scan le plus recent.
+ * Une empreinte de scan rend les relectures idempotentes. Les lignes inexploitables
+ * sont conservees dans les anomalies pour correction et relance.
  */
 class CsvBackupImportService
 {
@@ -39,6 +35,11 @@ class CsvBackupImportService
     /** @var array<string, CsvImportAnomaly> */
     private array $anomaliesByFingerprint = [];
     private int $sitesCreated = 0;
+    /** @var array<string, RapportImprimante> */
+    private array $reportsByFingerprint = [];
+    /** @var array<int, RapportImprimante> */
+    private array $latestReports = [];
+    private bool $lastReportWasCreated = false;
 
     public function __construct(
         private readonly EntityManagerInterface $em,
@@ -54,274 +55,68 @@ class CsvBackupImportService
     public function import(array $rows): array
     {
         $this->resetState();
-
-        $serialSiteConflicts = $this->findSerialSiteConflicts($rows);
-        $freshestRowBySerial = $this->findFreshestRowBySerial($rows);
-
-        $imprimantesCreated = 0;
-        $imprimantesUpdated = 0;
-        $rapportsCreated = 0;
-        $skipped = 0;
-        $skippedSerialConflicts = 0;
-        $skippedSiteConflicts = 0;
-        $skippedOutdatedRows = 0;
-        $modelesRefreshed = 0;
-        $skippedInvalidRows = 0;
-        $printersMoved = 0;
-        $csvImportAnomalies = 0;
-        /** @var list<array<string, mixed>> */
+        $stats = array_fill_keys(['imprimantesCreated', 'imprimantesUpdated', 'rapportsCreated',
+            'skippedSerialConflicts', 'skippedSiteConflicts', 'skippedOutdatedRows', 'modelesRefreshed',
+            'skippedInvalidRows', 'printersMoved', 'csvImportAnomalies', 'skipped', 'duplicateReports'], 0);
         $acceptedRows = [];
         $connection = $this->em->getConnection();
-
         $connection->beginTransaction();
         try {
-            foreach ($rows as $rowIndex => $row) {
+            foreach ($rows as $row) {
                 if (!\is_array($row)) {
-                    $this->recordAnomaly(
-                        CsvAnomalyType::INVALID_ROW,
-                        '',
-                        null,
-                        null,
-                        null,
-                        null,
-                        'Ligne CSV illisible (format inattendu).',
-                        ['row' => $row],
-                        [CsvAnomalyType::INVALID_ROW, json_encode($row)],
-                    );
-                    $csvImportAnomalies++;
-                    $skippedInvalidRows++;
-                    $skipped++;
+                    $this->recordAnomaly(CsvAnomalyType::INVALID_ROW, '', null, null, null, null,
+                        'Ligne CSV illisible.', ['row' => $row], [CsvAnomalyType::INVALID_ROW, json_encode($row)]);
+                    $stats['csvImportAnomalies']++;
+                    $stats['skippedInvalidRows']++;
+                    $stats['skipped']++;
                     continue;
                 }
-
-                $customer = trim((string) ($row['CUSTOMER'] ?? ''));
-                $serialNumber = trim((string) ($row['SERIAL_NUMBER'] ?? ''));
-                if ($customer === '' && $serialNumber === '') {
-                    // Lignes de totaux site/client: ignorees silencieusement.
-                    $skipped++;
+                $customer = $this->trunc(trim((string) ($row['CUSTOMER'] ?? '')), 255);
+                $serial = $this->trunc(trim((string) ($row['SERIAL_NUMBER'] ?? '')), 100);
+                if ($customer === '' && $serial === '') {
+                    $stats['skipped']++;
                     continue;
                 }
-
-                $customerNorm = $this->trunc($customer, 255);
-                $serialNorm = $this->trunc($serialNumber, 100);
-
-                if ($serialNorm === '') {
-                    $this->recordAnomaly(
-                        CsvAnomalyType::MISSING_SERIAL,
-                        '',
-                        null,
-                        null,
-                        $this->findSiteByName($customerNorm),
-                        $customerNorm,
-                        'Ligne sans numero de serie: impossible de l\'associer a une imprimante.',
-                        ['row' => $row],
-                        [
-                            CsvAnomalyType::MISSING_SERIAL,
-                            mb_strtoupper($customerNorm),
-                            (string) ($row['MODEL'] ?? ''),
-                            (string) ($row['IPADDRESS'] ?? ''),
-                            (string) ($row['LOCATION'] ?? ''),
-                        ],
-                    );
-                    $csvImportAnomalies++;
-                    $skippedInvalidRows++;
-                    $skipped++;
+                if ($customer === '' || $serial === '') {
+                    $type = $serial === '' ? CsvAnomalyType::MISSING_SERIAL : CsvAnomalyType::MISSING_CUSTOMER;
+                    $this->recordAnomaly($type, $serial, null, null, null, $customer,
+                        'Client ou numero de serie manquant : ligne conservee pour correction.',
+                        ['row' => $row], [$type, mb_strtoupper($customer), $serial, (string) ($row['MODEL'] ?? '')]);
+                    $stats['csvImportAnomalies']++;
+                    $stats['skippedInvalidRows']++;
+                    $stats['skipped']++;
                     continue;
                 }
-
-                $imprimante = $this->getPrinterBySerial($serialNorm);
-                $currentSite = $imprimante?->getSite();
-
-                if ($customerNorm === '') {
-                    $this->recordAnomaly(
-                        CsvAnomalyType::MISSING_CUSTOMER,
-                        $serialNorm,
-                        $imprimante,
-                        $currentSite,
-                        null,
-                        null,
-                        'Ligne sans client (CUSTOMER vide): impossible de determiner le site.',
-                        ['row' => $row],
-                        [CsvAnomalyType::MISSING_CUSTOMER, $serialNorm],
-                    );
-                    $csvImportAnomalies++;
-                    $skippedInvalidRows++;
-                    $skipped++;
-                    continue;
+                $rawDate = trim((string) ($row['LAST_SCAN_DATE'] ?? ''));
+                if ($rawDate !== '' && !$this->isNullDate($rawDate) && $this->parseDate($rawDate) === null) {
+                    $this->recordAnomaly(CsvAnomalyType::INVALID_LAST_SCAN_DATE, $serial, null, null, null, $customer,
+                        'Date de scan illisible : rapport conserve, date de lecture utilisee si disponible.',
+                        ['row' => $row], [CsvAnomalyType::INVALID_LAST_SCAN_DATE, $serial, mb_strtoupper($customer), $rawDate]);
+                    $stats['csvImportAnomalies']++;
                 }
-
-                $lastScanRaw = trim((string) ($row['LAST_SCAN_DATE'] ?? ''));
-                $lastScanDate = $this->parseDate($lastScanRaw);
-                if ($lastScanDate === null && $lastScanRaw !== '' && !$this->isNullDate($lastScanRaw)) {
-                    $this->recordAnomaly(
-                        CsvAnomalyType::INVALID_LAST_SCAN_DATE,
-                        $serialNorm,
-                        $imprimante,
-                        $currentSite,
-                        $this->findSiteByName($customerNorm),
-                        $customerNorm,
-                        sprintf('Date de dernier scan illisible ("%s"): fraicheur des donnees non verifiable.', mb_substr($lastScanRaw, 0, 40)),
-                        ['row' => $row],
-                        [CsvAnomalyType::INVALID_LAST_SCAN_DATE, $serialNorm, mb_strtoupper($customerNorm), $lastScanRaw],
-                    );
-                    $csvImportAnomalies++;
-                }
-
-                // Meme numero de serie plusieurs fois dans l'import: seule la ligne au dernier scan le plus recent compte.
-                $freshest = $freshestRowBySerial[$serialNorm] ?? null;
-                if ($freshest !== null && $freshest['index'] !== $rowIndex) {
-                    if (!$this->sameSiteName($freshest['customer'], $customerNorm)) {
-                        $this->recordAnomaly(
-                            CsvAnomalyType::SERIAL_DUPLICATE_IN_IMPORT,
-                            $serialNorm,
-                            $imprimante,
-                            $currentSite,
-                            $this->findSiteByName($customerNorm),
-                            $customerNorm,
-                            sprintf(
-                                'Numero de serie present aussi chez %s avec un dernier scan plus recent (%s): ligne ignoree.',
-                                $freshest['customer'],
-                                $freshest['lastScan']->format('d/m/Y H:i'),
-                            ),
-                            [
-                                'row' => $row,
-                                'retainedCustomer' => $freshest['customer'],
-                                'retainedLastScanDate' => $freshest['lastScan']->format(\DateTimeInterface::ATOM),
-                            ],
-                            [CsvAnomalyType::SERIAL_DUPLICATE_IN_IMPORT, $serialNorm, mb_strtoupper($customerNorm)],
-                        );
-                        $csvImportAnomalies++;
-                    }
-                    $skippedOutdatedRows++;
-                    $skipped++;
-                    continue;
-                }
-
-                // Dernier scan pas plus recent que ce qui est deja connu: donnees perimees, ligne ignoree.
-                $latestKnownRapport = $imprimante instanceof Imprimante ? $this->findLatestRapport($imprimante) : null;
-                $latestKnownScanDate = $this->rapportScanDate($latestKnownRapport);
-                if ($lastScanDate !== null && $latestKnownScanDate !== null && $lastScanDate <= $latestKnownScanDate) {
-                    // Meme rapport renvoye: pas de nouveau rapport, mais le modele est recalcule (corrige les anciens imports).
-                    if ($lastScanDate == $latestKnownScanDate && $imprimante instanceof Imprimante && $this->applyModele($imprimante, $row)) {
-                        $imprimante->setUpdatedAt(new \DateTimeImmutable());
-                        $modelesRefreshed++;
-                    }
-                    $skippedOutdatedRows++;
-                    $skipped++;
-                    continue;
-                }
-
-                if ($freshest === null && isset($serialSiteConflicts[$serialNorm])) {
-                    if (!$currentSite instanceof Site || !$this->sameSiteName($currentSite->getNom(), $customerNorm)) {
-                        $type = $imprimante instanceof Imprimante
-                            ? CsvAnomalyType::SERIAL_MULTI_SITE_STALE_ROW
-                            : CsvAnomalyType::SERIAL_MULTI_SITE_UNKNOWN_PRINTER;
-                        $this->recordAnomaly(
-                            $type,
-                            $serialNorm,
-                            $imprimante,
-                            $currentSite,
-                            $this->findSiteByName($customerNorm),
-                            $customerNorm,
-                            sprintf(
-                                'Meme numero de serie chez plusieurs clients (%s) sans dernier scan permettant de les departager.',
-                                implode(', ', array_keys($serialSiteConflicts[$serialNorm])),
-                            ),
-                            [
-                                'reason' => 'Same serial appears on multiple CSV customers in the same import.',
-                                'conflictingCustomers' => array_keys($serialSiteConflicts[$serialNorm]),
-                                'row' => $row,
-                            ],
-                            [$type, $serialNorm, mb_strtoupper($customerNorm)],
-                        );
-                        $csvImportAnomalies++;
-                        $skippedSerialConflicts++;
-                        $skipped++;
-                        continue;
-                    }
-                }
-
-                $assignmentSource = 'CSV_IMPORT';
-                $assignmentNotes = null;
-                if ($imprimante instanceof Imprimante && $currentSite instanceof Site && !$this->sameSiteName($currentSite->getNom(), $customerNorm)) {
-                    $incomingCounter = $this->rowTotalCounter($row);
-                    $knownCounter = $latestKnownRapport instanceof RapportImprimante ? $this->rapportTotalCounter($latestKnownRapport) : null;
-                    $counterRegression = $incomingCounter !== null && $knownCounter !== null && $incomingCounter < $knownCounter;
-
-                    if ($lastScanDate !== null && !$counterRegression) {
-                        $this->recordAnomaly(
-                            CsvAnomalyType::SERIAL_SITE_AUTO_MOVED,
-                            $serialNorm,
-                            $imprimante,
-                            $currentSite,
-                            $this->findSiteByName($customerNorm),
-                            $customerNorm,
-                            sprintf(
-                                'Deplacee automatiquement de %s vers %s (dernier scan plus recent).',
-                                $currentSite->getNom(),
-                                $customerNorm,
-                            ),
-                            [
-                                'reason' => 'Printer reported on another customer with a more recent LAST_SCAN_DATE: moved automatically.',
-                                'previousLastScanDate' => $latestKnownScanDate?->format(\DateTimeInterface::ATOM),
-                                'incomingLastScanDate' => $lastScanDate->format(\DateTimeInterface::ATOM),
-                                'previousCounter' => $knownCounter,
-                                'incomingCounter' => $incomingCounter,
-                                'row' => $row,
-                            ],
-                            null,
-                            CsvImportAnomalyStatus::RESOLVED,
-                        );
-                        $assignmentSource = 'CSV_AUTO_MOVE';
-                        $assignmentNotes = sprintf(
-                            'Deplacement automatique depuis %s (dernier scan CSV %s).',
-                            $currentSite->getNom(),
-                            $lastScanDate->format('d/m/Y H:i'),
-                        );
-                        $csvImportAnomalies++;
-                        $printersMoved++;
-                    } else {
-                        $this->recordAnomaly(
-                            CsvAnomalyType::SERIAL_SITE_MISMATCH,
-                            $serialNorm,
-                            $imprimante,
-                            $currentSite,
-                            $this->findSiteByName($customerNorm),
-                            $customerNorm,
-                            $counterRegression
-                                ? sprintf('Remontee chez %s avec un compteur inferieur au dernier connu (%d < %d): deplacement refuse.', $customerNorm, $incomingCounter, $knownCounter)
-                                : sprintf('Remontee chez %s sans date de dernier scan: deplacement non verifiable.', $customerNorm),
-                            [
-                                'reason' => $counterRegression
-                                    ? 'Known printer reported on another customer with a lower page counter than the last known report. Manual check required.'
-                                    : 'Known printer reported by CSV on another customer without LAST_SCAN_DATE. Manual reinstall workflow required before accepting this move.',
-                                'previousCounter' => $knownCounter,
-                                'incomingCounter' => $incomingCounter,
-                                'row' => $row,
-                            ],
-                            [CsvAnomalyType::SERIAL_SITE_MISMATCH, $serialNorm, mb_strtoupper($customerNorm)],
-                        );
-                        $csvImportAnomalies++;
-                        $skippedSiteConflicts++;
-                        $skipped++;
-                        continue;
-                    }
-                }
-
-                $site = $this->getOrCreateSite($customerNorm);
-                if ($imprimante instanceof Imprimante) {
-                    $imprimantesUpdated++;
+                $site = $this->getOrCreateSite($customer);
+                $printer = $this->getPrinterBySerial($serial, $site);
+                $previousModel = $printer?->getModeleNom();
+                $latest = $printer ? $this->findLatestRapport($printer) : null;
+                $scan = $this->rowScanDate($row);
+                $isCurrent = $latest === null || ($scan !== null && ($this->rapportScanDate($latest) === null || $scan >= $this->rapportScanDate($latest)));
+                $stats[$printer === null ? 'imprimantesCreated' : 'imprimantesUpdated']++;
+                $report = $this->applyRow($row, $site, 'CSV_IMPORT', null);
+                if ($this->lastReportWasCreated) {
+                    $stats['rapportsCreated']++;
                 } else {
-                    $imprimantesCreated++;
+                    $stats['duplicateReports']++;
                 }
-
-                $this->applyRow($row, $site, $assignmentSource, $assignmentNotes);
-                $rapportsCreated++;
-                $acceptedRows[] = $row;
+                if ($previousModel !== null && $report->getImprimante()?->getModeleNom() !== $previousModel) {
+                    $stats['modelesRefreshed']++;
+                }
+                if ($isCurrent) {
+                    $acceptedRows[] = $row;
+                }
             }
-
             $this->em->flush();
-            $printerReplacementStats = $this->printerReplacementService->applySameIpReplacementsFromCsvRows($acceptedRows);
+            // Ne deduit jamais un remplacement physique depuis un rapport historique.
+            $replacements = $this->printerReplacementService->applySameIpReplacementsFromCsvRows($acceptedRows);
             $this->em->flush();
             $connection->commit();
         } catch (\Throwable $e) {
@@ -330,24 +125,10 @@ class CsvBackupImportService
             }
             throw $e;
         }
-
-        return [
-            'ok' => true,
-            'sitesCreated' => $this->sitesCreated,
-            'imprimantesCreated' => $imprimantesCreated,
-            'imprimantesUpdated' => $imprimantesUpdated,
-            'rapportsCreated' => $rapportsCreated,
-            'printerReplacementsDetected' => $printerReplacementStats['detected'],
-            'printerReplacementsDetached' => $printerReplacementStats['detached'],
-            'printerReplacementContractLinesTransferred' => $printerReplacementStats['contractLinesTransferred'],
-            'csvImportAnomalies' => $csvImportAnomalies,
-            'skippedSerialConflicts' => $skippedSerialConflicts,
-            'skippedSiteConflicts' => $skippedSiteConflicts,
-            'skippedOutdatedRows' => $skippedOutdatedRows,
-            'modelesRefreshed' => $modelesRefreshed,
-            'skippedInvalidRows' => $skippedInvalidRows,
-            'printersMoved' => $printersMoved,
-            'skipped' => $skipped,
+        return ['ok' => true, 'sitesCreated' => $this->sitesCreated] + $stats + [
+            'printerReplacementsDetected' => $replacements['detected'],
+            'printerReplacementsDetached' => $replacements['detached'],
+            'printerReplacementContractLinesTransferred' => $replacements['contractLinesTransferred'],
         ];
     }
 
@@ -386,13 +167,34 @@ class CsvBackupImportService
     public function applyRow(array $row, Site $site, string $assignmentSource, ?string $assignmentNotes): RapportImprimante
     {
         $serialNorm = $this->trunc(trim((string) ($row['SERIAL_NUMBER'] ?? '')), 100);
-        $imprimante = $this->getPrinterBySerial($serialNorm);
+        $imprimante = $this->getPrinterBySerial($serialNorm, $site);
         if (!$imprimante instanceof Imprimante) {
             $imprimante = new Imprimante();
             $imprimante->setNumeroSerie($serialNorm);
-            $this->imprimantesBySerial[$serialNorm] = $imprimante;
+            $this->imprimantesBySerial[$this->printerKey($serialNorm, $site)] = $imprimante;
         }
 
+        $latest = $this->findLatestRapport($imprimante);
+        $scan = $this->rowScanDate($row);
+        $knownScan = $this->rapportScanDate($latest);
+        $updateCurrent = $latest === null || ($scan !== null && ($knownScan === null || $scan >= $knownScan));
+        $fingerprint = $this->reportFingerprint($row, $site, $serialNorm);
+        $rapport = $this->reportsByFingerprint[$fingerprint]
+            ?? $this->em->getRepository(RapportImprimante::class)->findOneBy(['importFingerprint' => $fingerprint]);
+        // Compatibilite : les rapports anterieurs a la migration n'ont pas d'empreinte.
+        if (!$rapport && $imprimante->getId() !== null && $scan !== null) {
+            $rapport = $this->em->getRepository(RapportImprimante::class)->createQueryBuilder('r')
+                ->where('r.imprimante = :printer')->andWhere('r.importFingerprint IS NULL')
+                ->andWhere('(r.siteSnapshot = :site OR r.siteSnapshot IS NULL)')
+                ->andWhere('COALESCE(r.lastScanDate, r.dateScan) = :scan')
+                ->setParameter('printer', $imprimante)->setParameter('site', $site)->setParameter('scan', $scan)
+                ->orderBy('r.id', 'DESC')->setMaxResults(1)->getQuery()->getOneOrNullResult();
+        }
+        $this->lastReportWasCreated = !$rapport instanceof RapportImprimante;
+        $rapport ??= new RapportImprimante();
+        $rapport->setImportFingerprint($fingerprint);
+        $this->reportsByFingerprint[$fingerprint] = $rapport;
+        if ($updateCurrent) {
         $imprimante->setSite($site);
         $imprimante->setEmplacement($this->nullIfEmpty($this->trunc(trim((string) ($row['LOCATION'] ?? '')), 255)));
         $gerer = $this->parseBool($row['MANAGED'] ?? true);
@@ -402,20 +204,20 @@ class CsvBackupImportService
         $imprimante->setUpdatedAt(new \DateTimeImmutable());
         $this->applyModele($imprimante, $row);
 
+        }
         $this->em->persist($imprimante);
         $assignment = $this->ensureActiveAssignment(
             $imprimante,
             $site,
-            $this->parseDate($row['READING_DATE'] ?? null) ?? new \DateTimeImmutable(),
+            $scan ?? new \DateTimeImmutable(),
             $assignmentSource,
             $assignmentNotes,
         );
 
-        $rapport = new RapportImprimante();
         $rapport->setImprimante($imprimante);
         $rapport->setSiteSnapshot($site);
         $rapport->setAssignment($assignment);
-        $rapport->setDateScan($this->parseDate($row['READING_DATE'] ?? null));
+        $rapport->setDateScan($scan);
         $rapport->setLastScanDate($this->parseDate($row['LAST_SCAN_DATE'] ?? null));
         $rapport->setMonoLifeCount($this->field($row, 'MONO_LIFE_COUNT', 50));
         $rapport->setColorLifeCount($this->field($row, 'COLOR_LIFE_COUNT', 50));
@@ -442,7 +244,13 @@ class CsvBackupImportService
         $rapport->setMagentaImpressionRemaining($this->field($row, 'MAGENTA_IMPRESSION_REMAINING', 50));
         $rapport->setYellowImpressionRemaining($this->field($row, 'YELLOW_IMPRESSION_REMAINING', 50));
         $this->em->persist($rapport);
-        $this->tonerReplacementService->registerFromRapport($rapport);
+        if ($updateCurrent) {
+            $this->latestReports[spl_object_id($imprimante)] = $rapport;
+        }
+        // Une relecture ou un ancien scan ne doit pas consommer du stock a nouveau.
+        if ($updateCurrent && $this->lastReportWasCreated && $scan !== null) {
+            $this->tonerReplacementService->registerFromRapport($rapport, $latest);
+        }
 
         return $rapport;
     }
@@ -543,6 +351,9 @@ class CsvBackupImportService
         $this->assignmentsBySerial = [];
         $this->anomaliesByFingerprint = [];
         $this->sitesCreated = 0;
+        $this->reportsByFingerprint = [];
+        $this->latestReports = [];
+        $this->lastReportWasCreated = false;
     }
 
     /**
@@ -607,97 +418,37 @@ class CsvBackupImportService
         }
     }
 
-    /**
-     * @param array<int|string, mixed> $rows
-     * @return array<string, array<string, true>>
-     */
-    private function findSerialSiteConflicts(array $rows): array
+    private function printerKey(string $serial, Site $site): string
     {
-        $sitesBySerial = [];
-        foreach ($rows as $row) {
-            if (!\is_array($row)) {
-                continue;
-            }
-            $serial = $this->trunc(trim((string) ($row['SERIAL_NUMBER'] ?? '')), 100);
-            $customer = $this->trunc(trim((string) ($row['CUSTOMER'] ?? '')), 255);
-            if ($serial === '' || $customer === '') {
-                continue;
-            }
-            $sitesBySerial[$serial][$customer] = true;
-        }
-
-        return array_filter(
-            $sitesBySerial,
-            static fn (array $siteNames): bool => \count($siteNames) > 1
-        );
+        return mb_strtoupper($serial) . '|' . spl_object_id($site);
     }
 
-    /**
-     * Pour chaque numero de serie present plusieurs fois, la ligne au LAST_SCAN_DATE le plus recent.
-     * Absent si le serial n'apparait qu'une fois ou si la plus recente ne peut pas etre determinee
-     * (date manquante ou egalite entre clients differents).
-     *
-     * @param array<int|string, mixed> $rows
-     * @return array<string, array{index:int|string, customer:string, lastScan:\DateTimeImmutable}>
-     */
-    private function findFreshestRowBySerial(array $rows): array
+    private function getPrinterBySerial(string $serial, Site $site): ?Imprimante
     {
-        /** @var array<string, list<array{index:int|string, customer:string, lastScan:?\DateTimeImmutable}>> $rowsBySerial */
-        $rowsBySerial = [];
-        foreach ($rows as $index => $row) {
-            if (!\is_array($row)) {
-                continue;
-            }
-            $serial = $this->trunc(trim((string) ($row['SERIAL_NUMBER'] ?? '')), 100);
-            $customer = $this->trunc(trim((string) ($row['CUSTOMER'] ?? '')), 255);
-            if ($serial === '' || $customer === '') {
-                continue;
-            }
-            $rowsBySerial[$serial][] = [
-                'index' => $index,
-                'customer' => $customer,
-                'lastScan' => $this->parseDate($row['LAST_SCAN_DATE'] ?? null),
-            ];
+        $key = $this->printerKey($serial, $site);
+        if (isset($this->imprimantesBySerial[$key])) {
+            return $this->imprimantesBySerial[$key];
         }
-
-        $freshest = [];
-        foreach ($rowsBySerial as $serial => $candidates) {
-            if (\count($candidates) < 2) {
-                continue;
-            }
-            $best = null;
-            $ambiguous = false;
-            foreach ($candidates as $candidate) {
-                if ($candidate['lastScan'] === null) {
-                    $ambiguous = true;
-                    break;
-                }
-                if ($best === null || $candidate['lastScan'] > $best['lastScan']) {
-                    $best = $candidate;
-                } elseif ($candidate['lastScan'] == $best['lastScan'] && !$this->sameSiteName($candidate['customer'], $best['customer'])) {
-                    $ambiguous = true;
-                }
-            }
-            if (!$ambiguous && $best !== null && $best['lastScan'] !== null) {
-                $freshest[$serial] = $best;
-            }
-        }
-
-        return $freshest;
-    }
-
-    private function getPrinterBySerial(string $serial): ?Imprimante
-    {
-        if (isset($this->imprimantesBySerial[$serial])) {
-            return $this->imprimantesBySerial[$serial];
-        }
-
-        $imprimante = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial]);
+        $imprimante = $site->getId() === null ? null : $this->em->getRepository(Imprimante::class)
+            ->findOneBy(['numeroSerie' => $serial, 'site' => $site]);
         if ($imprimante instanceof Imprimante) {
-            $this->imprimantesBySerial[$serial] = $imprimante;
+            $this->imprimantesBySerial[$key] = $imprimante;
         }
-
         return $imprimante;
+    }
+
+    private function rowScanDate(array $row): ?\DateTimeImmutable
+    {
+        return $this->parseDate($row['LAST_SCAN_DATE'] ?? null) ?? $this->parseDate($row['READING_DATE'] ?? null);
+    }
+
+    private function reportFingerprint(array $row, Site $site, string $serial): string
+    {
+        $scan = $this->rowScanDate($row);
+        // Sans date exploitable, deduplique les relectures de la meme ligne complete.
+        ksort($row);
+        $identity = $scan?->format('Y-m-d H:i:s') ?? json_encode($row, JSON_THROW_ON_ERROR);
+        return hash('sha256', json_encode([mb_strtoupper($site->getNom()), mb_strtoupper($serial), $identity], JSON_THROW_ON_ERROR));
     }
 
     private function ensureActiveAssignment(
@@ -707,7 +458,7 @@ class CsvBackupImportService
         string $source,
         ?string $notes,
     ): PrinterAssignment {
-        $serial = $imprimante->getNumeroSerie();
+        $serial = $this->printerKey($imprimante->getNumeroSerie(), $site);
         if (isset($this->assignmentsBySerial[$serial]) && $this->assignmentsBySerial[$serial]->getSite() === $site) {
             return $this->assignmentsBySerial[$serial];
         }
@@ -744,6 +495,9 @@ class CsvBackupImportService
 
     private function findLatestRapport(Imprimante $imprimante): ?RapportImprimante
     {
+        if (isset($this->latestReports[spl_object_id($imprimante)])) {
+            return $this->latestReports[spl_object_id($imprimante)];
+        }
         if ($imprimante->getId() === null) {
             return null;
         }
@@ -752,6 +506,8 @@ class CsvBackupImportService
             ->createQueryBuilder('rapport')
             ->addSelect('CASE WHEN rapport.lastScanDate IS NULL THEN rapport.dateScan ELSE rapport.lastScanDate END AS HIDDEN effectiveScanDate')
             ->where('rapport.imprimante = :imprimante')
+            ->andWhere('(rapport.siteSnapshot = :site OR rapport.siteSnapshot IS NULL)')
+            ->setParameter('site', $imprimante->getSite())
             ->setParameter('imprimante', $imprimante)
             ->orderBy('effectiveScanDate', 'DESC')
             ->addOrderBy('rapport.id', 'DESC')

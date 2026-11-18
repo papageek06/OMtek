@@ -51,6 +51,7 @@ import SiteResourcesTab from './SiteResourcesTab'
 import SiteDeleteDialog from './SiteDeleteDialog'
 import PieceLinkDialog from './PieceLinkDialog'
 import PieceVariantBadge from '../shared/PieceVariantBadge'
+import PrinterSerialConflict from '../shared/PrinterSerialConflict'
 import './SiteDetailPage.css'
 
 function formatDate(iso: string | null): string {
@@ -1733,6 +1734,7 @@ export default function SiteDetailPage() {
                     </span>
                   </span>
                   <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
+                  <PrinterSerialConflict sites={imp.serialConflictSites} />
 
                   {imp.lastReport && (
                     <div className="site-printer-card__levels">
@@ -2958,6 +2960,7 @@ function ImprimanteTab({
         {imprimante.modele} · {imprimante.constructeur}
         {imprimante.emplacement ? ' · ' + imprimante.emplacement : ''}
       </p>
+      <PrinterSerialConflict sites={imprimante.serialConflictSites} />
 
       <div className="site-detail-chart-wrap">
           <div className="site-detail-chart-head">

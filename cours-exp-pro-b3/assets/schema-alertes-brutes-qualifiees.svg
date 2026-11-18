@@ -1,0 +1,80 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1300" height="720" viewBox="0 0 1300 720" role="img" aria-labelledby="title desc">
+  <title id="title">Alertes brutes et alertes qualifiees</title>
+  <desc id="desc">Comparaison entre une liste brute d'alertes mail et une liste qualifiee dans OMtek.</desc>
+  <defs>
+    <style>
+      .bg{fill:#f7fafc}
+      .left{fill:#fff3f0;stroke:#c74747;stroke-width:2;rx:14}
+      .right{fill:#eefaf4;stroke:#168a7a;stroke-width:2;rx:14}
+      .card{fill:#ffffff;stroke:#d6dee8;stroke-width:2;rx:10}
+      .title{font:700 28px Arial,sans-serif;fill:#13293d}
+      .h{font:700 22px Arial,sans-serif;fill:#13293d}
+      .label{font:700 16px Arial,sans-serif;fill:#13293d}
+      .text{font:15px Arial,sans-serif;fill:#25445e}
+      .small{font:13px Arial,sans-serif;fill:#53687a}
+      .bad{fill:#c74747}
+      .good{fill:#168a7a}
+      .warn{fill:#c27a00}
+      .arrow{stroke:#24445c;stroke-width:3;fill:none;marker-end:url(#arrow)}
+    </style>
+    <marker id="arrow" markerWidth="12" markerHeight="12" refX="10" refY="6" orient="auto">
+      <path d="M2,2 L10,6 L2,10 Z" fill="#24445c"/>
+    </marker>
+  </defs>
+  <rect class="bg" width="1300" height="720"/>
+  <text class="title" x="60" y="58">OMtek - passer de l'alerte brute a l'alerte qualifiee</text>
+  <text class="small" x="60" y="86">Le gain n'est pas de recevoir plus d'alertes, mais de mieux savoir lesquelles demandent une action.</text>
+
+  <rect class="left" x="60" y="130" width="530" height="500"/>
+  <text class="h" x="90" y="172">Avant : alerte brute</text>
+  <text class="small" x="90" y="198">Information recue, mais encore a interpreter</text>
+
+  <rect class="card" x="100" y="235" width="420" height="76"/>
+  <circle class="bad" cx="130" cy="273" r="8"/>
+  <text class="label" x="155" y="265">Message mail ou ligne Print Audit</text>
+  <text class="small" x="155" y="288">Machine, site, niveau, date</text>
+
+  <rect class="card" x="100" y="335" width="420" height="76"/>
+  <circle class="warn" cx="130" cy="373" r="8"/>
+  <text class="label" x="155" y="365">Verification manuelle</text>
+  <text class="small" x="155" y="388">Stock client, dernier changement, contexte</text>
+
+  <rect class="card" x="100" y="435" width="420" height="76"/>
+  <circle class="bad" cx="130" cy="473" r="8"/>
+  <text class="label" x="155" y="465">Risque de doublon</text>
+  <text class="small" x="155" y="488">Ancienne alerte encore visible ou deja traitee</text>
+
+  <rect class="card" x="100" y="535" width="420" height="55"/>
+  <circle class="bad" cx="130" cy="562" r="8"/>
+  <text class="label" x="155" y="568">Decision lente ou incertaine</text>
+
+  <path class="arrow" d="M590 380 H710"/>
+
+  <rect class="right" x="710" y="130" width="530" height="500"/>
+  <text class="h" x="740" y="172">Avec OMtek : alerte qualifiee</text>
+  <text class="small" x="740" y="198">Information enrichie par les regles et parametres</text>
+
+  <rect class="card" x="750" y="225" width="420" height="70"/>
+  <circle class="good" cx="780" cy="260" r="8"/>
+  <text class="label" x="805" y="254">Machine reliee au bon site</text>
+  <text class="small" x="805" y="276">Numero de serie, modele, site et historique</text>
+
+  <rect class="card" x="750" y="315" width="420" height="70"/>
+  <circle class="good" cx="780" cy="350" r="8"/>
+  <text class="label" x="805" y="344">Regles appliquees</text>
+  <text class="small" x="805" y="366">Seuil toner, bac recup, changement cartouche</text>
+
+  <rect class="card" x="750" y="405" width="420" height="70"/>
+  <circle class="good" cx="780" cy="440" r="8"/>
+  <text class="label" x="805" y="434">Stock pris en compte</text>
+  <text class="small" x="805" y="456">Alerte active si le besoin depasse la couverture</text>
+
+  <rect class="card" x="750" y="495" width="420" height="70"/>
+  <circle class="good" cx="780" cy="530" r="8"/>
+  <text class="label" x="805" y="524">Statut clair</text>
+  <text class="small" x="805" y="546">Active, ignoree, remplacee ou surveillee</text>
+
+  <rect class="card" x="750" y="585" width="420" height="45"/>
+  <circle class="good" cx="780" cy="607" r="8"/>
+  <text class="label" x="805" y="613">Action plus rapide et tracable</text>
+</svg>

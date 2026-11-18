@@ -9,6 +9,7 @@ use Doctrine\ORM\Mapping as ORM;
 
 #[ORM\Entity]
 #[ORM\Table(name: 'rapport_imprimante')]
+#[ORM\UniqueConstraint(name: 'uniq_rapport_import_fingerprint', columns: ['import_fingerprint'])]
 #[ORM\Index(columns: ['imprimante_id', 'date_scan'], name: 'idx_rapport_impr_date')]
 class RapportImprimante
 {
@@ -16,6 +17,10 @@ class RapportImprimante
     #[ORM\GeneratedValue]
     #[ORM\Column(type: Types::INTEGER)]
     private ?int $id = null;
+
+    /** SHA-256 de la ligne normalisee et de son site ; null pour les rapports historiques. */
+    #[ORM\Column(type: Types::STRING, length: 64, nullable: true)]
+    private ?string $importFingerprint = null;
 
     #[ORM\ManyToOne(targetEntity: Imprimante::class, inversedBy: 'rapports')]
     #[ORM\JoinColumn(nullable: false, onDelete: 'CASCADE')]
@@ -121,6 +126,17 @@ class RapportImprimante
     public function getId(): ?int
     {
         return $this->id;
+    }
+
+    public function getImportFingerprint(): ?string
+    {
+        return $this->importFingerprint;
+    }
+
+    public function setImportFingerprint(?string $importFingerprint): static
+    {
+        $this->importFingerprint = $importFingerprint;
+        return $this;
     }
 
     public function getImprimante(): ?Imprimante
