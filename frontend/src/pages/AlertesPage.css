@@ -30,6 +30,19 @@
   color: #b5bac1;
 }
 
+.alerts-page__stock-sync {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.55rem 0.8rem;
+  color: #c9cdd5;
+  font-size: 0.86rem;
+}
+
+.alerts-page__stock-sync-button {
+  min-height: 44px;
+}
+
 .alerts-filters {
   background: linear-gradient(180deg, rgba(43, 45, 49, 0.98), rgba(30, 31, 34, 0.98));
   border: 1px solid #1e1f22;
@@ -37,7 +50,7 @@
   box-shadow: 0 12px 28px rgba(0, 0, 0, 0.18);
   padding: 1rem;
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr)) minmax(0, 2fr);
   gap: 0.75rem;
 }
 
@@ -54,16 +67,13 @@
 
 .alerts-filters select,
 .alerts-filters input {
+  min-width: 0;
   border: 1px solid #3f4147;
   border-radius: 10px;
   background: #1e1f22;
   color: #f2f3f5;
   padding: 0.72rem 0.85rem;
   font: inherit;
-}
-
-.alerts-filters__search {
-  grid-column: span 2;
 }
 
 .alerts-page__error {
@@ -209,7 +219,8 @@
   opacity: 0.55;
 }
 
-.alerts-page__bulk-status-apply {
+.alerts-page__bulk-status-apply,
+.alerts-page__stock-sync-button {
   border: 1px solid rgba(0, 168, 252, 0.35);
   border-radius: 10px;
   padding: 0.55rem 0.9rem;
@@ -220,11 +231,13 @@
   cursor: pointer;
 }
 
-.alerts-page__bulk-status-apply:hover:not(:disabled) {
+.alerts-page__bulk-status-apply:hover:not(:disabled),
+.alerts-page__stock-sync-button:hover:not(:disabled) {
   background: rgba(0, 168, 252, 0.22);
 }
 
-.alerts-page__bulk-status-apply:disabled {
+.alerts-page__bulk-status-apply:disabled,
+.alerts-page__stock-sync-button:disabled {
   opacity: 0.55;
   cursor: not-allowed;
 }
@@ -450,10 +463,6 @@ a.alerts-site-group__title:hover {
   .alerts-filters {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
-
-  .alerts-filters__search {
-    grid-column: span 2;
-  }
 }
 
 @media (max-width: 640px) {
@@ -462,11 +471,7 @@ a.alerts-site-group__title:hover {
   }
 
   .alerts-filters {
-    grid-template-columns: 1fr;
-  }
-
-  .alerts-filters__search {
-    grid-column: span 1;
+    grid-template-columns: minmax(0, 1fr);
   }
 
   .alerts-filters__refresh {

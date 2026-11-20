@@ -1,0 +1,24 @@
+.printers-page { max-width: 1440px; margin: 0 auto; padding: 1.5rem; }
+.printers-page__header h1 { margin: 0 0 .5rem; }
+.printers-page__header p, .printers-count { color: #b5bac1; }
+.printers-filters { display: flex; flex-wrap: wrap; gap: 1rem; padding: 1rem; background: #2b2d31; border-radius: 10px; }
+.printers-filters label { display: flex; flex: 1 1 170px; flex-direction: column; gap: .4rem; min-width: 0; }
+.printers-filters .printers-filters__search { flex: 2 1 280px; }
+.printers-filters input, .printers-filters select { box-sizing: border-box; width: 100%; min-height: 44px; padding: .6rem .75rem; background: #1e1f22; color: #f2f3f5; border: 1px solid #4e5058; border-radius: 6px; font: inherit; }
+.printers-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 1rem; padding: 0; list-style: none; }
+.printer-card { display: flex; flex-direction: column; min-width: 0; padding: 1.1rem; border: 1px solid #3f4147; border-radius: 10px; background: #2b2d31; overflow-wrap: anywhere; }
+.printer-card__badges { display: flex; flex-wrap: wrap; gap: .4rem; }
+.printer-badge { font-size: .8rem; padding: .2rem .5rem; color: #d3eaff; background: #203c50; border-radius: 5px; }
+.printer-badge--manual { color: #d6d0ff; background: #3c365c; }
+.printer-card h2 { font-size: 1.15rem; margin: 1rem 0 .25rem; }
+.printer-card p { margin: 0 0 .5rem; }
+.printer-card dl { margin: .5rem 0 1rem; }
+.printer-card dl > div { margin-bottom: .6rem; }
+.printer-card dt { font-size: .8rem; color: #b5bac1; }
+.printer-card dd { margin: 0; }
+.printer-card__open { align-self: flex-start; display: inline-flex; align-items: center; min-height: 44px; margin-top: auto; }
+.printers-pagination { display: flex; justify-content: center; flex-wrap: wrap; align-items: center; gap: 1rem; margin-top: 1.5rem; }
+.printers-page button { min-height: 44px; padding: .5rem 1rem; color: #f2f3f5; background: #404249; border: 1px solid #5a5d65; border-radius: 6px; font: inherit; }
+.printers-page button:disabled { opacity: .5; cursor: default; }
+.printers-page :is(a, input, select, button):focus-visible { outline: 2px solid #00a8fc; outline-offset: 3px; }
+@media (max-width: 600px) { .printers-page { padding: 1rem; } .printers-filters label { flex-basis: 100%; } }

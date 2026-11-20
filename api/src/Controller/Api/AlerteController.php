@@ -16,6 +16,7 @@ use App\Service\InboundTokenGuard;
 use App\Service\AlertRuleService;
 use App\Service\TonerReplacementService;
 use Doctrine\ORM\EntityManagerInterface;
+use Psr\Log\LoggerInterface;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -28,6 +29,7 @@ class AlerteController extends AbstractController
 {
     private const TONER_THRESHOLD_PERCENT = 20;
     private const REASON_SUPERSEDED_BY_NEWER_ALERT = 'SUPERSEDED_BY_NEWER_ALERT';
+    private const REASON_TONER_CHANGE_RECORDED = 'TONER_CHANGE_RECORDED';
 
     public function __construct(
         private readonly EntityManagerInterface $em,
@@ -86,6 +88,21 @@ class AlerteController extends AbstractController
             array_map([$this, 'alerteToArray'], $alertes),
             Response::HTTP_OK
         );
+    }
+
+    #[Route('/sync-stocks', name: 'sync_stocks', methods: ['POST'])]
+    public function syncStocks(LoggerInterface $logger): JsonResponse
+    {
+        $this->denyAccessUnlessGranted(User::ROLE_ADMIN);
+
+        $result = $this->alertRuleService->synchronizeStockAlerts();
+        $user = $this->getUser();
+        $logger->info('Synchronisation des alertes avec les stocks', [
+            'actor_id' => $user instanceof User ? $user->getId() : null,
+            ...$result,
+        ]);
+
+        return new JsonResponse($result);
     }
 
     #[Route('/{id}', name: 'show', requirements: ['id' => '\\d+'], methods: ['GET'])]
@@ -227,7 +244,7 @@ class AlerteController extends AbstractController
             $alerte->setImprimante($imprimante);
             $alerte->setSite($imprimante->getSite()?->getNom() ?? (string) ($a['site'] ?? ''));
             $alerte->setModeleImprimante($imprimante->getModeleNom() !== '' ? $imprimante->getModeleNom() : (string) ($a['modeleImprimante'] ?? ''));
-            $alerte->setNumeroSerie($imprimante->getNumeroSerie());
+            $alerte->setNumeroSerie($imprimante->getNumeroSerie() ?? $incomingNumeroSerie);
             $alerte->setMotifAlerte((string) $a['motifAlerte']);
             $alerte->setPiece(isset($a['piece']) ? (string) $a['piece'] : '');
             $alerte->setNiveauPourcent(
@@ -236,7 +253,9 @@ class AlerteController extends AbstractController
                     : null
             );
             $alerte->setIgnorer(!empty($a['ignorer']));
-            if (!$alerte->isIgnorer() && $this->shouldAutoIgnoreLowTonerAlertBecauseSiteStockExists($alerte)) {
+            if ($this->isTonerChangeAlert($alerte)) {
+                $this->markAutoDeactivated($alerte, self::REASON_TONER_CHANGE_RECORDED);
+            } elseif (!$alerte->isIgnorer() && $this->shouldAutoIgnoreLowTonerAlertBecauseSiteStockExists($alerte)) {
                 $alerte->setIgnorer(true);
             }
 
@@ -258,8 +277,10 @@ class AlerteController extends AbstractController
 
         $hasAutoUpdates = false;
         foreach ($entities as $entity) {
-            $this->alertRuleService->evaluateAlerte($entity);
-            $hasAutoUpdates = true;
+            if (!$this->isTonerChangeAlert($entity)) {
+                $this->alertRuleService->evaluateAlerte($entity);
+                $hasAutoUpdates = true;
+            }
             if ($this->deactivateOlderActionableAlerts($entity)) {
                 $hasAutoUpdates = true;
             }
@@ -360,6 +381,7 @@ class AlerteController extends AbstractController
             'MAIL_FETCHER' => 'Mail',
             'MANUAL' => 'Manuelle',
             'SYSTEM' => 'Systeme',
+            Alerte::SOURCE_STOCK_SYNC => 'Logiciel',
             default => $source,
         };
     }

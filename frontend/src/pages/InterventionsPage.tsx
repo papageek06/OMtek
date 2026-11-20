@@ -768,7 +768,7 @@ export default function InterventionsPage() {
                 </option>
                 {createImprimantes.map((imprimante) => (
                   <option key={imprimante.id} value={imprimante.id}>
-                    {imprimante.numeroSerie} - {imprimante.modele}
+                    {imprimante.numeroSerie || imprimante.emplacement || 'Sans numéro de série'} - {imprimante.modele}
                   </option>
                 ))}
               </select>
@@ -1140,7 +1140,7 @@ export default function InterventionsPage() {
                     <option value="">Non precisee</option>
                     {siteImprimantes.map((imprimante) => (
                       <option key={imprimante.id} value={imprimante.id}>
-                        {imprimante.numeroSerie} - {imprimante.modele}
+                        {imprimante.numeroSerie || imprimante.emplacement || 'Sans numéro de série'} - {imprimante.modele}
                       </option>
                     ))}
                   </select>

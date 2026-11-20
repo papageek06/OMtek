@@ -21,10 +21,13 @@ final class PrinterSerialConflictService
      */
     public function findForPrinters(array $printers, bool $includeHiddenSites): array
     {
-        $serials = array_values(array_unique(array_map(
-            static fn (Imprimante $printer): string => $printer->getNumeroSerie(),
-            $printers
-        )));
+        $serials = [];
+        foreach ($printers as $printer) {
+            $serial = $printer->getNumeroSerie();
+            if ($serial !== null && $serial !== '') {
+                $serials[] = $serial;
+            }
+        }
         if ($serials === []) {
             return [];
         }
@@ -34,7 +37,7 @@ final class PrinterSerialConflictService
             ->innerJoin('printer.site', 'site')
             ->where('printer.numeroSerie IN (:serials)')
             ->andWhere('printer.gerer = true')
-            ->setParameter('serials', $serials)
+            ->setParameter('serials', array_values(array_unique($serials)))
             ->orderBy('site.nom', 'ASC');
         if (!$includeHiddenSites) {
             $query->andWhere('site.isHidden = false');

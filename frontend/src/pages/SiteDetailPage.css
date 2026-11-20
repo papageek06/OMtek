@@ -1,7 +1,5 @@
 .site-detail-page {
-  max-width: 1300px;
-  margin: 0 auto;
-  padding: 0.75rem;
+  padding: 0.75rem clamp(1rem, 2.5vw, 3rem);
 }
 
 .site-detail-loading,
@@ -472,12 +470,51 @@
   color: #ffd2d3;
 }
 
+.site-detail-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  align-items: start;
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+@media (min-width: 1080px) {
+  .site-detail-overview {
+    grid-template-columns: minmax(0, 4fr) minmax(0, 5fr);
+  }
+
+  .site-detail-printers__grid--aligned {
+    padding-block-start: var(--printer-list-offset, 0px);
+  }
+}
+
+.site-detail-overview__printers {
+  display: grid;
+  min-width: 0;
+  gap: 0.75rem;
+}
+
+.site-detail-overview .site-detail-printers,
+.site-detail-overview .site-detail-overview__stock {
+  min-width: 0;
+  margin-bottom: 0;
+}
+
+.site-detail-overview__stock,
 .site-detail-printers {
   margin-bottom: 1rem;
   padding: 1rem;
   border: 1px solid #1e1f22;
   border-radius: 12px;
   background: #25272c;
+}
+
+.site-detail-overview__stock {
+  container: site-stock / inline-size;
+}
+
+.site-detail-stock-header {
+  display: flow-root;
 }
 
 .site-detail-printers__header {
@@ -506,11 +543,12 @@
 
 .site-printer-card {
   width: 100%;
+  box-sizing: border-box;
   display: grid;
-  grid-template-columns: minmax(160px, 220px) minmax(240px, 1fr) minmax(180px, auto) minmax(360px, 1.2fr) auto;
-  gap: 0.7rem 1rem;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 0.45rem 0.65rem;
   align-items: center;
-  padding: 0.85rem 1rem;
+  padding: 0.65rem 0.75rem;
   border: 1px solid #3f4147;
   border-radius: 10px;
   background: #313338;
@@ -542,26 +580,29 @@
 }
 
 .site-printer-card__top,
-.site-printer-card__meta,
-.site-printer-card__badges,
-.site-printer-card__levels {
+.site-printer-card__badges {
   display: flex;
   align-items: center;
   min-width: 0;
 }
 
 .site-printer-card__top {
+  min-width: 0;
   gap: 0.55rem;
+  flex-wrap: wrap;
 }
 
 .site-printer-card__serial {
   color: #f2f3f5;
   font-weight: 700;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .site-printer-card__badges {
   gap: 0.35rem;
-  margin-left: auto;
 }
 
 .site-printer-card__alert-badge {
@@ -584,33 +625,8 @@
   border-color: #f04749;
 }
 
-.site-printer-card__type {
-  padding: 0.2rem 0.5rem;
-  border-radius: 6px;
-  background: rgba(185, 187, 190, 0.22);
-  color: #b9bbbe;
-  font-size: 0.68rem;
-  font-weight: 700;
-  letter-spacing: 0.02em;
-  text-transform: uppercase;
-}
-
-.site-printer-card__type--color {
-  background: rgba(88, 101, 242, 0.25);
-  color: #949cf7;
-}
-
-.site-printer-card__meta {
-  gap: 0.75rem;
-}
-
-.site-printer-card__ip {
-  color: #00a8fc;
-  font-family: ui-monospace, monospace;
-  white-space: nowrap;
-}
-
 .site-printer-card__model {
+  max-width: 13ch;
   min-width: 0;
   overflow: hidden;
   color: #8e9297;
@@ -619,16 +635,87 @@
 }
 
 .site-printer-card__last {
+  grid-column: 1 / -1;
   color: #8e9297;
   font-size: 0.82rem;
-  white-space: nowrap;
 }
 
 .site-printer-card__levels {
-  gap: 0.45rem;
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(4.4rem, 100%), 1fr));
+  gap: 0.35rem 0.45rem;
+}
+
+.site-printer-level-stock {
+  display: grid;
+  grid-template-rows: minmax(1rem, auto) 2rem;
+  align-items: center;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.site-printer-level--unknown {
+  color: #b5bac1;
+}
+
+.site-printer-stock {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.site-printer-stock button {
+  width: 1.35rem;
+  height: 1.55rem;
+  padding: 0;
+  border: 1px solid #5b5f66;
+  border-radius: 5px;
+  background: #3f4147;
+  color: #f2f3f5;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.site-printer-stock button:hover:not(:disabled) {
+  background: #4e5058;
+}
+
+.site-printer-stock button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.site-printer-stock output,
+.site-printer-stock__summary {
+  min-width: 1rem;
+  color: #f2f3f5;
+  font-size: 0.8rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+
+@media (pointer: coarse) {
+  .site-printer-card__levels {
+    grid-template-columns: repeat(auto-fit, minmax(min(5.5rem, 100%), 1fr));
+  }
+
+  .site-printer-stock button {
+    width: 1.75rem;
+    height: 2rem;
+  }
+}
+
+.site-printer-card > .printer-serial-conflict {
+  grid-column: 1 / -1;
 }
 
 .site-printer-card__actions {
+  grid-column: 2;
+  grid-row: 1;
   display: inline-flex;
   align-items: center;
   justify-content: flex-end;
@@ -724,7 +811,7 @@
 
 .site-printer-level__track {
   flex: 1;
-  min-width: 42px;
+  min-width: 1.35rem;
   height: 8px;
   overflow: hidden;
   border-radius: 4px;
@@ -801,33 +888,6 @@
   text-align: right;
 }
 
-@media (max-width: 1180px) {
-  .site-printer-card {
-    grid-template-columns: 1fr;
-    align-items: stretch;
-  }
-
-  .site-printer-card__badges {
-    margin-left: 0;
-  }
-
-  .site-printer-card__top {
-    justify-content: space-between;
-  }
-
-  .site-printer-card__meta {
-    flex-wrap: wrap;
-  }
-
-  .site-printer-card__levels {
-    flex-wrap: wrap;
-  }
-
-  .site-printer-level {
-    min-width: 120px;
-  }
-}
-
 .site-detail-section {
   margin-bottom: 2rem;
 }
@@ -891,20 +951,6 @@
 .site-detail-stock-search__select:focus {
   outline: none;
   border-color: #00a8fc;
-}
-
-.site-detail-stock-search__btn {
-  padding: 0.4rem 0.9rem;
-  font-size: 0.9rem;
-  color: #f2f3f5;
-  background: #00a8fc;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.site-detail-stock-search__btn:hover {
-  background: #0095e0;
 }
 
 .site-detail-add-btn {
@@ -1886,6 +1932,12 @@
   color: #f2f3f5;
 }
 
+.site-detail-chart-mail-key {
+  margin: 0.4rem 0;
+  color: #c4b5fd;
+  font-size: 0.82rem;
+}
+
 .site-detail-chart-head p {
   margin: 0.25rem 0 0;
   color: #b5bac1;
@@ -2409,6 +2461,7 @@
 
   .site-detail-header__cta {
     width: 100%;
+    box-sizing: border-box;
   }
 
   .site-detail-tabs {
@@ -2428,6 +2481,9 @@
 
   .site-detail-chart-head span {
     justify-self: start;
+    max-width: 100%;
+    box-sizing: border-box;
+    white-space: normal;
   }
 
   .site-detail-stock-search {
@@ -2437,8 +2493,7 @@
   }
 
   .site-detail-stock-search__input,
-  .site-detail-stock-search__select,
-  .site-detail-stock-search__btn {
+  .site-detail-stock-search__select {
     width: 100%;
     min-width: 0;
   }
@@ -2840,6 +2895,35 @@
   border-color: #00a8fc;
 }
 
+.manual-printer-dialog {
+  width: min(100%, 38rem);
+}
+
+.manual-printer-dialog__form {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: auto;
+}
+
+.manual-printer-dialog__optional summary {
+  cursor: pointer;
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  color: #bde7ff;
+}
+
+.manual-printer-dialog__optional-fields {
+  display: grid;
+  gap: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.site-detail-printers__header {
+  flex-wrap: wrap;
+}
+
 .piece-link-dialog__results {
   display: flex;
   flex-direction: column;
@@ -2963,6 +3047,76 @@
 
 .pieces-table--compact .pieces-table__label-cell--compact .pieces-table__label-text {
   max-width: 11rem;
+}
+
+.site-detail-overview__stock .site-detail-stock-search {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(9rem, 100%), 1fr));
+}
+
+.site-detail-overview__stock .site-detail-stock-search > * {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+}
+
+.site-detail-overview__stock .pieces-table-wrap--compact {
+  width: 100%;
+}
+
+.site-detail-overview__stock .pieces-table--compact {
+  width: 100%;
+  table-layout: fixed;
+}
+
+.site-detail-overview__stock .pieces-table--compact th:first-child {
+  width: 6.25rem;
+}
+
+.site-detail-overview__stock .pieces-table--compact .pieces-table__th--label,
+.site-detail-overview__stock .pieces-table--compact .pieces-table__label-cell--compact {
+  width: auto;
+  max-width: none;
+}
+
+.site-detail-overview__stock .pieces-table--compact .pieces-table__th--variant {
+  width: 5.7rem;
+}
+
+.site-detail-overview__stock .pieces-table--compact .pieces-table__th--site-stock {
+  width: 5rem;
+  text-align: center;
+}
+
+.pieces-table__site-stock {
+  text-align: center;
+}
+
+.site-stock-current {
+  color: #f2f3f5;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.site-detail-overview__stock .pieces-table__ref-bis-cell .pieces-table__ref-bis-input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.site-detail-overview__stock .pieces-table__ref {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+@container site-stock (max-width: 38rem) {
+  .site-detail-overview__stock .pieces-cards {
+    display: grid;
+    gap: 0.65rem;
+  }
+
+  .site-detail-overview__stock .pieces-table-wrap--desktop {
+    display: none;
+  }
 }
 .printer-serial-conflict {
   border: 1px solid #c58b22;

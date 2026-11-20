@@ -174,6 +174,10 @@ class CsvBackupImportService
             $this->imprimantesBySerial[$this->printerKey($serialNorm, $site)] = $imprimante;
         }
 
+        // Cette ligne a passe les controles d'import : une vraie remontee rend
+        // la machine supervisable, meme si elle avait ete saisie hors connexion.
+        $imprimante->setIsManual(false);
+
         $latest = $this->findLatestRapport($imprimante);
         $scan = $this->rowScanDate($row);
         $knownScan = $this->rapportScanDate($latest);

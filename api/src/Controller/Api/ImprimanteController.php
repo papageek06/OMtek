@@ -8,12 +8,14 @@ use App\Entity\Enum\ContractStatus;
 use App\Entity\Enum\PrinterAssignmentStatus;
 use App\Entity\Imprimante;
 use App\Entity\LigneContrat;
+use App\Entity\Modele;
 use App\Entity\PrinterAssignment;
 use App\Entity\RapportImprimante;
 use App\Entity\Site;
 use App\Entity\TonerReplacementEvent;
 use App\Entity\User;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\DBAL\Exception\UniqueConstraintViolationException;
 use Symfony\Bundle\FrameworkBundle\Controller\AbstractController;
 use Symfony\Component\HttpFoundation\JsonResponse;
 use Symfony\Component\HttpFoundation\Request;
@@ -65,6 +67,88 @@ class ImprimanteController extends AbstractController
             return $this->imprimanteToArray($imprimante, $lastRapport);
         }, $imprimantes);
         return new JsonResponse($data, Response::HTTP_OK);
+    }
+
+    /** Creation d'une imprimante hors connexion, sans rapport artificiel. */
+    #[Route('', name: 'create', methods: ['POST'])]
+    public function create(Request $request): JsonResponse
+    {
+        if (!$this->isAdmin() && !$this->isGranted(User::ROLE_TECH)) {
+            return new JsonResponse(['error' => 'Action reservee aux administrateurs et techniciens'], Response::HTTP_FORBIDDEN);
+        }
+
+        $body = json_decode($request->getContent(), true);
+        if (!\is_array($body)) {
+            return new JsonResponse(['error' => 'JSON invalide'], Response::HTTP_BAD_REQUEST);
+        }
+        $siteId = filter_var($body['siteId'] ?? null, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+        if ($siteId === false) {
+            return new JsonResponse(['error' => 'siteId requis et valide'], Response::HTTP_BAD_REQUEST);
+        }
+        $site = $this->em->find(Site::class, $siteId);
+        if (!$site instanceof Site || ($site->isHidden() && !$this->isAdmin())) {
+            return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
+        }
+        foreach (['modele' => 255, 'emplacement' => 255, 'numeroSerie' => 100, 'constructeur' => 100, 'ipAddress' => 45] as $field => $maxLength) {
+            if (isset($body[$field]) && (!\is_string($body[$field]) || mb_strlen(trim($body[$field])) > $maxLength)) {
+                return new JsonResponse(['error' => sprintf('%s doit etre un texte de %d caracteres maximum', $field, $maxLength)], Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $emplacement = trim($body['emplacement'] ?? '');
+        if ($emplacement === '') {
+            return new JsonResponse(['error' => 'Emplacement requis'], Response::HTTP_BAD_REQUEST);
+        }
+        $modele = null;
+        if (isset($body['modeleId']) && $body['modeleId'] !== '') {
+            $modeleId = filter_var($body['modeleId'], FILTER_VALIDATE_INT, ['options' => ['min_range' => 1]]);
+            $modele = $modeleId !== false ? $this->em->find(Modele::class, $modeleId) : null;
+            if (!$modele instanceof Modele) {
+                return new JsonResponse(['error' => 'Modele non trouve'], Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $modeleNom = trim($body['modele'] ?? '');
+        if (!$modele instanceof Modele && $modeleNom === '') {
+            return new JsonResponse(['error' => 'Modele requis'], Response::HTTP_BAD_REQUEST);
+        }
+        $numeroSerie = $this->nullIfEmpty(trim($body['numeroSerie'] ?? ''));
+        if ($numeroSerie !== null && $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $numeroSerie])) {
+            return new JsonResponse(['error' => 'Ce numero de serie existe deja'], Response::HTTP_CONFLICT);
+        }
+        $ipAddress = $this->nullIfEmpty(trim($body['ipAddress'] ?? ''));
+        if ($ipAddress !== null && filter_var($ipAddress, FILTER_VALIDATE_IP) === false) {
+            return new JsonResponse(['error' => 'Adresse IP invalide'], Response::HTTP_BAD_REQUEST);
+        }
+        foreach (['gerer', 'color'] as $field) {
+            if (array_key_exists($field, $body) && !\is_bool($body[$field])) {
+                return new JsonResponse(['error' => sprintf('%s doit etre un booleen', $field)], Response::HTTP_BAD_REQUEST);
+            }
+        }
+        $imprimante = (new Imprimante())
+            ->setSite($site)
+            ->setModele($modele)
+            ->setModeleNom($modele?->getNom() ?? $modeleNom)
+            ->setConstructeur($modele?->getConstructeur() ?? trim($body['constructeur'] ?? ''))
+            ->setEmplacement($emplacement)
+            ->setNumeroSerie($numeroSerie)
+            ->setIpAddress($ipAddress)
+            ->setColor($body['color'] ?? true)
+            ->setGerer($body['gerer'] ?? true)
+            ->setIsManual(true);
+        $actor = $this->getUser();
+        $assignment = (new PrinterAssignment())
+            ->setImprimante($imprimante)
+            ->setSite($site)
+            ->setSource('MANUAL_CREATE')
+            ->setNotes(sprintf('Ajout manuel hors connexion par utilisateur #%d.', $actor instanceof User ? $actor->getId() : 0));
+        $this->em->persist($imprimante);
+        $this->em->persist($assignment);
+        try {
+            $this->em->flush();
+        } catch (UniqueConstraintViolationException) {
+            return new JsonResponse(['error' => 'Ce numero de serie existe deja'], Response::HTTP_CONFLICT);
+        }
+
+        return new JsonResponse($this->imprimanteToArray($imprimante), Response::HTTP_CREATED);
     }
 
     /**
@@ -130,6 +214,7 @@ class ImprimanteController extends AbstractController
         $limit = max(1, min(200, (int) $request->query->get('limit', 50)));
         $events = $this->em->getRepository(TonerReplacementEvent::class)
             ->createQueryBuilder('event')
+            ->addSelect('sourceAlerte')
             ->leftJoin('event.piece', 'piece')
             ->leftJoin('event.stockMovement', 'movement')
             ->leftJoin('event.sourceAlerte', 'sourceAlerte')
@@ -144,6 +229,12 @@ class ImprimanteController extends AbstractController
 
         $data = array_map(static function (TonerReplacementEvent $event): array {
             $piece = $event->getPiece();
+            $mail = $event->getSourceAlerte();
+            $isMailOnly = $event->getSourceType() === 'ALERTE';
+            $mailReportedAt = $mail?->getRecuLe()
+                ?? $mail?->getCreatedAt()
+                ?? ($isMailOnly ? $event->getDetectedAt() : null);
+            $mailLevelAfter = $mail !== null ? $mail->getNiveauPourcent() : ($isMailOnly ? $event->getLevelAfter() : null);
             return [
                 'id' => $event->getId(),
                 'color' => $event->getColorKey(),
@@ -151,6 +242,10 @@ class ImprimanteController extends AbstractController
                 'detectedAt' => $event->getDetectedAt()->format(\DateTimeInterface::ATOM),
                 'levelBefore' => $event->getLevelBefore(),
                 'levelAfter' => $event->getLevelAfter(),
+                'mailReportedAt' => $mailReportedAt?->format(\DateTimeInterface::ATOM),
+                'mailLevelAfter' => $mailLevelAfter !== null && $mailLevelAfter >= 0 && $mailLevelAfter <= 100
+                    ? $mailLevelAfter
+                    : null,
                 'counterValue' => $event->getCounterValue(),
                 'previousCounterValue' => $event->getPreviousCounterValue(),
                 'copiesSincePrevious' => $event->getCopiesSincePrevious(),
@@ -162,7 +257,7 @@ class ImprimanteController extends AbstractController
                     'variant' => $piece->getVariant()?->value,
                 ] : null,
                 'stockMovementId' => $event->getStockMovement()?->getId(),
-                'sourceAlerteId' => $event->getSourceAlerte()?->getId(),
+                'sourceAlerteId' => $mail?->getId(),
                 'sourceRapportId' => $event->getSourceRapport()?->getId(),
             ];
         }, $events);
@@ -229,7 +324,8 @@ class ImprimanteController extends AbstractController
             return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
         }
 
-        $existing = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $imprimante->getNumeroSerie(), 'site' => $site]);
+        $serial = $imprimante->getNumeroSerie();
+        $existing = $serial === null ? null : $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial, 'site' => $site]);
         if ($existing instanceof Imprimante && $existing->getId() !== $imprimante->getId()) {
             return new JsonResponse(['error' => 'Une fiche avec ce numero de serie existe deja sur le site cible'], Response::HTTP_CONFLICT);
         }
@@ -336,7 +432,8 @@ class ImprimanteController extends AbstractController
                 if ($site->isHidden() && !$this->isAdmin()) {
                     return new JsonResponse(['error' => 'Site non trouve'], Response::HTTP_NOT_FOUND);
                 }
-                $existing = $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $imprimante->getNumeroSerie(), 'site' => $site]);
+                $serial = $imprimante->getNumeroSerie();
+                $existing = $serial === null ? null : $this->em->getRepository(Imprimante::class)->findOneBy(['numeroSerie' => $serial, 'site' => $site]);
                 if ($existing instanceof Imprimante && $existing->getId() !== $imprimante->getId()) {
                     return new JsonResponse(['error' => 'Une fiche avec ce numero de serie existe deja sur le site cible'], Response::HTTP_CONFLICT);
                 }
@@ -370,6 +467,7 @@ class ImprimanteController extends AbstractController
         return [
             'id' => $imprimante->getId(),
             'numeroSerie' => $imprimante->getNumeroSerie(),
+            'isManual' => $imprimante->isManual(),
             'modele' => $imprimante->getModeleNom(),
             'constructeur' => $imprimante->getConstructeur(),
             'modeleId' => $imprimante->getModele()?->getId(),

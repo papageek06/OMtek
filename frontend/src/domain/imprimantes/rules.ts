@@ -1,4 +1,4 @@
-import type { RapportImprimante } from '../../api/client'
+import type { RapportImprimante, TonerReplacementEvent } from '../../api/client'
 
 export const JOURS_ALERTE_SCAN = 10
 
@@ -50,6 +50,38 @@ export function colorLabel(color: string): string {
     default:
       return color
   }
+}
+
+export type TonerColorKey = 'black' | 'cyan' | 'magenta' | 'yellow'
+
+export interface MailTonerReading {
+  id: number
+  color: TonerColorKey
+  reportedAt: string
+  timestamp: number
+  level: number | null
+}
+
+export function getMailTonerReadings(events: TonerReplacementEvent[], isColor: boolean): MailTonerReading[] {
+  const allowedColors: ReadonlySet<string> = isColor
+    ? new Set(['black', 'cyan', 'magenta', 'yellow'])
+    : new Set(['black'])
+  const readings: MailTonerReading[] = []
+
+  for (const event of events) {
+    if (!event.mailReportedAt || !allowedColors.has(event.color)) continue
+    const timestamp = Date.parse(event.mailReportedAt)
+    if (!Number.isFinite(timestamp)) continue
+    readings.push({
+      id: event.id,
+      color: event.color as TonerColorKey,
+      reportedAt: event.mailReportedAt,
+      timestamp,
+      level: event.mailLevelAfter ?? null,
+    })
+  }
+
+  return readings.sort((a, b) => b.timestamp - a.timestamp || b.id - a.id)
 }
 
 export function sourceLabel(sourceType: string): string {

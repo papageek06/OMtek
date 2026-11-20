@@ -475,6 +475,7 @@ class SiteController extends AbstractController
             'id' => $imprimante->getId(),
             'numeroSerie' => $imprimante->getNumeroSerie(),
             'serialConflictSites' => $serialConflictSites,
+            'isManual' => $imprimante->isManual(),
             'modele' => $imprimante->getModeleNom(),
             'constructeur' => $imprimante->getConstructeur(),
             'modeleId' => $imprimante->getModele()?->getId(),

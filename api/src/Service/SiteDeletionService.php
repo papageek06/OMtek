@@ -45,7 +45,7 @@ class SiteDeletionService
      *     deletable: bool,
      *     blockers: array<string, int>,
      *     deleted: array<string, int>,
-     *     imprimantes: list<array{id: int|null, numeroSerie: string, modele: string}>
+     *     imprimantes: list<array{id: int|null, numeroSerie: ?string, modele: string}>
      * }
      */
     public function preview(Site $site): array

@@ -114,7 +114,7 @@ export default function SiteDeleteDialog({ siteId, siteNom, onClose, onDeleted }
               )}
               {preview.imprimantes.length > 0 && (
                 <p className="site-delete-dialog__serials">
-                  {preview.imprimantes.map((imp) => imp.numeroSerie).join(', ')}
+                  {preview.imprimantes.map((imp) => imp.numeroSerie || imp.modele).join(', ')}
                 </p>
               )}
               <p className="site-detail-modal__muted">

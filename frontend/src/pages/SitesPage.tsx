@@ -199,7 +199,7 @@ export default function SitesPage() {
   const q = searchQuery.trim().toLowerCase()
 
   const getSiteAlerts = (siteId: number): { scan: boolean; toner: boolean } => {
-    const list = imprimantesBySite[siteId] ?? []
+    const list = (imprimantesBySite[siteId] ?? []).filter((imp) => !imp.isManual)
     const scan =
       list.length > 0 &&
       list.every((imp) =>
@@ -214,7 +214,7 @@ export default function SitesPage() {
     let toner = 0
 
     for (const site of sites) {
-      const list = imprimantesBySite[site.id] ?? []
+      const list = (imprimantesBySite[site.id] ?? []).filter((imp) => !imp.isManual)
       if (
         list.length > 0 &&
         list.every((imp) =>
@@ -239,7 +239,9 @@ export default function SitesPage() {
         (site) =>
           site.nom.toLowerCase().includes(q) ||
           (imprimantesBySite[site.id] ?? []).some((imp) =>
-            imp.numeroSerie.toLowerCase().includes(q)
+            [imp.numeroSerie, imp.modele, imp.emplacement].some((value) =>
+              (value ?? '').toLowerCase().includes(q)
+            )
           )
       )
     }
@@ -331,10 +333,10 @@ export default function SitesPage() {
             <input
               type="search"
               className="sites-search"
-              placeholder="Rechercher par nom de site ou numero de serie..."
+              placeholder="Rechercher un site, un modèle, un emplacement ou un numéro de série..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              aria-label="Rechercher site ou numero de serie"
+              aria-label="Rechercher un site, un modèle, un emplacement ou un numéro de série"
             />
             <div className="sites-filters">
               <label className="sites-filter-check">
@@ -436,7 +438,7 @@ export default function SitesPage() {
                           <AlertBadge
                             letter="S"
                             type="scan"
-                            title="Toutes les imprimantes du site ont un dernier scan de plus de 10 jours"
+                            title="Toutes les imprimantes suivies par CSV du site ont un dernier scan de plus de 10 jours"
                           />
                         )}
                         {alerts.toner && (
@@ -482,7 +484,7 @@ export default function SitesPage() {
                     ) : (
                       <ul className="imprimantes-list">
                         {getImprimantesForSite(site.id).map((imp) => {
-                          const scanAlert = isLastScanOld(
+                          const scanAlert = !imp.isManual && isLastScanOld(
                             imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
                           )
                           const hasAlert = scanAlert
@@ -498,7 +500,7 @@ export default function SitesPage() {
                                 onClick={() => handleImprimanteClick(site.id, imp.id)}
                               >
                                 <div className="imprimante-item__top">
-                                  <span className="imprimante-item__serie">{imp.numeroSerie}</span>
+                                  <span className="imprimante-item__serie">{imp.numeroSerie || imp.modele || 'Imprimante sans numéro de série'}</span>
                                   {scanAlert && (
                                     <span className="imprimante-item__alerts" aria-label="Alertes">
                                       {scanAlert && (
@@ -532,10 +534,9 @@ export default function SitesPage() {
                                 </div>
 
                                 <span className="imprimante-item__last">
-                                  Dernier scan :{' '}
-                                  {formatDate(
-                                    imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
-                                  )}
+                                  {imp.isManual
+                                    ? 'Hors connexion · ajout manuel'
+                                    : `Dernier scan : ${formatDate(imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null)}`}
                                 </span>
 
                                 {imp.lastReport &&

@@ -1,6 +1,13 @@
 import { useEffect, useMemo, useState } from 'react'
 import { Link, Navigate } from 'react-router-dom'
-import { deleteAlerte, fetchAlertes, UnauthorizedError, updateAlerteActive, type Alerte } from '../api/client'
+import {
+  deleteAlerte,
+  fetchAlertes,
+  syncAlertesWithStocks,
+  UnauthorizedError,
+  updateAlerteActive,
+  type Alerte,
+} from '../api/client'
 import {
   ALERTE_TYPE_LABELS,
   getAlerteType,
@@ -12,6 +19,35 @@ import { isAdmin } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import { useAuth } from '../context/AuthContext'
 import './AlertesPage.css'
+
+const ALERT_PAGE_SIZE = 500
+type AlerteSourceFilter = 'all' | 'software' | 'mail'
+
+async function loadAlertes(isCancelled = () => false): Promise<Alerte[]> {
+  const alertesById = new Map<number, Alerte>()
+  for (let offset = 0; !isCancelled(); offset += ALERT_PAGE_SIZE) {
+    const page = await fetchAlertes({ includeInactive: true, limit: ALERT_PAGE_SIZE, offset })
+    if (!Array.isArray(page)) {
+      throw new Error('Le serveur n’a pas renvoyé une liste d’alertes valide.')
+    }
+    for (const alerte of page) {
+      alertesById.set(alerte.id, alerte)
+    }
+    if (page.length < ALERT_PAGE_SIZE) break
+  }
+  return Array.from(alertesById.values())
+}
+
+function getAlerteSource(alerte: Alerte): string {
+  return alerte.source?.trim().toUpperCase() || 'MAIL_FETCHER'
+}
+
+function getAlerteSourceLabel(alerte: Alerte): string {
+  const source = getAlerteSource(alerte)
+  if (source === 'STOCK_SYNC' || source === 'SYSTEM') return 'Logiciel'
+  if (source === 'MAIL_FETCHER') return 'Mail'
+  return alerte.sourceLabel || source
+}
 
 function formatDate(value: string | null | undefined): string {
   return formatDateTime(value, 'Date inconnue')
@@ -74,6 +110,7 @@ function buildGroupedAlertes(alertes: Alerte[]): AlerteSiteGroup[] {
     const type = getAlerteType(alerte)
     const duplicateKey = [
       type,
+      getAlerteSource(alerte),
       alerte.numeroSerie,
       alerte.motifAlerte,
       alerte.piece,
@@ -115,12 +152,17 @@ export default function AlertesPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
   const [statusFilter, setStatusFilter] = useState<'active' | 'inactive' | 'all'>('active')
+  const [sourceFilter, setSourceFilter] = useState<AlerteSourceFilter>('all')
   const [typeFilter, setTypeFilter] = useState<'ALL' | AlerteTypeKey>('ALL')
   const [search, setSearch] = useState('')
   const [selectedIds, setSelectedIds] = useState<number[]>([])
   const [deleting, setDeleting] = useState(false)
   const [updatingActive, setUpdatingActive] = useState(false)
+  const [syncingStocks, setSyncingStocks] = useState(false)
+  const [stockSyncResult, setStockSyncResult] = useState<string | null>(null)
+  const [stockSyncError, setStockSyncError] = useState<string | null>(null)
   const [bulkActiveTarget, setBulkActiveTarget] = useState(true)
+  const mutatingAlerts = deleting || updatingActive || syncingStocks
 
   useEffect(() => {
     let cancelled = false
@@ -128,9 +170,9 @@ export default function AlertesPage() {
     setLoading(true)
     setError(null)
 
-    fetchAlertes({ includeInactive: true, limit: 500, offset: 0 })
+    loadAlertes(() => cancelled)
       .then((data) => {
-        if (!cancelled) setAlertes(Array.isArray(data) ? data : [])
+        if (!cancelled) setAlertes(data)
       })
       .catch((e) => {
         if (cancelled) return
@@ -157,6 +199,34 @@ export default function AlertesPage() {
     })
   }, [alertes])
 
+  const alertesMatchingFilters = useMemo(() => {
+    const query = search.trim().toLowerCase()
+
+    return alertes.filter((alerte) => {
+      if (statusFilter === 'active' && !isAlerteActive(alerte)) return false
+      if (statusFilter === 'inactive' && isAlerteActive(alerte)) return false
+
+      const source = getAlerteSource(alerte)
+      if (sourceFilter === 'software' && source !== 'STOCK_SYNC' && source !== 'SYSTEM') return false
+      if (sourceFilter === 'mail' && source !== 'MAIL_FETCHER') return false
+
+      if (!query) return true
+      const searchable = [
+        alerte.site,
+        alerte.numeroSerie,
+        alerte.modeleImprimante,
+        alerte.motifAlerte,
+        alerte.piece,
+        source,
+        getAlerteSourceLabel(alerte),
+        alerte.imprimante?.site?.nom ?? '',
+      ]
+        .join(' ')
+        .toLowerCase()
+      return searchable.includes(query)
+    })
+  }, [alertes, search, sourceFilter, statusFilter])
+
   const typeCounts = useMemo(() => {
     const counts: Record<AlerteTypeKey, number> = {
       TONER: 0,
@@ -164,36 +234,17 @@ export default function AlertesPage() {
       WASTE: 0,
       OTHER: 0,
     }
-    for (const alerte of alertes) {
+    for (const alerte of alertesMatchingFilters) {
       counts[getAlerteType(alerte)] += 1
     }
     return counts
-  }, [alertes])
+  }, [alertesMatchingFilters])
 
-  const filteredAlertes = useMemo(() => {
-    const query = search.trim().toLowerCase()
-
-    return sortAlertesByNewest(alertes
-      .filter((alerte) => {
-        if (statusFilter === 'active' && !isAlerteActive(alerte)) return false
-        if (statusFilter === 'inactive' && isAlerteActive(alerte)) return false
-        if (typeFilter !== 'ALL' && getAlerteType(alerte) !== typeFilter) return false
-
-        if (!query) return true
-        const searchable = [
-          alerte.site,
-          alerte.numeroSerie,
-          alerte.modeleImprimante,
-          alerte.motifAlerte,
-          alerte.piece,
-          alerte.sourceLabel ?? alerte.source ?? '',
-          alerte.imprimante?.site?.nom ?? '',
-        ]
-          .join(' ')
-          .toLowerCase()
-        return searchable.includes(query)
-      }))
-  }, [alertes, search, statusFilter, typeFilter])
+  const filteredAlertes = useMemo(() => sortAlertesByNewest(
+    typeFilter === 'ALL'
+      ? alertesMatchingFilters
+      : alertesMatchingFilters.filter((alerte) => getAlerteType(alerte) === typeFilter)
+  ), [alertesMatchingFilters, typeFilter])
 
   const groupedAlertes = useMemo(() => buildGroupedAlertes(filteredAlertes), [filteredAlertes])
   const selectedIdsSet = useMemo(() => new Set(selectedIds), [selectedIds])
@@ -238,7 +289,7 @@ export default function AlertesPage() {
 
   async function handleDeleteSelected(): Promise<void> {
     const idsToDelete = [...selectedIds]
-    if (idsToDelete.length === 0 || deleting || updatingActive) return
+    if (idsToDelete.length === 0 || mutatingAlerts) return
 
     const confirmed = window.confirm(
       idsToDelete.length === 1
@@ -273,7 +324,7 @@ export default function AlertesPage() {
 
   async function handleBulkSetActive(): Promise<void> {
     const idsToUpdate = [...selectedIds]
-    if (idsToUpdate.length === 0 || deleting || updatingActive) return
+    if (idsToUpdate.length === 0 || mutatingAlerts) return
 
     const actionLabel = bulkActiveTarget ? 'activer' : 'desactiver'
     const confirmed = window.confirm(
@@ -321,6 +372,32 @@ export default function AlertesPage() {
     setUpdatingActive(false)
   }
 
+  async function handleSyncStocks(): Promise<void> {
+    if (!userIsAdmin || loading || mutatingAlerts) return
+
+    setSyncingStocks(true)
+    setStockSyncResult(null)
+    setStockSyncError(null)
+
+    try {
+      const { resolved, created } = await syncAlertesWithStocks()
+      const createdLabel = created > 1 ? 'alertes créées' : 'alerte créée'
+      const resolvedLabel = resolved > 1 ? 'alertes désactivées' : 'alerte désactivée'
+      setStockSyncResult(`${created} ${createdLabel} et ${resolved} ${resolvedLabel}.`)
+      setSelectedIds([])
+      try {
+        setAlertes(await loadAlertes())
+        setError(null)
+      } catch {
+        setStockSyncError('Impossible d’actualiser la liste. Rechargez la page pour voir les changements.')
+      }
+    } catch (e) {
+      setStockSyncError(e instanceof Error ? e.message : 'La synchronisation des alertes a échoué.')
+    } finally {
+      setSyncingStocks(false)
+    }
+  }
+
   if (!user) {
     return <Navigate to="/login" replace />
   }
@@ -333,8 +410,23 @@ export default function AlertesPage() {
 
       <header className="alerts-page__header">
         <h1>Alertes</h1>
-        <p>Visualisation des alertes mails avec filtres par type, statut et recherche.</p>
+        <p>Alertes reçues par mail ou générées par le logiciel.</p>
       </header>
+
+      {userIsAdmin && (
+        <div className="alerts-page__stock-sync">
+          <button
+            type="button"
+            className="alerts-page__stock-sync-button"
+            disabled={loading || mutatingAlerts}
+            onClick={handleSyncStocks}
+          >
+            {syncingStocks ? 'Synchronisation…' : 'Synchroniser avec les stocks'}
+          </button>
+          <span role="status">{stockSyncResult ?? 'Tous les sites'}</span>
+        </div>
+      )}
+      {stockSyncError && <div className="alerts-page__error" role="alert">{stockSyncError}</div>}
 
       <section className="alerts-filters">
         <label>
@@ -347,9 +439,18 @@ export default function AlertesPage() {
         </label>
 
         <label>
+          <span>Source</span>
+          <select value={sourceFilter} onChange={(e) => setSourceFilter(e.target.value as AlerteSourceFilter)}>
+            <option value="all">Toutes les sources</option>
+            <option value="software">Logiciel</option>
+            <option value="mail">Mail</option>
+          </select>
+        </label>
+
+        <label>
           <span>Type d'alerte</span>
           <select value={typeFilter} onChange={(e) => setTypeFilter(e.target.value as 'ALL' | AlerteTypeKey)}>
-            <option value="ALL">Tous les types ({alertes.length})</option>
+            <option value="ALL">Tous les types ({alertesMatchingFilters.length})</option>
             <option value="TONER">{ALERTE_TYPE_LABELS.TONER} ({typeCounts.TONER})</option>
             <option value="TONER_CHANGE">{ALERTE_TYPE_LABELS.TONER_CHANGE} ({typeCounts.TONER_CHANGE})</option>
             <option value="WASTE">{ALERTE_TYPE_LABELS.WASTE} ({typeCounts.WASTE})</option>
@@ -357,7 +458,7 @@ export default function AlertesPage() {
           </select>
         </label>
 
-        <label className="alerts-filters__search">
+        <label>
           <span>Recherche</span>
           <input
             type="text"
@@ -385,7 +486,7 @@ export default function AlertesPage() {
                 type="checkbox"
                 checked={allVisibleSelected}
                 onChange={toggleSelectAllVisible}
-                disabled={loading || deleting || filteredIds.length === 0}
+                disabled={loading || mutatingAlerts || filteredIds.length === 0}
               />
               <span>Tout selectionner (liste filtree)</span>
             </label>
@@ -397,7 +498,7 @@ export default function AlertesPage() {
               <select
                 value={bulkActiveTarget ? 'active' : 'inactive'}
                 onChange={(e) => setBulkActiveTarget(e.target.value === 'active')}
-                disabled={deleting || updatingActive}
+                disabled={mutatingAlerts}
                 aria-label="Choisir le statut a appliquer aux alertes selectionnees"
               >
                 <option value="active">Active</option>
@@ -408,7 +509,7 @@ export default function AlertesPage() {
               type="button"
               className="alerts-page__bulk-status-apply"
               onClick={handleBulkSetActive}
-              disabled={updatingActive || deleting || selectedIds.length === 0}
+              disabled={mutatingAlerts || selectedIds.length === 0}
             >
               {updatingActive ? 'Mise a jour...' : 'Appliquer statut'}
             </button>
@@ -417,7 +518,7 @@ export default function AlertesPage() {
                 type="button"
                 className="alerts-page__bulk-delete"
                 onClick={handleDeleteSelected}
-                disabled={deleting || updatingActive || selectedIds.length === 0}
+                disabled={mutatingAlerts || selectedIds.length === 0}
               >
                 {deleting ? 'Suppression...' : 'Supprimer la selection'}
               </button>
@@ -470,7 +571,7 @@ export default function AlertesPage() {
                                 if (ids.length === 1) toggleSelectAlerte(ids[0])
                                 else toggleSelectAlerteGroup(ids)
                               }}
-                              disabled={deleting || updatingActive}
+                              disabled={mutatingAlerts}
                               aria-label={`Selectionner le groupe d'alertes ${alerte.id}`}
                             />
                           </div>
@@ -487,7 +588,7 @@ export default function AlertesPage() {
                                 <span className="alerts-item__duplicates">x{group.alertes.length}</span>
                               )}
                               <span className="alerts-item__source">
-                                Source: {alerte.sourceLabel ?? alerte.source ?? 'Mail'}
+                                Source: {getAlerteSourceLabel(alerte)}
                               </span>
                             </div>
 

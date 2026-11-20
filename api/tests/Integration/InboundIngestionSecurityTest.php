@@ -671,30 +671,37 @@ final class InboundIngestionSecurityTest extends WebTestCase
         $this->em->flush();
         $olderAlertId = $olderAlert->getId();
 
-        $this->client->request(
-            'POST',
-            '/api/alertes',
-            [],
-            [],
-            [
-                'CONTENT_TYPE' => 'application/json',
-                'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN,
-            ],
-            json_encode([
-                'alertes' => [[
-                    'site' => 'Site Toner',
-                    'modeleImprimante' => 'Modele Toner',
-                    'numeroSerie' => 'SN-TONER-0001',
-                    'motifAlerte' => 'Changement de cartouche',
-                    'piece' => 'Toner Noir',
-                    'niveauPourcent' => 100,
-                ]],
-            ], JSON_THROW_ON_ERROR)
-        );
+        $headers = ['CONTENT_TYPE' => 'application/json', 'HTTP_X_INBOUND_TOKEN' => self::INBOUND_TOKEN];
+        $payload = json_encode([
+            'alertes' => [[
+                'messageId' => 'test-replacement@example.test',
+                'site' => 'Site Toner',
+                'modeleImprimante' => 'Modele Toner',
+                'numeroSerie' => 'SN-TONER-0001',
+                'motifAlerte' => 'Changement de cartouche',
+                'piece' => 'Toner Noir',
+                'niveauPourcent' => 100,
+            ]],
+        ], JSON_THROW_ON_ERROR);
+        $this->client->request('POST', '/api/alertes', server: $headers, content: $payload);
+        self::assertResponseStatusCodeSame(201);
+        $ingested = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(1, $ingested['created']);
 
-        self::assertSame(201, $this->client->getResponse()->getStatusCode(), $this->client->getResponse()->getContent());
+        $this->client->request('POST', '/api/alertes', server: $headers, content: $payload);
+        self::assertResponseStatusCodeSame(201);
+        $retry = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertSame(0, $retry['created']);
+        self::assertSame(1, $retry['skipped']);
 
         $this->em->clear();
+
+        $incoming = $this->em->getRepository(Alerte::class)->find($ingested['ids'][0]);
+        self::assertInstanceOf(Alerte::class, $incoming);
+        self::assertTrue($incoming->isIgnorer());
+        self::assertTrue($incoming->isAutoDeactivated());
+        self::assertSame('TONER_CHANGE_RECORDED', $incoming->getRuleReason());
+        self::assertNotNull($incoming->getRuleEvaluatedAt());
 
         $siteRef = $this->em->getReference(Site::class, $site->getId());
         $pieceRef = $this->em->getReference(Piece::class, $piece->getId());
@@ -811,7 +818,9 @@ final class InboundIngestionSecurityTest extends WebTestCase
             ->setPassword('hashed-password')
             ->setFirstName('System')
             ->setLastName('Dedupe')
-            ->setRoles([User::ROLE_SUPER_ADMIN]);
+            ->setRoles([User::ROLE_SUPER_ADMIN])
+            ->setApiToken('test-toner-history')
+            ->setApiTokenExpiresAt(new \DateTimeImmutable('+1 day'));
 
         $site = (new Site())->setNom('Site Dedupe');
         $modele = (new Modele())
@@ -844,10 +853,12 @@ final class InboundIngestionSecurityTest extends WebTestCase
             ->setBlackLevel('10%')
             ->setMonoLifeCount('1000');
 
+        $scanAt = new \DateTimeImmutable('2026-08-10 10:00:00');
+        $mailAt = new \DateTimeImmutable('2026-08-10 11:00:00');
         $currentRapport = (new RapportImprimante())
             ->setImprimante($imprimante)
-            ->setLastScanDate(new \DateTimeImmutable('2026-08-10 10:00:00'))
-            ->setBlackLevel('100%')
+            ->setLastScanDate($scanAt)
+            ->setBlackLevel('92%')
             ->setMonoLifeCount('1100');
 
         $this->em->persist($systemUser);
@@ -863,6 +874,16 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertInstanceOf(TonerReplacementService::class, $tonerReplacementService);
         $tonerReplacementService->registerFromRapport($currentRapport, $previousRapport);
         $this->em->flush();
+
+        $historyUrl = '/api/imprimantes/' . $imprimante->getId() . '/toner-replacements';
+        $historyHeaders = ['HTTP_AUTHORIZATION' => 'Bearer test-toner-history'];
+        $this->client->request('GET', $historyUrl, server: $historyHeaders);
+        self::assertResponseIsSuccessful();
+        $reportOnly = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertCount(1, $reportOnly);
+        self::assertSame(92, $reportOnly[0]['levelAfter']);
+        self::assertNull($reportOnly[0]['mailReportedAt']);
+        self::assertNull($reportOnly[0]['mailLevelAfter']);
 
         $this->client->request(
             'POST',
@@ -882,7 +903,7 @@ final class InboundIngestionSecurityTest extends WebTestCase
                     'motifAlerte' => 'Changement de cartouche',
                     'piece' => 'Toner Noir',
                     'niveauPourcent' => 100,
-                    'recuLe' => '2026-08-10T11:00:00+00:00',
+                    'recuLe' => $mailAt->format(\DateTimeInterface::ATOM),
                 ]],
             ], JSON_THROW_ON_ERROR)
         );
@@ -910,5 +931,15 @@ final class InboundIngestionSecurityTest extends WebTestCase
         self::assertSame('MAIL_AND_REPORT', $events[0]->getSourceType());
         self::assertNotNull($events[0]->getSourceAlerte());
         self::assertNotNull($events[0]->getSourceRapport());
+
+        $this->client->request('GET', $historyUrl, server: $historyHeaders);
+        self::assertResponseIsSuccessful();
+        $history = json_decode((string) $this->client->getResponse()->getContent(), true, 512, JSON_THROW_ON_ERROR);
+        self::assertCount(1, $history);
+        self::assertSame('MAIL_AND_REPORT', $history[0]['sourceType']);
+        self::assertSame($scanAt->format(\DateTimeInterface::ATOM), $history[0]['detectedAt']);
+        self::assertSame(92, $history[0]['levelAfter']);
+        self::assertSame($mailAt->format(\DateTimeInterface::ATOM), $history[0]['mailReportedAt']);
+        self::assertSame(100, $history[0]['mailLevelAfter']);
     }
 }

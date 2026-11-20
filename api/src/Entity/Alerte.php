@@ -15,6 +15,8 @@ use Doctrine\ORM\Mapping as ORM;
 #[ORM\Index(columns: ['imprimante_id'], name: 'idx_alerte_imprimante')]
 class Alerte
 {
+    public const SOURCE_STOCK_SYNC = 'STOCK_SYNC';
+
     #[ORM\Id]
     #[ORM\GeneratedValue]
     #[ORM\Column(type: Types::INTEGER)]
@@ -24,7 +26,7 @@ class Alerte
     #[ORM\Column(type: Types::STRING, length: 255, nullable: true)]
     private ?string $messageId = null;
 
-    /** Origine technique de l'alerte: MAIL_FETCHER, MANUAL, SYSTEM. */
+    /** Origine technique de l'alerte: MAIL_FETCHER, MANUAL, SYSTEM, STOCK_SYNC. */
     #[ORM\Column(type: Types::STRING, length: 30, options: ['default' => 'MAIL_FETCHER'])]
     private string $source = 'MAIL_FETCHER';
 

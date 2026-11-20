@@ -7,6 +7,7 @@ import SiteDetailPage from './pages/SiteDetailPage'
 import StocksPage from './pages/StocksPage'
 import ModelesPage from './pages/ModelesPage'
 import ImprimantePage from './pages/ImprimantePage'
+import ImprimantesPage from './pages/ImprimantesPage'
 import LoginPage from './pages/LoginPage'
 import ProfilePage from './pages/ProfilePage'
 import InterventionsPage from './pages/InterventionsPage'
@@ -77,6 +78,9 @@ function HeaderNav() {
         </NavLink>
         {user ? (
           <>
+            <NavLink to="/imprimantes" className={navLinkClass} onClick={closeMenu}>
+              Imprimantes
+            </NavLink>
             <NavLink to="/contacts" className={navLinkClass} onClick={closeMenu}>
               Contacts
             </NavLink>
@@ -144,6 +148,7 @@ function App() {
               <Route path="/modeles" element={<ModelesPage />} />
               <Route path="/sites/:id" element={<SiteDetailPage />} />
               <Route path="/imprimantes/:id" element={<ImprimantePage />} />
+              <Route path="/imprimantes" element={<ImprimantesPage />} />
               <Route path="/login" element={<LoginPage />} />
               <Route path="/profil" element={<ProfilePage />} />
               <Route path="/verify-email" element={<VerifyEmailPage />} />

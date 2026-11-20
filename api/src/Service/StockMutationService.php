@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace App\Service;
 
+use App\Entity\Enum\CategoriePiece;
 use App\Entity\Enum\StockMovementReason;
 use App\Entity\Enum\StockMovementType;
 use App\Entity\Enum\StockScope;
@@ -13,15 +14,22 @@ use App\Entity\Site;
 use App\Entity\Stock;
 use App\Entity\StockMovement;
 use App\Entity\User;
+use Doctrine\Bundle\DoctrineBundle\Attribute\AsDoctrineListener;
 use Doctrine\ORM\EntityManagerInterface;
+use Doctrine\ORM\Events;
 
+#[AsDoctrineListener(event: Events::preFlush)]
 final class StockMutationService
 {
     /** @var array<string, Stock> */
     private array $stocksByKey = [];
 
+    /** @var array<int, Stock> */
+    private array $stocksToCheck = [];
+
     public function __construct(
         private readonly EntityManagerInterface $em,
+        private readonly AlertRuleService $alertRuleService,
     ) {
     }
 
@@ -58,6 +66,8 @@ final class StockMutationService
             $intervention,
         );
         $this->em->persist($movement);
+
+        $this->scheduleAlertCheck($stock);
 
         return $stock;
     }
@@ -99,7 +109,31 @@ final class StockMutationService
 
         $this->em->persist($movement);
 
+        $this->scheduleAlertCheck($stock);
+
         return $movement;
+    }
+
+    public function preFlush(): void
+    {
+        // Use the final quantity when several movements change the same stock in one flush.
+        foreach ($this->stocksToCheck as $stock) {
+            $site = $stock->getSite();
+            if ($site !== null && $this->em->contains($stock)) {
+                $this->alertRuleService->deactivateAlertsCoveredBySiteStock($site, $stock->getPiece(), $stock->getQuantite());
+            }
+        }
+        $this->stocksToCheck = [];
+    }
+
+    private function scheduleAlertCheck(Stock $stock): void
+    {
+        if ($stock->getSite() !== null
+            && $stock->getScope() === StockScope::TECH_VISIBLE
+            && $stock->getPiece()->getCategorie() === CategoriePiece::TONER
+        ) {
+            $this->stocksToCheck[spl_object_id($stock)] = $stock;
+        }
     }
 
     private function findOrCreateStock(Piece $piece, ?Site $site, StockScope $scope): Stock

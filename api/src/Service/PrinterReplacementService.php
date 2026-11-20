@@ -56,6 +56,9 @@ class PrinterReplacementService
             ]);
 
             foreach ($sameIpPrinters as $previousPrinter) {
+                if ($previousPrinter->isManual()) {
+                    continue;
+                }
                 if ($previousPrinter->getId() === $candidate->getId()) {
                     continue;
                 }

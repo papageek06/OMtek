@@ -169,3 +169,24 @@ Fichiers:
 - regles de role enforce cote API
 - actions sensibles tracables
 - ergonomie terrain mobile et desktop
+
+## 8. Imprimantes hors connexion et vue du parc (03/11/2026)
+
+Depuis la fiche d'un site, un administrateur ou un technicien peut choisir « Ajouter une imprimante ». Il choisit un modele du catalogue ou saisit un modele libre, puis renseigne l'emplacement. Les autres informations sont facultatives. La machine porte le statut « Hors connexion » et ne declenche pas d'alerte pour absence de scan. Sa creation est tracee avec l'utilisateur et une affectation au site.
+
+L'onglet « Imprimantes » (`/imprimantes`) est accessible a tous les utilisateurs connectes. Il affiche les machines suivies par CSV, les machines hors connexion et les machines retirees, avec recherche, filtres par site, mode de suivi et etat, puis pagination. Les sites masques restent reserves aux administrateurs.
+
+API : `POST /api/imprimantes` requiert `siteId`, `emplacement` et soit `modeleId`, soit `modele`. Les champs `numeroSerie`, `constructeur`, `ipAddress` et `color` sont facultatifs. La reponse expose `isManual` ; `numeroSerie` peut etre nul. Les anciennes imprimantes conservent leur suivi CSV apres migration.
+
+Si une vraie ligne CSV est ensuite acceptee pour le meme numero de serie, la machine reprend automatiquement son suivi CSV, sans doublon. Les lignes rejetees ne changent pas son mode de suivi.
+
+Avant utilisation, appliquer `Version20261103120000` avec `php bin/console doctrine:migrations:migrate --no-interaction` depuis `api`. Le retour arriere exige de renseigner les numeros de serie manquants pour conserver toutes les machines.
+
+Recette :
+
+- Creer deux machines avec seulement modele et emplacement ; verifier leur presence sur le site et dans l'onglet Imprimantes, sans numero de serie invente.
+- Verifier l'ajout en administrateur puis en technicien, et le refus sans connexion ou sur un site masque pour un technicien.
+- Refuser modele/emplacement vides, numero de serie deja utilise et adresse IP invalide.
+- Verifier qu'un site contenant uniquement des machines manuelles n'apparait pas comme sans remontee ; une machine CSV obsolete sur un site mixte doit toujours declencher l'indicateur.
+- Importer un CSV avec une autre machine partageant l'adresse IP d'une machine manuelle : la machine manuelle doit rester visible.
+- A 360 px de largeur, verifier le formulaire, les filtres et les cartes sans defilement horizontal obligatoire.

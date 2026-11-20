@@ -577,7 +577,8 @@ export interface Site {
 
 export interface Imprimante {
   id: number
-  numeroSerie: string
+  numeroSerie: string | null
+  isManual: boolean
   serialConflictSites?: { id: number; nom: string }[]
   modele: string
   modeleId?: number | null
@@ -634,6 +635,8 @@ export interface TonerReplacementEvent {
   detectedAt: string
   levelBefore: number | null
   levelAfter: number | null
+  mailReportedAt: string | null
+  mailLevelAfter: number | null
   counterValue: number | null
   previousCounterValue: number | null
   copiesSincePrevious: number | null
@@ -888,7 +891,7 @@ export interface InterventionItem {
   }
   imprimante: {
     id: number
-    numeroSerie: string
+    numeroSerie: string | null
     modele: string
   } | null
   createdBy: {
@@ -1009,7 +1012,7 @@ export interface SiteDeletionPreview {
     notscans: number
     contacts: number
   }
-  imprimantes: { id: number; numeroSerie: string; modele: string }[]
+  imprimantes: { id: number; numeroSerie: string | null; modele: string }[]
 }
 
 export async function fetchSiteDeletionPreview(siteId: number): Promise<SiteDeletionPreview> {
@@ -1213,7 +1216,7 @@ export interface ContractLineItem {
   } | null
   imprimante: {
     id: number
-    numeroSerie: string
+    numeroSerie: string | null
     modele: string
   } | null
   meta: Record<string, unknown> | null
@@ -2232,6 +2235,28 @@ export async function fetchPiecesByModele(modeleId: number): Promise<PieceItem[]
   return res.json()
 }
 
+export interface ImprimanteCreate {
+  siteId: number
+  modeleId?: number
+  modele?: string
+  emplacement: string
+  numeroSerie?: string | null
+  constructeur?: string
+  ipAddress?: string | null
+  color?: boolean
+  gerer?: boolean
+}
+
+export async function createImprimante(payload: ImprimanteCreate): Promise<Imprimante> {
+  const res = await apiFetch(`${API_BASE}/imprimantes`, {
+    method: 'POST',
+    body: JSON.stringify(payload),
+  })
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) throw new Error((data?.error as string) || 'Erreur lors de la création de l’imprimante')
+  return data as Imprimante
+}
+
 export async function fetchImprimantes(siteId?: number, opts?: { includeInactive?: boolean }): Promise<Imprimante[]> {
   const params = new URLSearchParams()
   if (siteId != null) params.set('siteId', String(siteId))
@@ -2376,6 +2401,15 @@ export async function updateAlerteActive(id: number, active: boolean): Promise<A
     throw new Error((body?.error as string) || 'Erreur mise a jour alerte')
   }
   return body
+}
+
+export async function syncAlertesWithStocks(): Promise<{ resolved: number; created: number }> {
+  const res = await apiFetch(`${API_BASE}/alertes/sync-stocks`, { method: 'POST' })
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error((body?.error as string) || 'La synchronisation des alertes a échoué.')
+  }
+  return res.json()
 }
 
 export async function fetchAlertRuleConfig(): Promise<AlertRuleConfig> {

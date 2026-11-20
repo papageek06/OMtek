@@ -190,3 +190,22 @@ un stock cacher avec un nom pas de site lié, visible seulement par l'admin, pou
 - [x] L'application doit etre utilisable en deplacement
 - [x] Les actions doivent etre rapides avec peu de clics
 - [x] Toute action sensible doit etre tracable
+
+## 9. Imprimantes hors connexion — validation du 03/11/2026
+
+- [x] Administrateurs et techniciens peuvent ajouter une imprimante sur un site accessible.
+- [x] Le modele et l'emplacement sont les seules informations obligatoires ; le site est celui de la fiche ouverte.
+- [x] Numero de serie, constructeur, adresse IP et type d'impression peuvent etre renseignes.
+- [x] Un onglet Imprimantes permet a tous les utilisateurs connectes de consulter le parc.
+- [x] Les imprimantes manuelles sont visibles sans remontee CSV attendue.
+
+Les protections existantes des sites masques restent applicables. Une saisie manuelle ne donne pas de droits supplementaires sur les stocks ni sur les autres actions d'administration.
+
+## 10. Application technicien pour iPhone — validation du 20/11/2026
+
+- [x] Consulter les sites accessibles au technicien et leur stock local visible.
+- [x] Livrer des pièces en deux étapes. Le technicien confirme ou corrige d'abord le stock présent sur le site. Cette validation apparaît dans l'historique comme une mise à jour de stock. Il renseigne ensuite les pièces et quantités livrées, qui s'ajoutent au stock lors de la validation de la livraison.
+- [x] Enregistrer une intervention et déduire du stock local les quantités de pièces utilisées à la validation.
+- [x] Permettre au technicien de valider directement une correction de stock.
+
+L'API vérifie les droits sur le site et le stock visible. L'historique indique qui a effectué chaque mise à jour, livraison ou sortie de stock et à quel moment.

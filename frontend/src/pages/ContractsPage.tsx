@@ -724,7 +724,7 @@ export default function ContractsPage() {
                     <option value="">Aucune</option>
                     {selectablePrinters.map((printer) => (
                       <option key={printer.id} value={printer.id}>
-                        {printer.numeroSerie} - {printer.modele}
+                        {printer.numeroSerie || printer.emplacement || 'Sans numéro de série'} - {printer.modele}
                       </option>
                     ))}
                   </select>
@@ -760,7 +760,7 @@ export default function ContractsPage() {
                     <li key={line.id}>
                       <span>
                         {CONTRACT_LINE_LABELS[line.type] ?? line.type} - {line.libelle} - Qte {line.quantite} - PU {line.prixUnitaireHt}
-                        {line.imprimante ? ` - ${line.imprimante.numeroSerie}` : ''}
+                        {line.imprimante ? ` - ${line.imprimante.numeroSerie || line.imprimante.modele}` : ''}
                         {line.dateDebut || line.dateFin ? ` - ${line.dateDebut || '...'} -> ${line.dateFin || '...'}` : ''}
                         {!line.actif ? ' - Inactive' : ''}
                       </span>

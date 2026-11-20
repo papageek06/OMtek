@@ -1,0 +1,27 @@
+.mail-toner-reports {
+  margin-block: 0.7rem 1rem;
+}
+
+.mail-toner-reports :is(h3, h4) {
+  margin: 0 0 0.4rem;
+  font-size: 0.95rem;
+}
+
+.mail-toner-reports ul {
+  display: grid;
+  gap: 0.3rem;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mail-toner-reports li {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 0.2rem 1rem;
+  padding: 0.4rem 0.65rem;
+  border-left: 3px solid #c4b5fd;
+  background: rgba(167, 139, 250, 0.08);
+  font-size: 0.85rem;
+}

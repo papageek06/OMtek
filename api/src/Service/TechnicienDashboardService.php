@@ -115,7 +115,8 @@ LEFT JOIN (
     FROM rapport_imprimante
     GROUP BY imprimante_id
 ) rr ON rr.imprimante_id = i.id
-WHERE (:include_hidden = 1 OR s.is_hidden = 0)
+WHERE i.is_manual = 0
+  AND (:include_hidden = 1 OR s.is_hidden = 0)
 GROUP BY s.id, s.nom
 HAVING MAX(rr.latest_scan) IS NULL OR MAX(rr.latest_scan) < :threshold
 ORDER BY COALESCE(MAX(rr.latest_scan), '1970-01-01 00:00:00') ASC, s.nom ASC

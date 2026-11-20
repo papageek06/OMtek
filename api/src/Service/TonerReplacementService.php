@@ -253,7 +253,7 @@ final class TonerReplacementService
         $counterToken = $counterValue !== null ? (string) $counterValue : 'na';
         return sprintf(
             'rapport:%s:%s:%s:%d:%d:%s',
-            $imprimante->getNumeroSerie(),
+            $imprimante->getNumeroSerie() ?? 'id:' . $imprimante->getId(),
             $detectedAt->format('Y-m-d\TH:i'),
             $color,
             $levelBefore,
@@ -384,7 +384,7 @@ final class TonerReplacementService
         $levelToken = $levelAfter !== null ? (string) (int) (round($levelAfter / 5) * 5) : 'na';
         return sprintf(
             '%s|%s|%s|%s',
-            $imprimante->getNumeroSerie(),
+            $imprimante->getNumeroSerie() ?? 'id:' . $imprimante->getId(),
             $color,
             $detectedAt->format('Y-m-d\TH'),
             $levelToken,

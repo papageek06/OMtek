@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback, useRef } from 'react'
+import { useEffect, useLayoutEffect, useState, useCallback, useRef } from 'react'
 import { useParams, Link, useSearchParams, useNavigate } from 'react-router-dom'
 import {
   LineChart,
@@ -9,6 +9,7 @@ import {
   Tooltip,
   Legend,
   ReferenceArea,
+  ReferenceDot,
   ReferenceLine,
   ResponsiveContainer,
 } from 'recharts'
@@ -47,9 +48,12 @@ import {
   INTERVENTION_STATUS_LABELS,
   INTERVENTION_STATUS_OPTIONS,
 } from '../domain/interventions/options'
+import { getMailTonerReadings, type MailTonerReading, type TonerColorKey } from '../domain/imprimantes/rules'
 import SiteResourcesTab from './SiteResourcesTab'
 import SiteDeleteDialog from './SiteDeleteDialog'
 import PieceLinkDialog from './PieceLinkDialog'
+import ManualPrinterDialog from './ManualPrinterDialog'
+import MailTonerReports from '../shared/MailTonerReports'
 import PieceVariantBadge from '../shared/PieceVariantBadge'
 import PrinterSerialConflict from '../shared/PrinterSerialConflict'
 import './SiteDetailPage.css'
@@ -109,7 +113,9 @@ function SitePrinterLevelBar({
 }) {
   const pct = parseLevelPercent(raw)
   if (pct === null) {
-    if (!isLowLevel(raw)) return null
+    if (!isLowLevel(raw)) {
+      return <div className="site-printer-level site-printer-level--unknown" title={`${label} : niveau non communiqué`}>{label} —</div>
+    }
     return (
       <div className="site-printer-level site-printer-level--low" title={`${label}: niveau bas`}>
         <span className="site-printer-level__label">{label}</span>
@@ -431,9 +437,6 @@ function paginateStockMovementDays(
 function countStockMovementGroups(days: StockMovementDayGroup[]): number {
   return days.reduce((count, day) => count + day.groups.length, 0)
 }
-/** Point de données pour le graphique consommation. */
-type TonerColorKey = 'black' | 'cyan' | 'magenta' | 'yellow'
-
 interface ConsumptionChangeMarker {
   color: TonerColorKey
   source: string
@@ -519,6 +522,7 @@ function StockStepper({
       <input
         type="number"
         inputMode="numeric"
+        aria-label="Nouveau stock"
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={(e) => {
@@ -595,28 +599,6 @@ function isConsumablePiece(piece: Pick<PieceAvecStocks, 'nature' | 'categorie' |
   return ['TONER', 'BAC_RECUP', 'FOURNITURES CONSOMMABLES'].includes(category)
 }
 
-function tonerSourceLabel(sourceType: string): string {
-  switch (sourceType) {
-    case 'ALERTE':
-      return 'Mail'
-    case 'REPORT_LEVEL_ASC':
-      return 'Detection rapport'
-    case 'MAIL_AND_REPORT':
-      return 'Mail + detection rapport'
-    default:
-      return sourceType
-  }
-}
-
-function extractTonerColor(text: string): TonerColorKey | null {
-  const value = text.toLowerCase()
-  if (/(black|noir|bk|k)\b/.test(value)) return 'black'
-  if (/(cyan|c)\b/.test(value)) return 'cyan'
-  if (/(magenta|m)\b/.test(value)) return 'magenta'
-  if (/(yellow|jaune|y)\b/.test(value)) return 'yellow'
-  return null
-}
-
 function normalizeTonerVariant(value: string | null | undefined): TonerColorKey | null {
   switch ((value ?? '').trim().toUpperCase()) {
     case 'BLACK':
@@ -630,6 +612,61 @@ function normalizeTonerVariant(value: string | null | undefined): TonerColorKey 
     default:
       return null
   }
+}
+
+type PrinterStockKey = TonerColorKey | 'waste'
+
+function printerStockPieces(pieces: PieceAvecStocks[], key: PrinterStockKey, isColor: boolean): PieceAvecStocks[] {
+  if (key === 'waste') return pieces.filter((piece) => piece.categorie === 'BAC_RECUP')
+
+  const toners = pieces.filter((piece) => piece.categorie === 'TONER')
+  const matches = toners.filter((piece) => normalizeTonerVariant(piece.variant) === key)
+  if (matches.length > 0 || key !== 'black' || isColor) return matches
+
+  return toners.filter((piece) => !piece.variant || piece.variant === 'NONE' || piece.variant === 'UNIT')
+}
+
+function SitePrinterStock({
+  label,
+  pieces,
+  quantities,
+  disabled,
+  onStep,
+}: {
+  label: string
+  pieces: PieceAvecStocks[]
+  quantities: Record<number, string>
+  disabled: boolean
+  onStep: (piece: PieceAvecStocks, delta: number) => void
+}) {
+  const total = pieces.reduce((sum, piece) => (
+    sum + parseStockQuantity(quantities[piece.pieceId] ?? piece.quantiteStockSite)
+  ), 0)
+  const [piece] = pieces
+  if (pieces.length !== 1) {
+    const help = piece
+      ? `${label} : ${total} en stock sur ${pieces.length} références. Ajuster les quantités dans Stock du site.`
+      : `${label} : aucune pièce compatible`
+    return <span className="site-printer-stock__summary" title={help} aria-label={help}>{piece ? total : '?'}</span>
+  }
+
+  return (
+    <div className="site-printer-stock" role="group" aria-label={`Stock ${label} · ${piece.reference}`}>
+      <button type="button" disabled={disabled} aria-label={`Retirer un ${label} du stock`}
+        onClick={(event) => {
+          event.stopPropagation()
+          onStep(piece, -1)
+        }}
+      >−</button>
+      <output aria-label={`Quantité en stock : ${label}`}>{total}</output>
+      <button type="button" disabled={disabled} aria-label={`Ajouter un ${label} au stock`}
+        onClick={(event) => {
+          event.stopPropagation()
+          onStep(piece, 1)
+        }}
+      >+</button>
+    </div>
+  )
 }
 
 function buildTonerStocksByColor(
@@ -827,6 +864,24 @@ function renderInterventionMarkerLabel(props: any, marker: InterventionChartMark
   )
 }
 
+function mailReadingLabel(reading: MailTonerReading): string {
+  const level = reading.level === null ? 'niveau non communiqué' : `${reading.level} %`
+  return `Mail · Changement ${TONER_COLOR_LABELS[reading.color]} · ${level} · ${formatDate(reading.reportedAt)}`
+}
+
+function renderMailMarkerLabel(props: { viewBox?: { x?: number; y?: number } }, reading: MailTonerReading) {
+  const { x, y } = props.viewBox ?? {}
+  if (x == null || y == null) return null
+  const label = mailReadingLabel(reading)
+  return (
+    <g transform={`translate(${x - 10}, ${y + 28})`} role="img" aria-label={label} tabIndex={0}>
+      <title>{label}</title>
+      <circle cx="10" cy="10" r="10" fill="#c4b5fd" stroke="#1e1f22" strokeWidth="2" />
+      <text x="10" y="14" textAnchor="middle" fill="#1e1f22" fontSize="11" fontWeight="900">M</text>
+    </g>
+  )
+}
+
 function findNearestChartPointIndex(points: ChartPoint[], isoDate: string | null | undefined): number | null {
   if (!isoDate || points.length === 0 || !isWithinTwelveMonthWindow(isoDate)) return null
   const target = parseChartDate(isoDate)?.getTime()
@@ -859,7 +914,7 @@ function registerChangeMarker(
 
   point.changes[color] = {
     color,
-    source: previous.source === marker.source ? previous.source : 'Mail + detection rapport',
+    source: marker.source,
     before: previous.before ?? marker.before,
     after: marker.after ?? previous.after,
   }
@@ -1023,11 +1078,10 @@ function reportLevelForColor(rapport: RapportImprimante, colorKey: TonerColorKey
 
 function buildChartData(
   rapports: RapportImprimante[],
-  alertes: Alerte[],
   tonerEvents: TonerReplacementEvent[],
-  color: boolean
+  color: boolean,
+  window: ReturnType<typeof getCenteredChartWindow>,
 ): ChartPoint[] {
-  const window = getCenteredChartWindow()
   const sortedRapports = [...rapports].sort((a, b) => {
     const da = a.lastScanDate || a.createdAt
     const db = b.lastScanDate || b.createdAt
@@ -1083,10 +1137,6 @@ function buildChartData(
 
   for (let index = 0; index < sortedRapports.length; index += 1) {
     const currentReport = sortedRapports[index]
-    const currentDate = currentReport.lastScanDate || currentReport.createdAt
-    const pointIndex = findNearestChartPointIndex(points, currentDate)
-    if (pointIndex == null) continue
-
     const colors: TonerColorKey[] = color
       ? ['black', 'cyan', 'magenta', 'yellow']
       : ['black']
@@ -1097,7 +1147,7 @@ function buildChartData(
       const before = lastKnownReplacementLevels[colorKey] ?? null
       lastKnownReplacementLevels[colorKey] = after
       if (!isReportReplacementJump(before, after)) return
-      registerChangeMarker(points[pointIndex], colorKey, {
+      registerChangeMarker(points[index], colorKey, {
         color: colorKey,
         source: 'Detection rapport',
         before,
@@ -1106,30 +1156,20 @@ function buildChartData(
     })
   }
 
+  const rapportIndex = new Map(sortedRapports.map((rapport, index) => [rapport.id, index]))
   tonerEvents.forEach((event) => {
+    if (event.sourceType !== 'REPORT_LEVEL_ASC' && event.sourceType !== 'MAIL_AND_REPORT') return
     const colorKey = event.color as TonerColorKey
-    if (!['black', 'cyan', 'magenta', 'yellow'].includes(colorKey)) return
-    const index = findNearestChartPointIndex(points, event.detectedAt)
+    if (color ? !['black', 'cyan', 'magenta', 'yellow'].includes(colorKey) : colorKey !== 'black') return
+    const index = event.sourceRapportId != null
+      ? rapportIndex.get(event.sourceRapportId)
+      : event.sourceType === 'REPORT_LEVEL_ASC' ? findNearestChartPointIndex(points, event.detectedAt) : null
     if (index == null) return
     registerChangeMarker(points[index], colorKey, {
       color: colorKey,
-      source: tonerSourceLabel(event.sourceType),
+      source: 'Detection rapport',
       before: event.levelBefore,
-      after: event.levelAfter,
-    })
-  })
-
-  alertes.forEach((alerte) => {
-    if (!/toner|encre|cartouche/i.test(`${alerte.motifAlerte} ${alerte.piece}`)) return
-    const colorKey = extractTonerColor(`${alerte.motifAlerte} ${alerte.piece}`)
-    if (!colorKey) return
-    const index = findNearestChartPointIndex(points, alerte.recuLe)
-    if (index == null) return
-    registerChangeMarker(points[index], colorKey, {
-      color: colorKey,
-      source: 'Mail',
-      before: null,
-      after: alerte.niveauPourcent ?? points[index][colorKey],
+      after: reportLevelForColor(sortedRapports[index], colorKey),
     })
   })
 
@@ -1137,8 +1177,12 @@ function buildChartData(
 }
 
 export default function SiteDetailPage() {
-  const { user } = useAuth()
   const { id } = useParams<{ id: string }>()
+  return <SiteDetailContent key={id} siteId={id ? parseInt(id, 10) : NaN} />
+}
+
+function SiteDetailContent({ siteId }: { siteId: number }) {
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
   const [site, setSite] = useState<SiteDetail | null>(null)
   const [loading, setLoading] = useState(true)
@@ -1146,15 +1190,20 @@ export default function SiteDetailPage() {
   const [activeTab, setActiveTab] = useState<number | 'stocks' | 'contacts' | 'resources' | null>(null)
   const [rapportsByImp, setRapportsByImp] = useState<Record<number, RapportImprimante[]>>({})
   const [alertesByImp, setAlertesByImp] = useState<Record<number, Alerte[]>>({})
+  const detailTabsRef = useRef<HTMLDivElement>(null)
+  const printerHeaderRef = useRef<HTMLDivElement>(null)
+  const printerListRef = useRef<HTMLDivElement>(null)
+  const stockHeaderRef = useRef<HTMLDivElement>(null)
+  const alertRequestsByImp = useRef(new Map<number, { siteId: number; numeroSerie: string; includeInactive: boolean }>())
   const [tonerEventsByImp, setTonerEventsByImp] = useState<Record<number, TonerReplacementEvent[]>>({})
   const [showInactiveAlertsByImp, setShowInactiveAlertsByImp] = useState<Record<number, boolean>>({})
   const [updatingAlerteIdByImp, setUpdatingAlerteIdByImp] = useState<Record<number, number | null>>({})
   const [stockQuantites, setStockQuantites] = useState<Record<number, string>>({})
   const [stockSaveSubmitting, setStockSaveSubmitting] = useState(false)
+  const [stockSaveError, setStockSaveError] = useState<string | null>(null)
   const [stockMovementHistory, setStockMovementHistory] = useState<StockMovementItem[]>([])
   const [stockMovementPage, setStockMovementPage] = useState(1)
   const [search, setSearch] = useState<StockSearchParams>({})
-  const [appliedSearch, setAppliedSearch] = useState<StockSearchParams>({})
   const [refBisValues, setRefBisValues] = useState<Record<number, string>>({})
   const [deliveryOpen, setDeliveryOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
@@ -1179,15 +1228,16 @@ export default function SiteDetailPage() {
   const [siteContactNotes, setSiteContactNotes] = useState('')
   const [siteContactBusy, setSiteContactBusy] = useState(false)
   const [quickSavingPieceId, setQuickSavingPieceId] = useState<number | null>(null)
+  const [manualPrinterOpen, setManualPrinterOpen] = useState(false)
   const [printerVisibilityUpdatingId, setPrinterVisibilityUpdatingId] = useState<number | null>(null)
   const scrollPositionRef = useRef<number>(0)
   const shouldRestoreScrollRef = useRef<boolean>(false)
 
   const isAdmin = isUserAdmin(user)
+  const canAddPrinter = isAdmin || !!user?.roles.includes('ROLE_TECH')
   const canSites = canManageSites(user)
   const canPieces = canManagePieces(user)
 
-  const siteId = id ? parseInt(id, 10) : NaN
   const requestedImprimanteId = searchParams.get('imprimanteId')
     ? parseInt(searchParams.get('imprimanteId') ?? '', 10)
     : null
@@ -1216,19 +1266,16 @@ export default function SiteDetailPage() {
     setLoading(true)
     setError(null)
     Promise.all([
-      fetchSiteDetail(siteId, appliedSearch),
+      fetchSiteDetail(siteId),
       fetchSiteStockMovements(siteId, { limit: 5000 }),
     ])
       .then(([data, movementHistoryData]) => {
         setSite(data)
         setStockMovementHistory(movementHistoryData)
-        const qty: Record<number, string> = {}
         const refBis: Record<number, string> = {}
         for (const p of data.piecesAvecStocks ?? []) {
-          qty[p.pieceId] = String(p.quantiteStockSite)
           refBis[p.pieceId] = p.refBis ?? ''
         }
-        setStockQuantites(qty)
         setRefBisValues(refBis)
       })
       .catch((e) => {
@@ -1239,11 +1286,35 @@ export default function SiteDetailPage() {
         }
       })
       .finally(() => setLoading(false))
-  }, [siteId, appliedSearch])
+  }, [siteId])
 
   useEffect(() => {
     loadSite()
   }, [loadSite])
+
+  const canAlignStockAndPrinters = !loading && !error && !!site?.imprimantes.length
+  useLayoutEffect(() => {
+    const printerHeader = printerHeaderRef.current
+    const printerList = printerListRef.current
+    const stockHeader = stockHeaderRef.current
+    if (!canAlignStockAndPrinters || !printerHeader || !printerList || !stockHeader) return
+
+    const alignLists = () => {
+      const stockBounds = stockHeader.getBoundingClientRect()
+      const printerBounds = printerList.getBoundingClientRect()
+      const offset = stockBounds.left > printerBounds.left
+        ? Math.max(0, stockBounds.bottom - printerBounds.top)
+        : 0
+      printerList.style.setProperty('--printer-list-offset', `${offset}px`)
+    }
+
+    alignLists()
+    if (typeof ResizeObserver === 'undefined') return
+    const observer = new ResizeObserver(alignLists)
+    observer.observe(printerHeader)
+    observer.observe(stockHeader)
+    return () => observer.disconnect()
+  }, [canAlignStockAndPrinters])
 
   // Restaurer la position de scroll après le re-render
   useEffect(() => {
@@ -1253,7 +1324,40 @@ export default function SiteDetailPage() {
     }
   }, [loading, site])
 
-  const loadImprimanteData = useCallback((impId: number, numeroSerie: string, includeInactive: boolean) => {
+  const loadImprimanteAlertes = useCallback((impId: number, numeroSerie: string | null, includeInactive: boolean) => {
+    if (!numeroSerie) {
+      alertRequestsByImp.current.delete(impId)
+      setAlertesByImp((prev) => ({ ...prev, [impId]: [] }))
+      return
+    }
+
+    const query = { numeroSerie, includeInactive, siteId }
+    alertRequestsByImp.current.set(impId, query)
+    fetchAlertes(query)
+      .then((alertes) => {
+        if (alertRequestsByImp.current.get(impId) === query) {
+          setAlertesByImp((prev) => ({ ...prev, [impId]: alertes }))
+        }
+      })
+      .catch(() => {
+        if (alertRequestsByImp.current.get(impId) === query) {
+          setAlertesByImp((prev) => {
+            const cached = prev[impId] ?? []
+            return { ...prev, [impId]: includeInactive ? cached : cached.filter(isAlerteActive) }
+          })
+        }
+      })
+  }, [siteId])
+
+  const refreshLoadedAlerts = useCallback(() => {
+    for (const [impId, query] of alertRequestsByImp.current) {
+      if (query.siteId === siteId) {
+        loadImprimanteAlertes(impId, query.numeroSerie, query.includeInactive)
+      }
+    }
+  }, [siteId, loadImprimanteAlertes])
+
+  const loadImprimanteData = useCallback((impId: number, numeroSerie: string | null, includeInactive: boolean) => {
     if (!rapportsByImp[impId]) {
       fetchRapports(impId, { page: 1, limit: 400 })
         .then((rapsPage) => {
@@ -1281,19 +1385,10 @@ export default function SiteDetailPage() {
         })
     }
 
-    fetchAlertes({
-      numeroSerie,
-      includeInactive,
-    })
-      .then((alertes) => {
-        setAlertesByImp((prev) => ({ ...prev, [impId]: alertes }))
-      })
-      .catch(() => {
-        setAlertesByImp((prev) => ({ ...prev, [impId]: [] }))
-      })
-  }, [rapportsByImp, tonerEventsByImp])
+    loadImprimanteAlertes(impId, numeroSerie, includeInactive)
+  }, [rapportsByImp, tonerEventsByImp, loadImprimanteAlertes])
 
-  const handleToggleShowInactiveAlerts = useCallback((impId: number, numeroSerie: string, showInactive: boolean) => {
+  const handleToggleShowInactiveAlerts = useCallback((impId: number, numeroSerie: string | null, showInactive: boolean) => {
     setShowInactiveAlertsByImp((prev) => ({ ...prev, [impId]: showInactive }))
     loadImprimanteData(impId, numeroSerie, showInactive)
   }, [loadImprimanteData])
@@ -1331,7 +1426,7 @@ export default function SiteDetailPage() {
 
   const handleToggleAlerteInactive = useCallback(async (
     impId: number,
-    numeroSerie: string,
+    numeroSerie: string | null,
     alerteId: number,
     inactiveChecked: boolean
   ) => {
@@ -1347,8 +1442,6 @@ export default function SiteDetailPage() {
       setUpdatingAlerteIdByImp((prev) => ({ ...prev, [impId]: null }))
     }
   }, [loadImprimanteData, showInactiveAlertsByImp])
-
-  const handleSearch = useCallback(() => setAppliedSearch({ ...search }), [search])
 
   const handleCreateDelivery = useCallback(async () => {
     if (!site || !Number.isFinite(siteId)) return
@@ -1400,13 +1493,14 @@ export default function SiteDetailPage() {
 
       setDeliveryOpen(false)
       setDeliveryQuantities({})
+      if (deliveryStatus === 'TERMINEE') refreshLoadedAlerts()
       loadSite()
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Erreur creation livraison')
     } finally {
       setDeliverySubmitting(false)
     }
-  }, [deliveryDate, deliveryQuantities, deliveryStatus, loadSite, site, siteId])
+  }, [deliveryDate, deliveryQuantities, deliveryStatus, loadSite, refreshLoadedAlerts, site, siteId])
   if (loading) {
     return (
       <div className="site-detail-page">
@@ -1434,6 +1528,14 @@ export default function SiteDetailPage() {
     : null
   const interventionPrinterId = typeof activeTab === 'number' ? activeTab : requestedImprimanteId
   const piecesAvecStocks = site.piecesAvecStocks ?? []
+  const refFilter = search.ref?.trim().toLowerCase() ?? ''
+  const refBisFilter = search.refBis?.trim().toLowerCase() ?? ''
+  const visibleStockPieces = piecesAvecStocks.filter((piece) => (
+    piece.reference.toLowerCase().includes(refFilter)
+    && (piece.refBis ?? '').toLowerCase().includes(refBisFilter)
+    && (!search.categorie || piece.categorie === search.categorie)
+    && (search.modeleId == null || piece.modeles?.some((modele) => modele.id === search.modeleId))
+  ))
   const deliveryPieces = piecesAvecStocks.filter((piece) => deliveryShowAllPieces || isConsumablePiece(piece))
   const deliveryTotalQuantity = Object.values(deliveryQuantities).reduce((total, quantity) => total + Math.max(0, quantity), 0)
   const updateLocalPiece = (pieceId: number, updates: Partial<PieceAvecStocks>) => {
@@ -1469,11 +1571,12 @@ export default function SiteDetailPage() {
   const stockChanges = piecesAvecStocks
     .map((piece) => ({
       pieceId: piece.pieceId,
-      reference: piece.reference,
       previousQuantity: piece.quantiteStockSite,
       nextQuantity: parseStockQuantity(stockQuantites[piece.pieceId] ?? piece.quantiteStockSite),
     }))
     .filter((change) => change.nextQuantity !== change.previousQuantity)
+  const visiblePieceIds = new Set(visibleStockPieces.map((piece) => piece.pieceId))
+  const hiddenStockChangeCount = stockChanges.filter((change) => !visiblePieceIds.has(change.pieceId)).length
   const groupedStockMovementDays = groupStockMovementsByDate(stockMovementHistory, piecesAvecStocks, imprimantes)
   const stockMovementGroupCount = countStockMovementGroups(groupedStockMovementDays)
   const stockMovementTotalPages = Math.max(1, Math.ceil(stockMovementGroupCount / STOCK_MOVEMENT_PAGE_SIZE))
@@ -1485,34 +1588,72 @@ export default function SiteDetailPage() {
   )
 
   const resetStockChanges = () => {
-    const qty: Record<number, string> = {}
-    for (const piece of piecesAvecStocks) {
-      qty[piece.pieceId] = String(piece.quantiteStockSite)
-    }
-    setStockQuantites(qty)
+    setStockQuantites({})
+    setStockSaveError(null)
+  }
+
+  const stepPrinterStock = (piece: PieceAvecStocks, delta: number) => {
+    setStockQuantites((current) => ({
+      ...current,
+      [piece.pieceId]: String(parseStockQuantity(current[piece.pieceId] ?? piece.quantiteStockSite) + delta),
+    }))
   }
 
   const handleSaveStockChanges = async () => {
-    if (!Number.isFinite(siteId) || stockChanges.length === 0) return
+    if (!Number.isFinite(siteId) || stockSaveSubmitting || stockChanges.length === 0) return
 
     setStockSaveSubmitting(true)
-    setError(null)
+    setStockSaveError(null)
     try {
-      await Promise.all(stockChanges.map((change) => (
+      const results = await Promise.allSettled(stockChanges.map((change) => (
         upsertStock(siteId, change.pieceId, change.nextQuantity)
       )))
-      loadSite()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : 'Erreur mise a jour stock')
+      const saved = new Map<number, number>()
+      results.forEach((result, index) => {
+        if (result.status === 'fulfilled') {
+          saved.set(stockChanges[index].pieceId, result.value.quantite)
+        }
+      })
+      if (saved.size > 0) {
+        setSite((current) => current && {
+          ...current,
+          piecesAvecStocks: current.piecesAvecStocks.map((piece) => ({
+            ...piece,
+            quantiteStockSite: saved.get(piece.pieceId) ?? piece.quantiteStockSite,
+          })),
+        })
+        setStockQuantites((current) => {
+          const pending = { ...current }
+          for (const pieceId of saved.keys()) delete pending[pieceId]
+          return pending
+        })
+        refreshLoadedAlerts()
+      }
+      if (saved.size === results.length) {
+        loadSite()
+      } else {
+        setStockSaveError('Certaines quantités n’ont pas été enregistrées. Elles restent en attente pour réessayer.')
+        if (saved.size > 0) {
+          void fetchSiteStockMovements(siteId, { limit: 5000 }).then(setStockMovementHistory).catch(() => {
+            // The history can be reloaded with the next successful save.
+          })
+        }
+      }
     } finally {
       setStockSaveSubmitting(false)
     }
   }
 
+  const openPrinterDetails = (printer: Imprimante) => {
+    setActiveTab(printer.id)
+    loadImprimanteData(printer.id, printer.numeroSerie, showInactiveAlertsByImp[printer.id] ?? false)
+    detailTabsRef.current?.scrollIntoView({ block: 'nearest' })
+  }
+
   const handlePrinterVisibilityChange = async (imprimante: Imprimante, gerer: boolean) => {
     const message = gerer
-      ? `Remettre ${imprimante.numeroSerie} dans la vue du site ?`
-      : `Retirer ${imprimante.numeroSerie} de la vue du site ? Elle restera accessible dans les anciennes imprimantes.`
+      ? `Remettre ${imprimante.numeroSerie ?? imprimante.modele} dans la vue du site ?`
+      : `Retirer ${imprimante.numeroSerie ?? imprimante.modele} de la vue du site ? Elle restera accessible dans les anciennes imprimantes.`
     if (!window.confirm(message)) return
 
     setPrinterVisibilityUpdatingId(imprimante.id)
@@ -1526,11 +1667,11 @@ export default function SiteDetailPage() {
         return {
           ...prevSite,
           imprimantes: updated.gerer
-            ? [...visibles, updated].sort((a, b) => a.numeroSerie.localeCompare(b.numeroSerie))
+            ? [...visibles, updated].sort((a, b) => (a.numeroSerie ?? a.modele).localeCompare(b.numeroSerie ?? b.modele))
             : visibles,
           anciennesImprimantes: updated.gerer
             ? anciennes
-            : [...anciennes, updated].sort((a, b) => a.numeroSerie.localeCompare(b.numeroSerie)),
+            : [...anciennes, updated].sort((a, b) => (a.numeroSerie ?? a.modele).localeCompare(b.numeroSerie ?? b.modele)),
         }
       })
       if (!updated.gerer && activeTab === updated.id) {
@@ -1678,332 +1819,292 @@ export default function SiteDetailPage() {
         </div>
       </header>
 
-      <section className="site-detail-printers" aria-label="Imprimantes du site">
-        <div className="site-detail-printers__header">
-          <h2>Imprimantes du site</h2>
-          <span>{imprimantes.length} imprimante{imprimantes.length > 1 ? 's' : ''}</span>
-        </div>
-        {imprimantes.length === 0 ? (
-          <p className="site-detail-empty">Aucune imprimante sur ce site.</p>
-        ) : (
-          <div className="site-detail-printers__grid">
-            {imprimantes.map((imp) => {
-              const hasActiveMailAlert = (alertesByImp[imp.id] ?? []).some(isAlerteActive)
-              const hasScanAlert = isLastScanOld(imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null)
-              const lastScan = imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
-              const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
-
-              return (
-                <article
-                  key={imp.id}
-                  className={
-                    'site-printer-card'
-                    + (activeTab === imp.id ? ' site-printer-card--active' : '')
-                    + (hasPrinterAlert ? ' site-printer-card--alert' : '')
+      <div className="site-detail-overview">
+        <div className="site-detail-overview__printers">
+          <section className="site-detail-printers" aria-label="Imprimantes du site">
+            <div className="site-detail-printers__header" ref={printerHeaderRef}>
+              <h2>Imprimantes du site</h2>
+              {canAddPrinter && <button type="button" className="site-detail-add-btn" onClick={() => setManualPrinterOpen(true)}>Ajouter une imprimante</button>}
+              <span>{imprimantes.length} imprimante{imprimantes.length > 1 ? 's' : ''}</span>
+            </div>
+            {imprimantes.length === 0 ? (
+              <p className="site-detail-empty">Aucune imprimante sur ce site.</p>
+            ) : (
+              <div className="site-detail-printers__grid site-detail-printers__grid--aligned" ref={printerListRef}>
+                {imprimantes.map((imp) => {
+                  const hasActiveMailAlert = (alertesByImp[imp.id] ?? []).some(isAlerteActive)
+                  const hasScanAlert = !imp.isManual && isLastScanOld(imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null)
+                  const lastScan = imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
+                  const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
+                  const compatibleParts = imp.modeleId == null ? [] : piecesAvecStocks.filter((piece) =>
+                    piece.modeles?.some((modele) => modele.id === imp.modeleId)
+                  )
+                  const levels: Array<{ key: PrinterStockKey; label: string; raw?: string | null }> = [
+                    { key: 'black', label: 'Noir', raw: imp.lastReport?.blackLevel },
+                  ]
+                  if (imp.color) {
+                    levels.push(
+                      { key: 'cyan', label: 'Cyan', raw: imp.lastReport?.cyanLevel },
+                      { key: 'magenta', label: 'Magenta', raw: imp.lastReport?.magentaLevel },
+                      { key: 'yellow', label: 'Jaune', raw: imp.lastReport?.yellowLevel },
+                    )
                   }
-                  role="button"
-                  tabIndex={0}
-                  onClick={() => {
-                    setActiveTab(imp.id)
-                    loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
-                  }}
-                  onKeyDown={(e) => {
-                    if (e.target !== e.currentTarget) return
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      setActiveTab(imp.id)
-                      loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
-                    }
-                  }}
-                >
-                  <span className="site-printer-card__top">
-                    <span className="site-printer-card__serial">{imp.numeroSerie}</span>
-                    <span className="site-printer-card__badges">
-                      {hasScanAlert && <span className="site-printer-card__alert-badge">S</span>}
-                      {hasActiveMailAlert && <span className="site-printer-card__alert-badge site-printer-card__alert-badge--toner">T</span>}
-                      <span className={imp.color ? 'site-printer-card__type site-printer-card__type--color' : 'site-printer-card__type'}>
-                        {imp.color ? 'Couleur' : 'Mono'}
-                      </span>
-                    </span>
-                  </span>
-                  <span className="site-printer-card__meta">
-                    {imp.ipAddress && <span className="site-printer-card__ip">{imp.ipAddress}</span>}
-                    <span className="site-printer-card__model" title={printerModelTooltip(imp)}>
-                      {imp.modele || '-'}
-                      {imp.emplacement ? ' - ' + imp.emplacement : ''}
-                    </span>
-                  </span>
-                  <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
-                  <PrinterSerialConflict sites={imp.serialConflictSites} />
+                  levels.push({ key: 'waste', label: 'Bac', raw: imp.lastReport?.wasteLevel })
 
-                  {imp.lastReport && (
-                    <div className="site-printer-card__levels">
-                      <SitePrinterLevelBar label="Noir" raw={imp.lastReport.blackLevel} fillClass="site-printer-level__fill--black" />
-                      {imp.color && (
-                        <>
-                          <SitePrinterLevelBar label="Cyan" raw={imp.lastReport.cyanLevel} fillClass="site-printer-level__fill--cyan" />
-                          <SitePrinterLevelBar label="Magenta" raw={imp.lastReport.magentaLevel} fillClass="site-printer-level__fill--magenta" />
-                          <SitePrinterLevelBar label="Jaune" raw={imp.lastReport.yellowLevel} fillClass="site-printer-level__fill--yellow" />
-                        </>
-                      )}
-                      <SitePrinterLevelBar label="Bac" raw={imp.lastReport.wasteLevel} fillClass="site-printer-level__fill--waste" />
-                    </div>
-                  )}
-                  <span className="site-printer-card__actions">
-                    <button
-                      type="button"
-                      className="site-printer-card__visibility"
-                      onClick={(e) => {
-                        e.stopPropagation()
-                        void handlePrinterVisibilityChange(imp, false)
-                      }}
-                      disabled={printerVisibilityUpdatingId === imp.id}
-                    >
-                      {printerVisibilityUpdatingId === imp.id ? '...' : 'Retirer'}
-                    </button>
-                  </span>
-                </article>
-              )
-            })}
-          </div>
-        )}
-      </section>
-
-      {anciennesImprimantes.length > 0 && (
-        <section className="site-detail-printers site-detail-printers--old" aria-label="Anciennes imprimantes du site">
-          <details>
-            <summary>
-              <span>Anciennes imprimantes du site</span>
-              <strong>{anciennesImprimantes.length}</strong>
-            </summary>
-            <div className="site-detail-printers__grid site-detail-printers__grid--old">
-              {anciennesImprimantes.map((imp) => {
-                const lastScan = imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
-                return (
-                  <article
-                    key={imp.id}
-                    className={'site-printer-card site-printer-card--old' + (activeTab === imp.id ? ' site-printer-card--active' : '')}
-                    role="button"
-                    tabIndex={0}
-                    onClick={() => {
-                      setActiveTab(imp.id)
-                      loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
-                    }}
-                    onKeyDown={(e) => {
-                      if (e.target !== e.currentTarget) return
-                      if (e.key === 'Enter' || e.key === ' ') {
-                        e.preventDefault()
-                        setActiveTab(imp.id)
-                        loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+                  return (
+                    <article
+                      key={imp.id}
+                      className={
+                        'site-printer-card'
+                        + (activeTab === imp.id ? ' site-printer-card--active' : '')
+                        + (hasPrinterAlert ? ' site-printer-card--alert' : '')
                       }
-                    }}
-                  >
-                    <span className="site-printer-card__top">
-                      <span className="site-printer-card__serial">{imp.numeroSerie}</span>
-                      <span className="site-printer-card__badges">
-                        <span className="site-printer-card__old-badge">Ancienne</span>
-                        <span className={imp.color ? 'site-printer-card__type site-printer-card__type--color' : 'site-printer-card__type'}>
-                          {imp.color ? 'Couleur' : 'Mono'}
+                      role="button"
+                      tabIndex={0}
+                      onClick={() => {
+                        openPrinterDetails(imp)
+                      }}
+                      onKeyDown={(e) => {
+                        if (e.target !== e.currentTarget) return
+                        if (e.key === 'Enter' || e.key === ' ') {
+                          e.preventDefault()
+                          openPrinterDetails(imp)
+                        }
+                      }}
+                    >
+                      <span className="site-printer-card__top">
+                        <span className="site-printer-card__serial" title={imp.numeroSerie || printerModelTooltip(imp)}>
+                          {imp.numeroSerie || imp.modele || '—'}
+                        </span>
+                        {imp.numeroSerie && imp.modele && (
+                          <span className="site-printer-card__model" title={printerModelTooltip(imp)}>{imp.modele}</span>
+                        )}
+                        <span className="site-printer-card__badges">
+                          {hasScanAlert && <span className="site-printer-card__alert-badge">S</span>}
+                          {hasActiveMailAlert && <span className="site-printer-card__alert-badge site-printer-card__alert-badge--toner">T</span>}
                         </span>
                       </span>
-                    </span>
-                    <span className="site-printer-card__meta">
-                      {imp.ipAddress && <span className="site-printer-card__ip">{imp.ipAddress}</span>}
-                      <span className="site-printer-card__model" title={printerModelTooltip(imp)}>
-                        {imp.modele || '-'}
-                        {imp.emplacement ? ' - ' + imp.emplacement : ''}
+                      <span className="site-printer-card__last">{imp.isManual ? 'Hors connexion · ajout manuel' : 'Dernier scan : ' + formatDate(lastScan)}</span>
+                      <PrinterSerialConflict sites={imp.serialConflictSites} />
+
+                      <div className="site-printer-card__levels">
+                        {levels.map(({ key, label, raw }) => (
+                          <div className="site-printer-level-stock" key={key}>
+                            <SitePrinterLevelBar label={label} raw={raw} fillClass={`site-printer-level__fill--${key}`} />
+                            <SitePrinterStock
+                              label={label}
+                              pieces={printerStockPieces(compatibleParts, key, imp.color)}
+                              quantities={stockQuantites}
+                              disabled={stockSaveSubmitting}
+                              onStep={stepPrinterStock}
+                            />
+                          </div>
+                        ))}
+                      </div>
+                      <span className="site-printer-card__actions">
+                        <button
+                          type="button"
+                          className="site-printer-card__visibility"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void handlePrinterVisibilityChange(imp, false)
+                          }}
+                          disabled={printerVisibilityUpdatingId === imp.id}
+                        >
+                          {printerVisibilityUpdatingId === imp.id ? '...' : 'Retirer'}
+                        </button>
                       </span>
-                    </span>
-                    <span className="site-printer-card__last">Dernier scan : {formatDate(lastScan)}</span>
-                    <span className="site-printer-card__actions">
-                      <button
-                        type="button"
-                        className="site-printer-card__visibility site-printer-card__visibility--restore"
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          void handlePrinterVisibilityChange(imp, true)
-                        }}
-                        disabled={printerVisibilityUpdatingId === imp.id}
-                      >
-                        {printerVisibilityUpdatingId === imp.id ? '...' : 'Restaurer'}
-                      </button>
-                    </span>
-                  </article>
-                )
-              })}
-            </div>
-          </details>
-        </section>
-      )}
-
-      {/* Onglets : Imprimantes en priorite, puis Stocks et Acces */}
-      <div className="site-detail-tabs">
-        {imprimantes.map((imp) => {
-          const hasActiveMailAlert = (alertesByImp[imp.id] ?? []).some(isAlerteActive)
-          const hasScanAlert = isLastScanOld(imp.lastReport?.lastScanDate ?? null)
-          const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
-
-          return (
-            <button
-              key={imp.id}
-              type="button"
-              className={
-                'site-detail-tab site-detail-tab--machine'
-                + (activeTab === imp.id ? ' site-detail-tab--active' : '')
-                + (hasPrinterAlert ? ' site-detail-tab--alert' : '')
-              }
-              title={hasPrinterAlert ? 'Imprimante avec alerte active' : undefined}
-              onClick={() => {
-                setActiveTab(imp.id)
-                loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
-              }}
-            >
-              <span className="site-detail-tab__serial">{imp.numeroSerie}</span>
-              <span className="site-detail-tab__model">{imp.modele}</span>
-            </button>
-          )
-        })}
-        <button
-          type="button"
-          className={'site-detail-tab' + (activeTab === 'stocks' ? ' site-detail-tab--active' : '')}
-          onClick={() => setActiveTab('stocks')}
-        >
-          Stocks
-        </button>
-        <button
-          type="button"
-          className={'site-detail-tab' + (activeTab === 'contacts' ? ' site-detail-tab--active' : '')}
-          onClick={() => setActiveTab('contacts')}
-        >
-          Contacts
-        </button>
-        <button
-          type="button"
-          className={'site-detail-tab' + (activeTab === 'resources' ? ' site-detail-tab--active' : '')}
-          onClick={() => setActiveTab('resources')}
-        >
-          Acces & Fichiers
-        </button>
-      </div>
-
-      {activeTab === 'stocks' && (
-        <section className="site-detail-section">
-          <h2>Pièces compatibles (modèles des imprimantes du site)</h2>
-          <p className="site-detail-section-desc">
-            Tableau des pièces liées aux modèles des imprimantes présentes sur le site. Stock général = stock agent (site null). Modifiez le stock site directement, puis sortez du champ ou appuyez sur Entrée.
-          </p>
-
-          <div className="site-detail-stock-search">
-            <input
-              type="text"
-              placeholder="Ref..."
-              value={search.ref ?? ''}
-              onChange={(e) => setSearch((s) => ({ ...s, ref: e.target.value || undefined }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="site-detail-stock-search__input"
-            />
-            <input
-              type="text"
-              placeholder="Ref-bis..."
-              value={search.refBis ?? ''}
-              onChange={(e) => setSearch((s) => ({ ...s, refBis: e.target.value || undefined }))}
-              onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
-              className="site-detail-stock-search__input"
-            />
-            <select
-              value={search.categorie ?? ''}
-              onChange={(e) => setSearch((s) => ({ ...s, categorie: e.target.value || undefined }))}
-              className="site-detail-stock-search__select"
-            >
-              <option value="">Toutes catégories</option>
-              <option value="TONER">Toner</option>
-              <option value="TAMBOUR">Tambour</option>
-              <option value="PCDU">PCDU</option>
-              <option value="FUSER">Unité fusion</option>
-              <option value="BAC_RECUP">Bac récup</option>
-              <option value="COURROIE">Courroie</option>
-              <option value="ROULEAU">Rouleau</option>
-              <option value="KIT_MAINTENANCE">Kit maint.</option>
-              <option value="AUTRE">Autre</option>
-            </select>
-            <select
-              value={search.modeleId ?? ''}
-              onChange={(e) => setSearch((s) => ({ ...s, modeleId: e.target.value ? Number(e.target.value) : undefined }))}
-              className="site-detail-stock-search__select"
-            >
-              <option value="">Tous modèles du site</option>
-              {modelesSite.map((m) => (
-                <option key={m.id} value={m.id}>
-                  {m.nom}
-                </option>
-              ))}
-            </select>
-            <button type="button" onClick={handleSearch} className="site-detail-stock-search__btn">
-              Rechercher
-            </button>
-          </div>
-
-          <div className="site-detail-stock-actions">
-            <button
-              type="button"
-              onClick={() => {
-                setDeliveryDate(dateInputValue())
-                setDeliveryStatus('EN_COURS')
-                setDeliveryQuantities({})
-                setDeliveryShowAllPieces(false)
-                setDeliveryOpen(true)
-              }}
-              className="site-detail-add-btn"
-            >
-              Livraison
-            </button>
-            {canPieces && (
-              <button
-                type="button"
-                onClick={() => setPieceLinkOpen(true)}
-                className="site-detail-add-btn"
-                disabled={stockChanges.length > 0 || imprimantes.length === 0}
-                title={stockChanges.length > 0 ? 'Validez ou annulez d\'abord les modifications de stock' : undefined}
-              >
-                Lier une pièce
-              </button>
-            )}
-            <Link
-              to={`/interventions?siteId=${site.id}&create=1&type=DEPANNAGE${interventionPrinterId ? `&imprimanteId=${interventionPrinterId}` : ''}`}
-              className="site-detail-add-btn site-detail-add-btn--link"
-            >
-              Intervention P
-            </Link>
-            {stockChanges.length > 0 && (
-              <div className="site-detail-stock-savebar" role="status">
-                <span>{stockChanges.length} modification{stockChanges.length > 1 ? 's' : ''} en attente</span>
-                <button
-                  type="button"
-                  onClick={() => void handleSaveStockChanges()}
-                  disabled={stockSaveSubmitting}
-                  className="site-detail-stock-savebar__save"
-                >
-                  {stockSaveSubmitting ? 'Validation...' : 'Valider les stocks'}
-                </button>
-                <button
-                  type="button"
-                  onClick={resetStockChanges}
-                  disabled={stockSaveSubmitting}
-                  className="site-detail-stock-savebar__cancel"
-                >
-                  Annuler
-                </button>
+                    </article>
+                  )
+                })}
               </div>
             )}
+          </section>
+
+          {anciennesImprimantes.length > 0 && (
+            <section className="site-detail-printers site-detail-printers--old" aria-label="Anciennes imprimantes du site">
+              <details>
+                <summary>
+                  <span>Anciennes imprimantes du site</span>
+                  <strong>{anciennesImprimantes.length}</strong>
+                </summary>
+                <div className="site-detail-printers__grid site-detail-printers__grid--old">
+                  {anciennesImprimantes.map((imp) => {
+                    const lastScan = imp.lastReport?.lastScanDate ?? imp.lastReport?.dateScan ?? null
+                    return (
+                      <article
+                        key={imp.id}
+                        className={'site-printer-card site-printer-card--old' + (activeTab === imp.id ? ' site-printer-card--active' : '')}
+                        role="button"
+                        tabIndex={0}
+                        onClick={() => {
+                          openPrinterDetails(imp)
+                        }}
+                        onKeyDown={(e) => {
+                          if (e.target !== e.currentTarget) return
+                          if (e.key === 'Enter' || e.key === ' ') {
+                            e.preventDefault()
+                            openPrinterDetails(imp)
+                          }
+                        }}
+                      >
+                        <span className="site-printer-card__top">
+                          <span className="site-printer-card__serial" title={imp.numeroSerie || printerModelTooltip(imp)}>
+                            {imp.numeroSerie || imp.modele || '—'}
+                          </span>
+                          {imp.numeroSerie && imp.modele && (
+                            <span className="site-printer-card__model" title={printerModelTooltip(imp)}>{imp.modele}</span>
+                          )}
+                          <span className="site-printer-card__badges">
+                            <span className="site-printer-card__old-badge">Ancienne</span>
+                          </span>
+                        </span>
+                        <span className="site-printer-card__last">{imp.isManual ? 'Hors connexion · ajout manuel' : 'Dernier scan : ' + formatDate(lastScan)}</span>
+                        <span className="site-printer-card__actions">
+                          <button
+                            type="button"
+                            className="site-printer-card__visibility site-printer-card__visibility--restore"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              void handlePrinterVisibilityChange(imp, true)
+                            }}
+                            disabled={printerVisibilityUpdatingId === imp.id}
+                          >
+                            {printerVisibilityUpdatingId === imp.id ? '...' : 'Restaurer'}
+                          </button>
+                        </span>
+                      </article>
+                    )
+                  })}
+                </div>
+              </details>
+            </section>
+          )}
+        </div>
+        <section className="site-detail-section site-detail-overview__stock" aria-label="Stock du site">
+          <div className="site-detail-stock-header" ref={stockHeaderRef}>
+            <h2>Stock du site</h2>
+            <p className="site-detail-section-desc">
+              Pièces compatibles avec les imprimantes du site. Validez les modifications pour enregistrer les nouvelles quantités.
+            </p>
+
+            <div className="site-detail-stock-search">
+              <input
+                type="text"
+                placeholder="Ref..."
+                aria-label="Filtrer par référence"
+                value={search.ref ?? ''}
+                onChange={(e) => setSearch((s) => ({ ...s, ref: e.target.value || undefined }))}
+                className="site-detail-stock-search__input"
+              />
+              <input
+                type="text"
+                placeholder="Ref-bis..."
+                aria-label="Filtrer par ref-bis"
+                value={search.refBis ?? ''}
+                onChange={(e) => setSearch((s) => ({ ...s, refBis: e.target.value || undefined }))}
+                className="site-detail-stock-search__input"
+              />
+              <select
+                value={search.categorie ?? ''}
+                aria-label="Filtrer par catégorie"
+                onChange={(e) => setSearch((s) => ({ ...s, categorie: e.target.value || undefined }))}
+                className="site-detail-stock-search__select"
+              >
+                <option value="">Toutes catégories</option>
+                <option value="TONER">Toner</option>
+                <option value="TAMBOUR">Tambour</option>
+                <option value="PCDU">PCDU</option>
+                <option value="FUSER">Unité fusion</option>
+                <option value="BAC_RECUP">Bac récup</option>
+                <option value="COURROIE">Courroie</option>
+                <option value="ROULEAU">Rouleau</option>
+                <option value="KIT_MAINTENANCE">Kit maint.</option>
+                <option value="AUTRE">Autre</option>
+              </select>
+              <select
+                value={search.modeleId ?? ''}
+                aria-label="Filtrer par modèle"
+                onChange={(e) => setSearch((s) => ({ ...s, modeleId: e.target.value ? Number(e.target.value) : undefined }))}
+                className="site-detail-stock-search__select"
+              >
+                <option value="">Tous modèles du site</option>
+                {modelesSite.map((m) => (
+                  <option key={m.id} value={m.id}>
+                    {m.nom}
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            <div className="site-detail-stock-actions">
+              <button
+                type="button"
+                onClick={() => {
+                  setDeliveryDate(dateInputValue())
+                  setDeliveryStatus('EN_COURS')
+                  setDeliveryQuantities({})
+                  setDeliveryShowAllPieces(false)
+                  setDeliveryOpen(true)
+                }}
+                className="site-detail-add-btn"
+              >
+                Livraison
+              </button>
+              {canPieces && (
+                <button
+                  type="button"
+                  onClick={() => setPieceLinkOpen(true)}
+                  className="site-detail-add-btn"
+                  disabled={stockChanges.length > 0 || imprimantes.length === 0}
+                  title={stockChanges.length > 0 ? 'Validez ou annulez d\'abord les modifications de stock' : undefined}
+                >
+                  Lier une pièce
+                </button>
+              )}
+              <Link
+                to={`/interventions?siteId=${site.id}&create=1&type=DEPANNAGE${interventionPrinterId ? `&imprimanteId=${interventionPrinterId}` : ''}`}
+                className="site-detail-add-btn site-detail-add-btn--link"
+              >
+                Intervention P
+              </Link>
+              {stockChanges.length > 0 && (
+                <div className="site-detail-stock-savebar" role="status">
+                  <span>
+                    {stockChanges.length} modification{stockChanges.length > 1 ? 's' : ''} en attente
+                    {hiddenStockChangeCount > 0 && ` · ${hiddenStockChangeCount} hors filtre`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => void handleSaveStockChanges()}
+                    disabled={stockSaveSubmitting}
+                    className="site-detail-stock-savebar__save"
+                  >
+                    {stockSaveSubmitting ? 'Validation...' : 'Valider les stocks'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={resetStockChanges}
+                    disabled={stockSaveSubmitting}
+                    className="site-detail-stock-savebar__cancel"
+                  >
+                    Annuler
+                  </button>
+                </div>
+              )}
+            </div>
+            {stockSaveError && <p className="site-detail-error" role="alert">{stockSaveError}</p>}
           </div>
           {piecesAvecStocks.length === 0 ? (
             <p className="site-detail-empty">
               Aucune pièce. Associez des modèles aux imprimantes du site et liez des pièces à ces modèles (table modele_piece).
             </p>
+          ) : visibleStockPieces.length === 0 ? (
+            <p className="site-detail-empty">Aucune pièce ne correspond aux filtres.</p>
           ) : (
             <>
             <div className="pieces-cards">
-              {piecesAvecStocks.map((p) => {
+              {visibleStockPieces.map((p) => {
                 const matchedModeles = matchingSiteModeles(p, imprimantes)
                 return (
                 <details key={`mobile-${p.pieceId}`} className="piece-mobile-row">
@@ -2018,7 +2119,8 @@ export default function SiteDetailPage() {
                       onClick={(e) => e.preventDefault()}
                       onKeyDown={(e) => e.stopPropagation()}
                     >
-                      <span>Stock site</span>
+                      <span>Stock actuel <strong className="site-stock-current">{p.quantiteStockSite}</strong></span>
+                      <span>Nouveau stock</span>
                       <StockStepper
                         value={stockQuantites[p.pieceId] ?? String(p.quantiteStockSite)}
                         onChange={(value) => setStockQuantites((prev) => ({ ...prev, [p.pieceId]: value }))}
@@ -2093,11 +2195,12 @@ export default function SiteDetailPage() {
                     <th className="pieces-table__th--label">Libellé</th>
                     <th className="pieces-table__th--variant">Variant</th>
                     <th className="pieces-table__th--ref-bis">Ref-bis</th>
-                    <th className="pieces-table__th--stepper">Stock site</th>
+                    <th scope="col" className="pieces-table__th--site-stock">Stock actuel</th>
+                    <th scope="col" className="pieces-table__th--stepper">Nouveau stock</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {piecesAvecStocks.map((p) => {
+                  {visibleStockPieces.map((p) => {
                     const matchedModeles = matchingSiteModeles(p, imprimantes)
                     const stockValue = stockQuantites[p.pieceId] ?? String(p.quantiteStockSite)
                     // Colonnes retirees de l'affichage: infos conservees dans l'info-bulle du libelle.
@@ -2130,6 +2233,7 @@ export default function SiteDetailPage() {
                             title={canPieces ? undefined : 'Droit Pièces & stocks globaux requis'}
                           />
                         </td>
+                        <td className="pieces-table__site-stock site-stock-current">{p.quantiteStockSite}</td>
                         <td className="pieces-table__num">
                           <StockStepper
                             value={stockValue}
@@ -2144,129 +2248,180 @@ export default function SiteDetailPage() {
                 </tbody>
               </table>
             </div>
+            </>
+          )}
+        </section>
+      </div>
 
-            <section className="site-detail-section">
-              <div className="stock-movements__header">
-                <div>
-                  <h3>Derniers mouvements de stock</h3>
-                  <p className="site-detail-section-desc">
-                    Historique complet des mouvements visibles pour ce site, groupes par date et par operation.
-                  </p>
-                </div>
-                <span className="stock-movements__count">{stockMovementGroupCount}</span>
+      <div className="site-detail-tabs" ref={detailTabsRef}>
+        {imprimantes.map((imp) => {
+          const hasActiveMailAlert = (alertesByImp[imp.id] ?? []).some(isAlerteActive)
+          const hasScanAlert = !imp.isManual && isLastScanOld(imp.lastReport?.lastScanDate ?? null)
+          const hasPrinterAlert = hasActiveMailAlert || hasScanAlert
+
+          return (
+            <button
+              key={imp.id}
+              type="button"
+              className={
+                'site-detail-tab site-detail-tab--machine'
+                + (activeTab === imp.id ? ' site-detail-tab--active' : '')
+                + (hasPrinterAlert ? ' site-detail-tab--alert' : '')
+              }
+              title={hasPrinterAlert ? 'Imprimante avec alerte active' : undefined}
+              onClick={() => {
+                setActiveTab(imp.id)
+                loadImprimanteData(imp.id, imp.numeroSerie, showInactiveAlertsByImp[imp.id] ?? false)
+              }}
+            >
+              <span className="site-detail-tab__serial">{imp.numeroSerie || imp.modele}</span>
+              <span className="site-detail-tab__model">{imp.modele}</span>
+            </button>
+          )
+        })}
+        <button
+          type="button"
+          className={'site-detail-tab' + (activeTab === 'stocks' ? ' site-detail-tab--active' : '')}
+          onClick={() => setActiveTab('stocks')}
+        >
+          Mouvements de stock
+        </button>
+        <button
+          type="button"
+          className={'site-detail-tab' + (activeTab === 'contacts' ? ' site-detail-tab--active' : '')}
+          onClick={() => setActiveTab('contacts')}
+        >
+          Contacts
+        </button>
+        <button
+          type="button"
+          className={'site-detail-tab' + (activeTab === 'resources' ? ' site-detail-tab--active' : '')}
+          onClick={() => setActiveTab('resources')}
+        >
+          Acces & Fichiers
+        </button>
+      </div>
+
+      {activeTab === 'stocks' && (
+        <section className="site-detail-section">
+          <div className="stock-movements__header">
+            <div>
+              <h3>Derniers mouvements de stock</h3>
+              <p className="site-detail-section-desc">
+                Historique complet des mouvements visibles pour ce site, groupes par date et par operation.
+              </p>
+            </div>
+            <span className="stock-movements__count">{stockMovementGroupCount}</span>
+          </div>
+
+          {groupedStockMovementDays.length === 0 ? (
+            <p className="site-detail-empty">Aucun mouvement enregistre pour le moment.</p>
+          ) : (
+            <>
+              <div className="stock-movements">
+                {paginatedStockMovementDays.map((day) => (
+                  <section key={day.dateKey} className="stock-movement-day">
+                    <h4>{day.dateLabel}</h4>
+                    <div className="stock-movement-day__groups">
+                      {day.groups.map((group) => {
+                        const cardContent = (
+                          <>
+                            <div className="stock-movement-card__top">
+                              <div>
+                                <strong>{group.modelLabel}</strong>
+                                <p>
+                                  {group.refBis ? `Ref-bis: ${group.refBis}` : 'Sans ref-bis'}
+                                  {' - '}
+                                  {STOCK_MOVEMENT_REASON_LABELS[group.reason] ?? group.reason}
+                                  {group.intervention ? ` - ${group.intervention.title}` : ''}
+                                </p>
+                              </div>
+                              <span
+                                className={
+                                  'stock-movement-card__delta ' +
+                                  (group.totalDelta > 0
+                                    ? 'stock-movement-card__delta--positive'
+                                    : 'stock-movement-card__delta--negative')
+                                }
+                              >
+                                {group.totalDelta > 0 ? '+' : ''}
+                                {group.totalDelta}
+                              </span>
+                            </div>
+
+                            <div className="stock-movement-card__colors">
+                              {group.colors.map((color) => (
+                                <span
+                                  key={`${group.key}-${color.label}`}
+                                  className={`stock-movement-color stock-movement-color--${color.className}`}
+                                  title={color.references.join(', ')}
+                                >
+                                  <strong>{color.label}</strong>
+                                  <em>{color.quantityDelta > 0 ? '+' : ''}{color.quantityDelta}</em>
+                                </span>
+                              ))}
+                            </div>
+
+                            <div className="stock-movement-card__meta">
+                              <span>{STOCK_MOVEMENT_TYPE_LABELS[group.movementType] ?? group.movementType}</span>
+                              <span>{group.userLabel || 'Utilisateur inconnu'}</span>
+                              <span>{group.dateTimeLabel}</span>
+                              <span>{group.movements.length} ligne{group.movements.length > 1 ? 's' : ''}</span>
+                              {isAdmin && (
+                                <span>
+                                  {group.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
+                                </span>
+                              )}
+                              {group.intervention && <span>Voir intervention</span>}
+                            </div>
+
+                            {group.commentaire && (
+                              <p className="stock-movement-card__comment">{group.commentaire}</p>
+                            )}
+                          </>
+                        )
+
+                        return group.intervention ? (
+                          <Link
+                            key={group.key}
+                            to={`/interventions?siteId=${site.id}&interventionId=${group.intervention.id}`}
+                            className="stock-movement-card stock-movement-card--clickable"
+                            aria-label={`Voir intervention ${group.intervention.title}`}
+                          >
+                            {cardContent}
+                          </Link>
+                        ) : (
+                          <article key={group.key} className="stock-movement-card">
+                            {cardContent}
+                          </article>
+                        )
+                      })}
+                    </div>
+                  </section>
+                ))}
               </div>
 
-              {groupedStockMovementDays.length === 0 ? (
-                <p className="site-detail-empty">Aucun mouvement enregistre pour le moment.</p>
-              ) : (
-                <>
-                  <div className="stock-movements">
-                    {paginatedStockMovementDays.map((day) => (
-                      <section key={day.dateKey} className="stock-movement-day">
-                        <h4>{day.dateLabel}</h4>
-                        <div className="stock-movement-day__groups">
-                          {day.groups.map((group) => {
-                            const cardContent = (
-                              <>
-                                <div className="stock-movement-card__top">
-                                  <div>
-                                    <strong>{group.modelLabel}</strong>
-                                    <p>
-                                      {group.refBis ? `Ref-bis: ${group.refBis}` : 'Sans ref-bis'}
-                                      {' - '}
-                                      {STOCK_MOVEMENT_REASON_LABELS[group.reason] ?? group.reason}
-                                      {group.intervention ? ` - ${group.intervention.title}` : ''}
-                                    </p>
-                                  </div>
-                                  <span
-                                    className={
-                                      'stock-movement-card__delta ' +
-                                      (group.totalDelta > 0
-                                        ? 'stock-movement-card__delta--positive'
-                                        : 'stock-movement-card__delta--negative')
-                                    }
-                                  >
-                                    {group.totalDelta > 0 ? '+' : ''}
-                                    {group.totalDelta}
-                                  </span>
-                                </div>
-
-                                <div className="stock-movement-card__colors">
-                                  {group.colors.map((color) => (
-                                    <span
-                                      key={`${group.key}-${color.label}`}
-                                      className={`stock-movement-color stock-movement-color--${color.className}`}
-                                      title={color.references.join(', ')}
-                                    >
-                                      <strong>{color.label}</strong>
-                                      <em>{color.quantityDelta > 0 ? '+' : ''}{color.quantityDelta}</em>
-                                    </span>
-                                  ))}
-                                </div>
-
-                                <div className="stock-movement-card__meta">
-                                  <span>{STOCK_MOVEMENT_TYPE_LABELS[group.movementType] ?? group.movementType}</span>
-                                  <span>{group.userLabel || 'Utilisateur inconnu'}</span>
-                                  <span>{group.dateTimeLabel}</span>
-                                  <span>{group.movements.length} ligne{group.movements.length > 1 ? 's' : ''}</span>
-                                  {isAdmin && (
-                                    <span>
-                                      {group.stockScope === 'ADMIN_ONLY' ? 'Reserve admin' : 'Visible technicien'}
-                                    </span>
-                                  )}
-                                  {group.intervention && <span>Voir intervention</span>}
-                                </div>
-
-                                {group.commentaire && (
-                                  <p className="stock-movement-card__comment">{group.commentaire}</p>
-                                )}
-                              </>
-                            )
-
-                            return group.intervention ? (
-                              <Link
-                                key={group.key}
-                                to={`/interventions?siteId=${site.id}&interventionId=${group.intervention.id}`}
-                                className="stock-movement-card stock-movement-card--clickable"
-                                aria-label={`Voir intervention ${group.intervention.title}`}
-                              >
-                                {cardContent}
-                              </Link>
-                            ) : (
-                              <article key={group.key} className="stock-movement-card">
-                                {cardContent}
-                              </article>
-                            )
-                          })}
-                        </div>
-                      </section>
-                    ))}
-                  </div>
-
-                  {stockMovementTotalPages > 1 && (
-                    <nav className="stock-movements-pagination" aria-label="Pagination mouvements de stock">
-                      <button
-                        type="button"
-                        onClick={() => setStockMovementPage((page) => Math.max(1, page - 1))}
-                        disabled={currentStockMovementPage <= 1}
-                      >
-                        Precedent
-                      </button>
-                      <span>
-                        Page {currentStockMovementPage} / {stockMovementTotalPages}
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setStockMovementPage((page) => Math.min(stockMovementTotalPages, page + 1))}
-                        disabled={currentStockMovementPage >= stockMovementTotalPages}
-                      >
-                        Suivant
-                      </button>
-                    </nav>
-                  )}
-                </>
+              {stockMovementTotalPages > 1 && (
+                <nav className="stock-movements-pagination" aria-label="Pagination mouvements de stock">
+                  <button
+                    type="button"
+                    onClick={() => setStockMovementPage((page) => Math.max(1, page - 1))}
+                    disabled={currentStockMovementPage <= 1}
+                  >
+                    Precedent
+                  </button>
+                  <span>
+                    Page {currentStockMovementPage} / {stockMovementTotalPages}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setStockMovementPage((page) => Math.min(stockMovementTotalPages, page + 1))}
+                    disabled={currentStockMovementPage >= stockMovementTotalPages}
+                  >
+                    Suivant
+                  </button>
+                </nav>
               )}
-            </section>
             </>
           )}
         </section>
@@ -2723,6 +2878,21 @@ export default function SiteDetailPage() {
         />
       )}
 
+      {manualPrinterOpen && canAddPrinter && (
+        <ManualPrinterDialog
+          siteId={site.id}
+          siteNom={site.nom}
+          onClose={() => setManualPrinterOpen(false)}
+          onCreated={(printer) => {
+            setManualPrinterOpen(false)
+            setSite((previous) => previous ? { ...previous, imprimantes: [...previous.imprimantes, printer] } : previous)
+            setActiveTab(printer.id)
+            loadSite()
+            loadImprimanteData(printer.id, printer.numeroSerie, false)
+          }}
+        />
+      )}
+
       {pieceLinkOpen && (
         <PieceLinkDialog
           siteNom={site.nom}
@@ -2855,8 +3025,12 @@ function ImprimanteTab({
   onToggleAlerteInactive: (alerteId: number, inactiveChecked: boolean) => void
 }) {
   const [chartModalOpen, setChartModalOpen] = useState(false)
-  const chartData = buildChartData(rapports, alertes, tonerEvents, imprimante.color)
   const chartWindow = getCenteredChartWindow()
+  const chartData = buildChartData(rapports, tonerEvents, imprimante.color, chartWindow)
+  const mailReadings = getMailTonerReadings(tonerEvents, imprimante.color)
+  const mailMarkers = mailReadings.filter(({ reportedAt, timestamp }) => (
+    timestamp >= chartWindow.startTs && (parseChartDate(reportedAt)?.getTime() ?? Infinity) <= chartWindow.todayTs
+  ))
   const chartMonthTicks = buildChartMonthTicks(chartWindow)
   const missingDataAreas = buildMissingDataAreas(chartData, chartWindow)
   const interventionMarkers = buildInterventionChartMarkers(imprimante, stockMovementHistory)
@@ -2874,6 +3048,7 @@ function ImprimanteTab({
     || point.magenta != null
     || point.yellow != null)
   )).length
+  const hasChart = chartUsefulPointCount >= 2 || mailMarkers.length > 0
   const tableRapports = rapports.slice(0, 10)
   const renderTonerChart = (height: number) => (
     <ResponsiveContainer width="100%" height={height}>
@@ -2907,6 +3082,46 @@ function ImprimanteTab({
             label={(props: any) => renderInterventionMarkerLabel(props, marker)}
           />
         ))}
+        {mailMarkers.map((reading) => reading.level === null ? (
+          <ReferenceLine
+            key={`mail-${reading.id}`}
+            x={reading.timestamp}
+            stroke="#c4b5fd"
+            strokeDasharray="3 4"
+            ifOverflow="hidden"
+            label={(props) => renderMailMarkerLabel(props as Parameters<typeof renderMailMarkerLabel>[0], reading)}
+          />
+        ) : (
+          <ReferenceDot
+            key={`mail-${reading.id}`}
+            x={reading.timestamp}
+            y={reading.level}
+            r={7}
+            ifOverflow="hidden"
+            shape={({ cx, cy }) => {
+              const label = mailReadingLabel(reading)
+              return (
+                <g role="img" aria-label={label} tabIndex={0}>
+                  <title>{label}</title>
+                  <circle cx={cx} cy={cy} r={7} fill={TONER_COLOR_STROKES[reading.color]} stroke="#c4b5fd" strokeWidth={3} />
+                  <text
+                    x={cx}
+                    y={(cy ?? 0) - 11}
+                    textAnchor="middle"
+                    fill="#ddd6fe"
+                    stroke="#1e1f22"
+                    strokeWidth={3}
+                    paintOrder="stroke"
+                    fontSize={11}
+                    fontWeight={700}
+                  >
+                    {reading.level} %
+                  </text>
+                </g>
+              )
+            }}
+          />
+        ))}
         <XAxis
           dataKey="x"
           type="number"
@@ -2921,7 +3136,7 @@ function ImprimanteTab({
           tickFormatter={(value) => chartMonthTickFromTimestamp(Number(value))}
           allowDataOverflow
         />
-        <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} tickLine={false} />
+        <YAxis stroke="#b5bac1" fontSize={12} domain={[0, 100]} tickLine={false} allowDataOverflow />
         <Tooltip content={<ConsumptionTooltip tonerStocksByDate={tonerStocksByDate} isAdmin={isAdmin} isColor={imprimante.color} />} />
         <Legend />
         <Line type="stepAfter" dataKey="black" name="Noir halo" stroke="#ffffff" strokeWidth={5} dot={false} activeDot={false} legendType="none" connectNulls />
@@ -2951,7 +3166,7 @@ function ImprimanteTab({
   return (
     <section className="site-detail-section imprimante-tab">
       <div className="imprimante-tab__header">
-        <h2>{imprimante.numeroSerie}</h2>
+        <h2>{imprimante.numeroSerie || imprimante.modele}</h2>
         <Link to={'/imprimantes/' + imprimante.id} className="imprimante-tab__link">
           Voir fiche complète →
         </Link>
@@ -2962,19 +3177,25 @@ function ImprimanteTab({
       </p>
       <PrinterSerialConflict sites={imprimante.serialConflictSites} />
 
-      <div className="site-detail-chart-wrap">
+      {imprimante.isManual && (
+        <p className="site-detail-empty">Imprimante hors connexion ajoutée manuellement. Aucune remontée CSV attendue.</p>
+      )}
+      {(!imprimante.isManual || mailMarkers.length > 0) && <div className="site-detail-chart-wrap">
           <div className="site-detail-chart-head">
             <div>
               <h3>Consommation toner - {imprimante.numeroSerie}</h3>
               <p>6 mois d'historique a gauche, aujourd'hui au centre, simulation prudente a droite.</p>
             </div>
             <span>
-              {tonerChangeCount} changement{tonerChangeCount > 1 ? 's' : ''}
+              {tonerChangeCount} changement{tonerChangeCount > 1 ? 's détectés' : ' détecté'} par scan
               {' - '}
               {interventionMarkers.length} intervention{interventionMarkers.length > 1 ? 's' : ''}
             </span>
           </div>
-          {chartUsefulPointCount < 2 ? (
+          {mailMarkers.length > 0 && (
+            <p className="site-detail-chart-mail-key">Repères violets · changements signalés par mail</p>
+          )}
+          {!hasChart ? (
             <p className="site-detail-empty">Pas assez de rapports pour afficher le graphique.</p>
           ) : (
             <>
@@ -2990,9 +3211,9 @@ function ImprimanteTab({
               </div>
             </>
           )}
-      </div>
+      </div>}
 
-      {chartModalOpen && chartUsefulPointCount >= 2 && (
+      {chartModalOpen && hasChart && (
         <div
           className="site-detail-modal-backdrop site-detail-chart-modal-backdrop"
           role="presentation"
@@ -3011,6 +3232,9 @@ function ImprimanteTab({
               </button>
             </header>
             <p className="site-detail-chart-modal__hint">Tournez le téléphone en paysage pour plus de confort.</p>
+            {mailMarkers.length > 0 && (
+              <p className="site-detail-chart-mail-key">Repères violets · changements signalés par mail</p>
+            )}
             <div className="site-detail-chart-modal__canvas">
               {renderTonerChart(420)}
             </div>
@@ -3019,10 +3243,11 @@ function ImprimanteTab({
       )}
 
       <h3>Rapports</h3>
+      <MailTonerReports readings={mailReadings} heading="h4" />
       {loading ? (
         <p className="site-detail-loading">Chargement des rapports…</p>
       ) : rapports.length === 0 ? (
-        <p className="site-detail-empty">Aucun rapport.</p>
+        <p className="site-detail-empty">Aucun rapport de scan.</p>
       ) : (
         <div className="rapports-table-wrap">
           <table className="rapports-table">

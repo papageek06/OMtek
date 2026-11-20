@@ -30,8 +30,12 @@ class Imprimante
     #[ORM\JoinColumn(nullable: true, onDelete: 'SET NULL')]
     private ?Modele $modele = null;
 
-    #[ORM\Column(type: Types::STRING, length: 100)]
-    private string $numeroSerie = '';
+    #[ORM\Column(type: Types::STRING, length: 100, nullable: true)]
+    private ?string $numeroSerie = null;
+
+    /** Inventaire manuel hors connexion : aucune remontee CSV attendue. */
+    #[ORM\Column(type: Types::BOOLEAN, options: ['default' => false])]
+    private bool $isManual = false;
 
     /** Libellé dénormalisé si modele_id est null (rétrocompat). Colonne DB: modele */
     #[ORM\Column(name: 'modele', type: Types::STRING, length: 255)]
@@ -88,14 +92,25 @@ class Imprimante
         return $this;
     }
 
-    public function getNumeroSerie(): string
+    public function getNumeroSerie(): ?string
     {
         return $this->numeroSerie;
     }
 
-    public function setNumeroSerie(string $numeroSerie): static
+    public function setNumeroSerie(?string $numeroSerie): static
     {
         $this->numeroSerie = $numeroSerie;
+        return $this;
+    }
+
+    public function isManual(): bool
+    {
+        return $this->isManual;
+    }
+
+    public function setIsManual(bool $isManual): static
+    {
+        $this->isManual = $isManual;
         return $this;
     }
 

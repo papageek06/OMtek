@@ -19,7 +19,8 @@ import {
 } from '../api/client'
 import { useAuth } from '../context/AuthContext'
 import { isAlerteActive } from '../domain/alertes/rules'
-import { colorLabel, parseLevelPercent as parseWastePercent, sortRapportsByDateDesc, sourceLabel } from '../domain/imprimantes/rules'
+import { colorLabel, getMailTonerReadings, parseLevelPercent as parseWastePercent, sortRapportsByDateDesc, sourceLabel } from '../domain/imprimantes/rules'
+import MailTonerReports from '../shared/MailTonerReports'
 import { canManageSites } from '../shared/auth/permissions'
 import { formatDateTime } from '../shared/formatters/date'
 import './ImprimantePage.css'
@@ -144,7 +145,11 @@ export default function ImprimantePage() {
   }, [canReinstall])
 
   useEffect(() => {
-    if (!imprimante?.numeroSerie) return
+    if (!imprimante?.numeroSerie) {
+      setAlertes([])
+      setAlertesError(null)
+      return
+    }
 
     let cancelled = false
     setAlertesError(null)
@@ -315,7 +320,7 @@ export default function ImprimantePage() {
       setReinstallMessage('Choisir un site cible.')
       return
     }
-    if (!window.confirm(`Reinstaller ${imprimante.numeroSerie} sur le site selectionne ?`)) return
+    if (!window.confirm(`Reinstaller ${imprimante.numeroSerie ?? imprimante.modele} sur le site selectionne ?`)) return
 
     setReinstallBusy(true)
     setReinstallMessage(null)
@@ -371,7 +376,7 @@ export default function ImprimantePage() {
       </nav>
 
       <header className="imprimante-header">
-        <h1>{imprimante.numeroSerie}</h1>
+        <h1>{imprimante.numeroSerie || imprimante.modele}</h1>
         <p className="imprimante-header__meta">
           {imprimante.modele || '-'} · {imprimante.constructeur || '-'}
           {imprimante.site ? ' · Site : ' + imprimante.site.nom : ''}
@@ -379,7 +384,7 @@ export default function ImprimantePage() {
         {imprimante.emplacement && (
           <p className="imprimante-header__emplacement">Emplacement : {imprimante.emplacement}</p>
         )}
-        <p className="imprimante-header__last">Dernier scan : {formatDate(lastScan)}</p>
+        <p className="imprimante-header__last">{imprimante.isManual ? 'Hors connexion · ajout manuel · aucune remontée CSV attendue' : 'Dernier scan : ' + formatDate(lastScan)}</p>
       </header>
 
       <section className="imprimante-section imprimante-lifecycle">
@@ -592,9 +597,10 @@ export default function ImprimantePage() {
 
       <section className="imprimante-section">
         <h2>Rapports</h2>
+        <MailTonerReports readings={getMailTonerReadings(tonerEvents, imprimante.color)} heading="h3" />
         {rapportsError && <p className="imprimante-alertes-error">{rapportsError}</p>}
         {!rapportsError && rapportsTotal === 0 ? (
-          <p className="imprimante-empty">Aucun rapport.</p>
+          <p className="imprimante-empty">Aucun rapport de scan.</p>
         ) : rapportsTotal > 0 ? (
           <>
             <p className="imprimante-rapports-info">
